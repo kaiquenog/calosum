@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from functools import lru_cache
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -16,6 +17,21 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Calosum API")
 
+
+@lru_cache(maxsize=1)
+def get_settings() -> InfrastructureSettings:
+    return InfrastructureSettings.from_sources()
+
+
+@lru_cache(maxsize=1)
+def get_builder() -> CalosumAgentBuilder:
+    return CalosumAgentBuilder(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_agent():
+    return get_builder().build()
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -24,11 +40,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize isolated dependencies during startup
-settings = InfrastructureSettings.from_sources()
-builder = CalosumAgentBuilder(settings)
-agent = builder.build()
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request) -> JSONResponse:
@@ -47,6 +58,7 @@ async def chat_completions(request: Request) -> JSONResponse:
         )
     
     user_turn = UserTurn(session_id=session_id, user_text=text, signals=[])
+    agent = get_agent()
     
     try:
         # Offload logic execution to prevent blocking the async loop
@@ -67,6 +79,7 @@ async def get_dashboard(session_id: str) -> JSONResponse:
     separados por 'felt', 'thought' e 'decision'.
     """
     try:
+        agent = get_agent()
         dashboard = agent.cognitive_dashboard(session_id)
         return JSONResponse({"status": "ok", "dashboard": dashboard})
     except Exception as e:
@@ -90,6 +103,7 @@ async def chat_sse(request: Request, text: str, session_id: str = "api-session")
             "data": "processing"
         }
         
+        agent = get_agent()
         user_turn = UserTurn(session_id=session_id, user_text=text, signals=[])
         
         try:
@@ -125,4 +139,4 @@ async def chat_sse(request: Request, text: str, session_id: str = "api-session")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=settings.api_port)
+    uvicorn.run(app, host="0.0.0.0", port=get_settings().api_port)

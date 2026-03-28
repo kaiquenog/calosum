@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from calosum import CalosumAgent, UserTurn
+from calosum import CalosumAgent, PersistentDualMemorySystem, UserTurn
 
 
 class DualMemoryTests(unittest.TestCase):
@@ -44,6 +47,35 @@ class DualMemoryTests(unittest.TestCase):
         )
         self.assertEqual(plan_action.payload["style"], "short")
         self.assertGreaterEqual(len(result.memory_context.knowledge_triples), 1)
+
+    def test_legacy_partial_episode_records_are_hydrated_on_reload(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base_dir = Path(temp_dir)
+            memory_dir = base_dir / "memory"
+            memory_dir.mkdir(parents=True, exist_ok=True)
+
+            legacy_episode = {
+                "episode_id": "legacy-1",
+                "recorded_at": "2026-03-28T10:00:00+00:00",
+                "user_turn": {
+                    "session_id": "legacy-session",
+                    "user_text": "Registro antigo sem estado completo.",
+                    "signals": [],
+                    "observed_at": "2026-03-28T10:00:00+00:00",
+                    "turn_id": "legacy-turn",
+                },
+            }
+            (memory_dir / "episodic.jsonl").write_text(
+                json.dumps(legacy_episode, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            reloaded = PersistentDualMemorySystem.from_directory(memory_dir)
+            episode = reloaded.episodic_store.all()[0]
+
+            self.assertEqual(episode.right_state.context_id, "legacy-turn")
+            self.assertEqual(episode.bridge_packet.context_id, episode.right_state.context_id)
+            self.assertEqual(episode.left_result.lambda_program.signature, "Placeholder")
 
 
 if __name__ == "__main__":

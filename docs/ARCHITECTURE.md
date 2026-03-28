@@ -25,7 +25,7 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
 
 ## Interface de Usuário (UI)
 
-O projeto também possui um componente frontend na pasta `ui/` construído com React, Vite e Tailwind. Este painel consome as rotas expostas em `bootstrap/api.py` para exibir a telemetria separada por hemisférios em tempo real.
+O projeto também possui um componente frontend na pasta `ui/` construído com React, Vite e Tailwind. Este painel consome as rotas expostas em `bootstrap/api.py` para exibir a telemetria separada por hemisférios, execução e reflexão.
 
 ## Regras
 
@@ -33,6 +33,7 @@ O projeto também possui um componente frontend na pasta `ui/` construído com R
 - Pacote `domain` define o core. Ele NUNCA deve tentar importar bibliotecas SDK de "adapters" nem as instâncias do "bootstrap".
 - Pacote `adapters` obedece cegamente a interface em `shared`. Não toma decisões fora de traduzir a infra.
 - Pacote `bootstrap` é o único capaz e autorizado a instanciar `adapters` concretos injetando-os nas instâncias do `domain` de acordo com configs do painel `settings.py`.
+- Quando um adapter opcional de infraestrutura local não estiver disponível, o `bootstrap` deve preferir fallback explícito a falha dura sempre que isso não quebrar o contrato funcional.
 - O agente tem uma entrada limpa e orquestrada pelo `orchestrator.py`. Interações isoladas da `cli.py` ou `api.py` não vazam contexto pro `domain`.
 
 ## Crescimento Controlado

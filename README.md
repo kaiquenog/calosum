@@ -26,6 +26,8 @@ Para explorar o projeto localmente, você precisará de:
 
 Mesmo sem depender de uma API de Inteligência Artificial pesada, você pode invocar a engine de arquitetura do Calosum no seu terminal para entender como ela divide e soluciona problemas. 
 
+Se a stack opcional de HuggingFace local não estiver disponível, o bootstrap faz fallback automático para o hemisfério direito heurístico em vez de falhar na inicialização.
+
 ### 1. Rodar um "Turno" (Um pensamento do agente)
 
 Ao mandar uma frase para o sistema, você verá o modelo capturar as nuances da mensagem e devolver um JSON rico, demonstrando o passo de raciocínio lógico (no hemisfério esquerdo) embasado na percepção de urgência calculada pelo modelo.
@@ -86,8 +88,9 @@ python3 -m calosum.bootstrap.cli chat
 O projeto adota o estilo **Ports and Adapters**. Você não precisa quebrar as lógicas internas caso queira acoplar a API do ChatGPT ou do LangChain, basta implementar a Interface!
 
 1. Vá em `src/calosum/ports.py` para entender as interfaces que devem ser respeitadas.
-2. Para plugar um LLM de verdade no raciocínio, você pode herdar a classe de `ports.LeftHemispherePort` e criar, por exemplo, um `OpenAILogicalSLM(LeftHemispherePort)`. Em seguida, passe esse módulo pelo Construtor (Factory) do agente no `src/calosum/factory.py`.
-3. Todo conhecimento consolidado fica nos Manuais, leia as pastas `docs/ARCHITECTURE.md` para entender as barreiras e `docs/PLANS.md` para documentar suas evoluções maiores.
+2. Para entender as interfaces atuais, veja `src/calosum/shared/ports.py`.
+3. Para plugar um LLM de verdade no raciocínio, você pode implementar `LeftHemispherePort` e injetar o adapter pelo construtor em `src/calosum/bootstrap/factory.py`.
+4. Todo conhecimento consolidado fica nos Manuais, leia `docs/ARCHITECTURE.md` para entender as barreiras e `docs/PLANS.md` para documentar evoluções maiores.
 
 ---
 

@@ -19,6 +19,7 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 `CALOSUM_INFRA_PROFILE=ephemeral`
 - A memória vetorial e a telemetria rodam totalmente na memória RAM (arrays de Python).
 - Nada é salvo no disco. Ideal para rodar a suíte de testes rápidos.
+- Se a stack opcional de `transformers`/`sentence-transformers` não estiver disponível, o bootstrap faz fallback para o hemisfério direito heurístico sem abortar a inicialização.
 
 ### 2. Persistent
 `CALOSUM_INFRA_PROFILE=persistent`

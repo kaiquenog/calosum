@@ -85,6 +85,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.memory",
         "domain.orchestrator",
         "domain.persistent_memory",
+        "domain.right_hemisphere",
         "bootstrap.settings",
         "domain.telemetry"
     },

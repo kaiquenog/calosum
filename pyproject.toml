@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-calosum = "calosum.cli:main"
+calosum = "calosum.bootstrap.cli:main"
 calosum-harness = "calosum.harness_checks:main"
 
 [tool.setuptools]

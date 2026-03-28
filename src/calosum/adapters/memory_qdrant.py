@@ -8,11 +8,16 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from calosum.shared.async_utils import run_sync
 from calosum.shared.types import (
+    BridgeControlSignal,
     ConsolidationReport,
+    CognitiveBridgePacket,
     KnowledgeTriple,
+    LeftHemisphereResult,
     MemoryContext,
     MemoryEpisode,
+    RightHemisphereState,
     SemanticRule,
+    TypedLambdaProgram,
     UserTurn,
     utc_now,
 )
@@ -69,15 +74,24 @@ class QdrantDualMemoryAdapter:
         for point in res:
             p = point.payload or {}
             if "text" in p:
+                episode_turn = UserTurn(
+                    session_id=p.get("session", "*"),
+                    user_text=p["text"],
+                    signals=[],
+                )
+                right_state = _placeholder_right_state(
+                    episode_turn,
+                    emotional_labels=list(p.get("emotional_labels", [])),
+                )
                 # Reconstruindo mock do episodio p/ retornar contexto
                 episodes.append(
                     MemoryEpisode(
                         episode_id=str(point.id),
                         recorded_at=utc_now(),
-                        user_turn=UserTurn(session_id="*", user_text=p["text"], signals=[]),
-                        right_state=None,
-                        bridge_packet=None,
-                        left_result=None,
+                        user_turn=episode_turn,
+                        right_state=right_state,
+                        bridge_packet=_placeholder_bridge_packet(right_state),
+                        left_result=_placeholder_left_result(),
                     )
                 )
 
@@ -143,19 +157,24 @@ class QdrantDualMemoryAdapter:
         for point in res:
             p = point.payload or {}
             if "text" in p:
-                from calosum.shared.types import RightHemisphereState
+                episode_turn = UserTurn(
+                    session_id=p.get("session", "*"),
+                    user_text=p["text"],
+                    signals=[],
+                )
+                right_state = _placeholder_right_state(
+                    episode_turn,
+                    emotional_labels=list(p.get("emotional_labels", [])),
+                    salience=0.5,
+                )
                 episodes.append(
                     MemoryEpisode(
                         episode_id=str(point.id),
                         recorded_at=utc_now(),
-                        user_turn=UserTurn(session_id="*", user_text=p["text"], signals=[]),
-                        right_state=RightHemisphereState(
-                            context_id="*", latent_vector=[], salience=0.5, 
-                            emotional_labels=p.get("emotional_labels", []), 
-                            world_hypotheses={}, confidence=1.0
-                        ),
-                        bridge_packet=None, # type: ignore
-                        left_result=None, # type: ignore
+                        user_turn=episode_turn,
+                        right_state=right_state,
+                        bridge_packet=_placeholder_bridge_packet(right_state),
+                        left_result=_placeholder_left_result(),
                     )
                 )
 
@@ -186,3 +205,49 @@ class QdrantDualMemoryAdapter:
             )
 
         return report
+
+
+def _placeholder_right_state(
+    user_turn: UserTurn,
+    *,
+    emotional_labels: list[str] | None = None,
+    salience: float = 0.15,
+) -> RightHemisphereState:
+    return RightHemisphereState(
+        context_id=user_turn.turn_id,
+        latent_vector=[],
+        salience=salience,
+        emotional_labels=emotional_labels or ["neutral"],
+        world_hypotheses={},
+        confidence=0.0,
+        telemetry={"source": "qdrant_placeholder"},
+    )
+
+
+def _placeholder_bridge_packet(right_state: RightHemisphereState) -> CognitiveBridgePacket:
+    return CognitiveBridgePacket(
+        context_id=right_state.context_id,
+        soft_prompts=[],
+        control=BridgeControlSignal(
+            target_temperature=0.25,
+            empathy_priority=right_state.salience >= 0.7,
+            system_directives=[],
+            annotations={"source": "qdrant_placeholder"},
+        ),
+        salience=right_state.salience,
+        bridge_metadata={"source": "qdrant_placeholder"},
+    )
+
+
+def _placeholder_left_result() -> LeftHemisphereResult:
+    return LeftHemisphereResult(
+        response_text="",
+        lambda_program=TypedLambdaProgram(
+            signature="Placeholder",
+            expression="",
+            expected_effect="hydrate memory episode without executable actions",
+        ),
+        actions=[],
+        reasoning_summary=["placeholder_memory_episode"],
+        telemetry={"source": "qdrant_placeholder"},
+    )

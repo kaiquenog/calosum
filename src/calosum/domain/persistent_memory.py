@@ -226,13 +226,30 @@ def _left_result_from_dict(data: dict) -> LeftHemisphereResult:
 
 
 def _memory_episode_from_dict(data: dict) -> MemoryEpisode:
+    user_turn = _user_turn_from_dict(data["user_turn"])
+    right_state_data = data.get("right_state")
+    right_state = (
+        _right_state_from_dict(right_state_data)
+        if right_state_data
+        else _placeholder_right_state(user_turn)
+    )
+    bridge_packet_data = data.get("bridge_packet")
+    left_result_data = data.get("left_result")
     return MemoryEpisode(
         episode_id=data["episode_id"],
         recorded_at=_datetime(data["recorded_at"]),
-        user_turn=_user_turn_from_dict(data["user_turn"]),
-        right_state=_right_state_from_dict(data.get("right_state", {})) if data.get("right_state") else None,
-        bridge_packet=_bridge_packet_from_dict(data.get("bridge_packet", {})) if data.get("bridge_packet") else None,
-        left_result=_left_result_from_dict(data.get("left_result", {})) if data.get("left_result") else None,
+        user_turn=user_turn,
+        right_state=right_state,
+        bridge_packet=(
+            _bridge_packet_from_dict(bridge_packet_data)
+            if bridge_packet_data
+            else _placeholder_bridge_packet(right_state)
+        ),
+        left_result=(
+            _left_result_from_dict(left_result_data)
+            if left_result_data
+            else _placeholder_left_result()
+        ),
     )
 
 
@@ -253,4 +270,45 @@ def _knowledge_triple_from_dict(data: dict) -> KnowledgeTriple:
         object=data["object"],
         weight=data.get("weight", 1.0),
         source_rule_id=data.get("source_rule_id"),
+    )
+
+
+def _placeholder_right_state(user_turn: UserTurn) -> RightHemisphereState:
+    return RightHemisphereState(
+        context_id=user_turn.turn_id,
+        latent_vector=[],
+        salience=0.15,
+        emotional_labels=["neutral"],
+        world_hypotheses={},
+        confidence=0.0,
+        telemetry={"source": "persistent_memory_placeholder"},
+    )
+
+
+def _placeholder_bridge_packet(right_state: RightHemisphereState) -> CognitiveBridgePacket:
+    return CognitiveBridgePacket(
+        context_id=right_state.context_id,
+        soft_prompts=[],
+        control=BridgeControlSignal(
+            target_temperature=0.25,
+            empathy_priority=False,
+            system_directives=[],
+            annotations={"source": "persistent_memory_placeholder"},
+        ),
+        salience=right_state.salience,
+        bridge_metadata={"source": "persistent_memory_placeholder"},
+    )
+
+
+def _placeholder_left_result() -> LeftHemisphereResult:
+    return LeftHemisphereResult(
+        response_text="",
+        lambda_program=TypedLambdaProgram(
+            signature="Placeholder",
+            expression="",
+            expected_effect="hydrate persisted episode without executable actions",
+        ),
+        actions=[],
+        reasoning_summary=["placeholder_memory_episode"],
+        telemetry={"source": "persistent_memory_placeholder"},
     )
