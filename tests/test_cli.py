@@ -46,18 +46,33 @@ class CliIntegrationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             scenario_path = Path(temp_dir) / "scenario.json"
+            memory_dir = Path(temp_dir) / "memory"
+            otlp_path = Path(temp_dir) / "telemetry.jsonl"
             scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
 
             env = os.environ.copy()
             env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
             completed = subprocess.run(
-                ["python3", "-m", "calosum.cli", "run-scenario", str(scenario_path)],
+                [
+                    "python3",
+                    "-m",
+                    "calosum.bootstrap.cli",
+                    "run-scenario",
+                    str(scenario_path),
+                    "--memory-dir",
+                    str(memory_dir),
+                    "--otlp-jsonl",
+                    str(otlp_path),
+                ],
                 cwd=PROJECT_ROOT,
                 env=env,
                 check=True,
                 capture_output=True,
                 text=True,
             )
+
+            self.assertTrue((memory_dir / "episodic.jsonl").exists())
+            self.assertTrue(otlp_path.exists())
 
         payload = json.loads(completed.stdout)
         self.assertEqual(payload["session_id"], "cli-session")

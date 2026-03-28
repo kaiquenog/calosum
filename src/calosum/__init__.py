@@ -1,15 +1,16 @@
-"""Public package surface for the Calosum architecture skeleton."""
+"""Public package surface for the Calosum cognitive architecture."""
 
-from .bridge import CognitiveTokenizer, CognitiveTokenizerConfig
-from .left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
-from .memory import (
+from calosum.bootstrap.factory import CalosumAgentBuilder
+from calosum.domain.bridge import CognitiveTokenizer, CognitiveTokenizerConfig
+from calosum.domain.left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
+from calosum.domain.memory import (
     DualMemorySystem,
     InMemoryEpisodicStore,
     InMemorySemanticGraphStore,
     InMemorySemanticStore,
     SleepModeConsolidator,
 )
-from .metacognition import (
+from calosum.domain.metacognition import (
     CognitiveCandidate,
     CognitiveVariantSpec,
     GEAReflectionController,
@@ -17,12 +18,33 @@ from .metacognition import (
     ReflectionOutcome,
     ReflectionScore,
 )
-from .orchestrator import CalosumAgent
-from .right_hemisphere import RightHemisphereJEPA, RightHemisphereJEPAConfig
-from .runtime import StrictLambdaRuntime, StrictLambdaRuntimeConfig
-from .serialization import dump_json, to_json, to_primitive
-from .telemetry import CognitiveTelemetryBus, InMemoryTelemetrySink, TelemetryEvent
-from .types import (
+from calosum.domain.orchestrator import CalosumAgent, CalosumAgentConfig
+from calosum.domain.persistent_memory import (
+    JsonlEpisodicStore,
+    JsonlSemanticGraphStore,
+    JsonlSemanticStore,
+    PersistentDualMemorySystem,
+)
+from calosum.shared.ports import (
+    ActionRuntimePort,
+    CognitiveTokenizerPort,
+    LeftHemispherePort,
+    MemorySystemPort,
+    ReflectionControllerPort,
+    RightHemispherePort,
+    TelemetryBusPort,
+)
+from calosum.domain.right_hemisphere import RightHemisphereJEPA, RightHemisphereJEPAConfig
+from calosum.domain.runtime import StrictLambdaRuntime, StrictLambdaRuntimeConfig
+from calosum.shared.serialization import dump_json, to_json, to_primitive
+from calosum.bootstrap.settings import InfrastructureProfile, InfrastructureSettings
+from calosum.domain.telemetry import (
+    CognitiveTelemetryBus,
+    InMemoryTelemetrySink,
+    OTLPJsonlTelemetrySink,
+    TelemetryEvent,
+)
+from calosum.shared.types import (
     ActionExecutionResult,
     AgentTurnResult,
     CognitiveBridgePacket,
@@ -43,12 +65,16 @@ from .types import (
 
 __all__ = [
     "ActionExecutionResult",
+    "ActionRuntimePort",
     "AgentTurnResult",
     "CalosumAgent",
+    "CalosumAgentBuilder",
+    "CalosumAgentConfig",
     "CognitiveCandidate",
     "CognitiveBridgePacket",
     "CognitiveTelemetryBus",
     "CognitiveTokenizer",
+    "CognitiveTokenizerPort",
     "CognitiveTokenizerConfig",
     "CognitiveVariantSpec",
     "ConsolidationReport",
@@ -60,16 +86,27 @@ __all__ = [
     "InMemorySemanticGraphStore",
     "InMemorySemanticStore",
     "InMemoryTelemetrySink",
+    "InfrastructureProfile",
+    "InfrastructureSettings",
+    "JsonlEpisodicStore",
+    "JsonlSemanticGraphStore",
+    "JsonlSemanticStore",
     "KnowledgeTriple",
+    "LeftHemispherePort",
     "LeftHemisphereLogicalSLM",
     "LeftHemisphereLogicalSLMConfig",
     "LeftHemisphereResult",
+    "MemorySystemPort",
     "MemoryContext",
     "MemoryEpisode",
     "Modality",
     "MultimodalSignal",
+    "OTLPJsonlTelemetrySink",
+    "PersistentDualMemorySystem",
     "PrimitiveAction",
+    "ReflectionControllerPort",
     "RightHemisphereJEPA",
+    "RightHemispherePort",
     "RightHemisphereJEPAConfig",
     "RightHemisphereState",
     "ReflectionOutcome",
@@ -79,6 +116,7 @@ __all__ = [
     "SoftPromptToken",
     "StrictLambdaRuntime",
     "StrictLambdaRuntimeConfig",
+    "TelemetryBusPort",
     "TelemetryEvent",
     "to_json",
     "to_primitive",

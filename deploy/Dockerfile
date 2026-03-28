@@ -1,10 +1,14 @@
 FROM python:3.13-slim
 
 WORKDIR /app
-COPY pyproject.toml README.md /app/
+COPY pyproject.toml README.md AGENTS.md /app/
+COPY docs /app/docs
 COPY src /app/src
 COPY examples /app/examples
 
-ENV PYTHONPATH=/app/src
+RUN pip install --no-cache-dir .
 
-CMD ["python3", "examples/cognitive_cycle.py"]
+ENV PYTHONPATH=/app/src
+EXPOSE 8000
+
+CMD ["python3", "-m", "calosum.bootstrap.api"]

@@ -8,9 +8,20 @@ version = "0.1.0"
 description = "High-level skeleton for a dual-hemisphere neuro-symbolic AGI agent."
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+    "typing_extensions>=4.7.0",
+    "pydantic>=2.5.0",
+    "qdrant-client>=1.7.0",
+    "httpx>=0.25.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "duckduckgo-search>=5.0.0",
+    "sse-starlette>=1.8.0",
+]
 
 [project.scripts]
 calosum = "calosum.cli:main"
+calosum-harness = "calosum.harness_checks:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

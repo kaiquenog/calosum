@@ -3,61 +3,60 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    command: ["python3", "examples/group_reflection.py"]
+    env_file:
+      - ../.env
+    ports:
+      - "8000:8000"
     environment:
-      CALOSUM_ROLE: orchestrator
-      CALOSUM_RIGHT_ENDPOINT: http://right-hemisphere:8081
-      CALOSUM_LEFT_ENDPOINT: http://left-hemisphere:8082
-      CALOSUM_MEMORY_ENDPOINT: http://memory:8083
-      CALOSUM_TELEMETRY_ENDPOINT: http://telemetry:8084
+      CALOSUM_LEFT_ENDPOINT: "http://host.docker.internal:11434/v1/chat/completions"
+      CALOSUM_INFRA_PROFILE: docker
+      CALOSUM_MEMORY_DIR: /data/memory
+      CALOSUM_OTLP_JSONL: /data/telemetry/events.jsonl
+      CALOSUM_VECTORDB_URL: http://qdrant:6333
+      CALOSUM_DUCKDB_PATH: /data/state/semantic.duckdb
+      CALOSUM_OTEL_COLLECTOR_ENDPOINT: http://otel-collector:4318
+      CALOSUM_JAEGER_UI_URL: http://jaeger:16686
+      # APIs de Modelos de Linguagem são consumidas nativamente do pacote httpx para web e HuggingFace endpoints
+      # Logo, os containers fake de "left-hemisphere" foram aposentados.
+    volumes:
+      - calosum_data:/data
     depends_on:
-      - right-hemisphere
-      - left-hemisphere
-      - memory
-      - telemetry
+      - qdrant
+      - otel-collector
+      - jaeger
 
-  right-hemisphere:
-    image: python:3.13-slim
-    command:
-      [
-        "python3",
-        "-c",
-        "import time; print('right hemisphere placeholder ready'); time.sleep(3600)",
-      ]
-    environment:
-      CALOSUM_ROLE: right_hemisphere_jepa
-      CALOSUM_ACCELERATOR: spatial_tensor_cluster
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
 
-  left-hemisphere:
-    image: python:3.13-slim
-    command:
-      [
-        "python3",
-        "-c",
-        "import time; print('left hemisphere placeholder ready'); time.sleep(3600)",
-      ]
-    environment:
-      CALOSUM_ROLE: left_hemisphere_slm
-      CALOSUM_ACCELERATOR: edge_mx_quantized
+  otel-collector:
+    image: otel/opentelemetry-collector:0.147.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+    depends_on:
+      - jaeger
 
-  memory:
-    image: python:3.13-slim
-    command:
-      [
-        "python3",
-        "-c",
-        "import time; print('dual memory placeholder ready'); time.sleep(3600)",
-      ]
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.15.0
     environment:
-      CALOSUM_ROLE: dual_memory
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+    expose:
+      - "4317"
+      - "4318"
+      - "5778"
+      - "9411"
 
-  telemetry:
-    image: python:3.13-slim
-    command:
-      [
-        "python3",
-        "-c",
-        "import time; print('telemetry placeholder ready'); time.sleep(3600)",
-      ]
-    environment:
-      CALOSUM_ROLE: telemetry
+volumes:
+  calosum_data:
+  qdrant_data:
