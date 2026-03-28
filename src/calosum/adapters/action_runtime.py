@@ -13,6 +13,8 @@ class ConcreteActionRuntime:
     Ele converte ações simbólicas ('propose_plan', 'respond_text', 'search_web')
     em execuções verdadeiras via ferramentas Python.
     """
+    def __init__(self, vault: dict[str, str] | None = None) -> None:
+        self.vault = vault or {}
 
     def run(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]:
         return run_sync(self.arun(left_result))
@@ -27,6 +29,8 @@ class ConcreteActionRuntime:
                     res = await self._execute_propose_plan(action.payload)
                 elif action.action_type == "search_web":
                     res = await self._execute_search_web(action.payload)
+                elif action.action_type == "write_file":
+                    res = await self._execute_write_file(action.payload)
                 else:
                     raise ValueError(f"Action '{action.action_type}' not supported in concrete runtime.")
 
@@ -34,7 +38,7 @@ class ConcreteActionRuntime:
                     ActionExecutionResult(
                         action_type=action.action_type,
                         typed_signature=action.typed_signature,
-                        status="success",
+                        status="executed",
                         output={"result": str(res)},
                         violations=[],
                     )
@@ -45,7 +49,7 @@ class ConcreteActionRuntime:
                     ActionExecutionResult(
                         action_type=action.action_type,
                         typed_signature=action.typed_signature,
-                        status="error",
+                        status="rejected",
                         output={"error": str(e)},
                         violations=[f"Runtime crash: {e}"],
                     )
@@ -83,3 +87,20 @@ class ConcreteActionRuntime:
         except Exception as e:
             logger.error(f"DDGS failure: {e}")
             return f"Search failed: {e}"
+
+    async def _execute_write_file(self, payload: dict) -> str:
+        from pathlib import Path
+        path = payload.get("path", "")
+        content = payload.get("content", "")
+        if not path:
+            return "No path provided for write_file."
+            
+        try:
+            target = Path(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            return f"Successfully wrote {len(content)} bytes to {path}."
+        except Exception as e:
+            logger.error(f"File write failure: {e}")
+            return f"File write failed: {e}"
+

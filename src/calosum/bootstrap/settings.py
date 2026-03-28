@@ -27,6 +27,7 @@ class InfrastructureSettings:
     left_hemisphere_endpoint: str | None = None
     left_hemisphere_api_key: str | None = None
     left_hemisphere_model: str | None = None
+    vault: dict[str, str] | None = None
 
     @classmethod
     def from_sources(
@@ -62,6 +63,13 @@ class InfrastructureSettings:
         if not explicit_profile and (memory_dir is not None or otlp_jsonl is not None):
             profile = InfrastructureProfile.PERSISTENT
 
+        # Vault para APIs externas e credenciais sigilosas
+        vault = {}
+        for key, value in env.items():
+            if key.startswith("CALOSUM_VAULT_"):
+                secret_name = key.replace("CALOSUM_VAULT_", "").lower()
+                vault[secret_name] = value
+
         settings = cls(
             profile=profile,
             memory_dir=memory_dir,
@@ -75,6 +83,7 @@ class InfrastructureSettings:
             left_hemisphere_endpoint=env.get("CALOSUM_LEFT_ENDPOINT"),
             left_hemisphere_api_key=env.get("CALOSUM_LEFT_API_KEY"),
             left_hemisphere_model=env.get("CALOSUM_LEFT_MODEL"),
+            vault=vault if vault else None,
         )
         return settings.with_profile_defaults()
 
@@ -93,6 +102,7 @@ class InfrastructureSettings:
                 left_hemisphere_endpoint=self.left_hemisphere_endpoint,
                 left_hemisphere_api_key=self.left_hemisphere_api_key,
                 left_hemisphere_model=self.left_hemisphere_model,
+                vault=self.vault,
             )
 
         if self.profile == InfrastructureProfile.DOCKER:
@@ -111,6 +121,7 @@ class InfrastructureSettings:
                 left_hemisphere_endpoint=self.left_hemisphere_endpoint,
                 left_hemisphere_api_key=self.left_hemisphere_api_key,
                 left_hemisphere_model=self.left_hemisphere_model,
+                vault=self.vault,
             )
 
         return self

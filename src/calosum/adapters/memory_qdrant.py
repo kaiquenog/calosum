@@ -119,7 +119,11 @@ class QdrantDualMemoryAdapter:
                 PointStruct(
                     id=point_id,
                     vector=dummy_vector,
-                    payload={"text": episode.user_turn.user_text, "session": episode.user_turn.session_id},
+                    payload={
+                        "text": episode.user_turn.user_text, 
+                        "session": episode.user_turn.session_id,
+                        "emotional_labels": episode.right_state.emotional_labels if episode.right_state else []
+                    },
                 )
             ],
         )
@@ -128,10 +132,57 @@ class QdrantDualMemoryAdapter:
         return run_sync(self.asleep_mode())
 
     async def asleep_mode(self) -> ConsolidationReport:
-        # Mock consolidation process that could train LoRA or clean vector DB
-        return ConsolidationReport(
-            episodes_processed=0,
-            rules_extracted=0,
-            knowledge_triples_extracted=0,
-            telemetry={"status": "Qdrant dual memory consolidation mock executed."},
+        from calosum.domain.memory import SleepModeConsolidator
+        
+        # 1. Fetch episodes
+        res, _ = await self.aclient.scroll(
+            collection_name=self.config.episodes_collection, limit=100, with_payload=True
         )
+        
+        episodes = []
+        for point in res:
+            p = point.payload or {}
+            if "text" in p:
+                from calosum.shared.types import RightHemisphereState
+                episodes.append(
+                    MemoryEpisode(
+                        episode_id=str(point.id),
+                        recorded_at=utc_now(),
+                        user_turn=UserTurn(session_id="*", user_text=p["text"], signals=[]),
+                        right_state=RightHemisphereState(
+                            context_id="*", latent_vector=[], salience=0.5, 
+                            emotional_labels=p.get("emotional_labels", []), 
+                            world_hypotheses={}, confidence=1.0
+                        ),
+                        bridge_packet=None, # type: ignore
+                        left_result=None, # type: ignore
+                    )
+                )
+
+        # 2. Consolidate
+        consolidator = SleepModeConsolidator(minimum_frequency=1) # Set to 1 for easier demo/testing
+        report = consolidator.consolidate(episodes)
+
+        # 3. Store Promoted Rules into Qdrant semantic_rules collection
+        if report.promoted_rules:
+            points = []
+            dummy_vector = [0.0] * 384
+            for rule in report.promoted_rules:
+                points.append(
+                    PointStruct(
+                        id=str(uuid.uuid4()),
+                        vector=dummy_vector,
+                        payload={
+                            "statement": rule.statement,
+                            "strength": rule.strength,
+                            "tags": rule.tags,
+                            "supporting_episodes": rule.supporting_episodes
+                        }
+                    )
+                )
+            await self.aclient.upsert(
+                collection_name=self.config.rules_collection,
+                points=points
+            )
+
+        return report

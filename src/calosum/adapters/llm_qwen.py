@@ -155,6 +155,12 @@ Soft Prompts (Bridge):
 Semantic Rules: {rules}
 Runtime Feedback: {feedback or []}
 
+Available Action Types (Use exactly these for action_type, and matching payload):
+- "respond_text": {{ "text": "your response here" }}
+- "propose_plan": {{ "steps": ["step1", "step2"] }}
+- "search_web": {{ "query": "search keywords" }}
+- "write_file": {{ "path": "file/path.txt", "content": "file content" }}
+
 Expected JSON Schema:
 {{
   "response_text": "string",

@@ -51,6 +51,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "shared.serialization": set(),
 
     # DOMAIN
+    "domain.advanced_interfaces": {"shared.types", "domain.metacognition", "shared.ports"},
     "domain.agent_execution": {"shared.async_utils", "shared.ports", "shared.types"},
     "domain.bridge": {"shared.types"},
     "domain.right_hemisphere": {"shared.types"},
@@ -105,7 +106,7 @@ MODULE_RULES: dict[str, set[str]] = {
     # ADAPTERS
     "adapters.action_runtime": {"shared.async_utils", "shared.types"},
     "adapters.llm_qwen": {"shared.async_utils", "shared.types"},
-    "adapters.memory_qdrant": {"shared.async_utils", "shared.types"},
+    "adapters.memory_qdrant": {"shared.async_utils", "shared.types", "domain.memory"},
 
     # ROOT
     "harness_checks": set(),

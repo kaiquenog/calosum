@@ -10,7 +10,13 @@ class StrictLambdaRuntimeConfig:
     allow_external_side_effects: bool = False
     reject_unknown_actions: bool = True
     executable_actions: set[str] = field(
-        default_factory=lambda: {"respond_text", "load_semantic_rules", "propose_plan"}
+        default_factory=lambda: {
+            "respond_text", 
+            "load_semantic_rules", 
+            "propose_plan",
+            "search_web",
+            "write_file"
+        }
     )
 
 

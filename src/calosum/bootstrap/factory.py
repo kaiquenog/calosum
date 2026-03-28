@@ -32,7 +32,7 @@ class CalosumAgentBuilder:
 
         return CalosumAgent(
             left_hemisphere=left_hemisphere,
-            action_runtime=ConcreteActionRuntime(),
+            action_runtime=ConcreteActionRuntime(vault=self.settings.vault),
             memory_system=self.build_memory_system(),
             telemetry_bus=self.build_telemetry_bus(),
         )
