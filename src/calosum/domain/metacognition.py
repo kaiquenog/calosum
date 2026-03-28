@@ -33,6 +33,7 @@ class ReflectionOutcome:
     selected_variant_id: str
     scoreboard: list[ReflectionScore]
     bridge_adjustments: dict[str, Any] = field(default_factory=dict)
+    selected_metrics: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -100,6 +101,7 @@ class GEAReflectionController:
             selected_variant_id=winner.variant_id,
             scoreboard=scoreboard,
             bridge_adjustments=bridge_adjustments,
+            selected_metrics=self._selected_metrics(selected_candidate, winner.score),
             notes=notes,
         )
 
@@ -118,6 +120,8 @@ class GEAReflectionController:
         for key, value in outcome.bridge_adjustments.items():
             if hasattr(tokenizer.config, key):
                 setattr(tokenizer.config, key, value)
+        if hasattr(tokenizer, "record_reflection_event"):
+            tokenizer.record_reflection_event(outcome.as_dict())
         if hasattr(tokenizer, "persist_adaptation_state"):
             tokenizer.persist_adaptation_state()
 
@@ -180,7 +184,15 @@ class GEAReflectionController:
         direct_overrides = {
             key: value
             for key, value in overrides.items()
-            if key in {"salience_threshold", "base_temperature", "max_directives", "bottleneck_tokens"}
+            if key in {
+                "salience_threshold",
+                "base_temperature",
+                "max_directives",
+                "bottleneck_tokens",
+                "salience_gain",
+                "salience_bias",
+                "temperature_bias",
+            }
         }
         if direct_overrides:
             return direct_overrides
@@ -189,6 +201,9 @@ class GEAReflectionController:
         current_temperature = base_tokenizer.config.base_temperature
         current_directives = base_tokenizer.config.max_directives
         current_tokens = base_tokenizer.config.bottleneck_tokens
+        current_salience_gain = getattr(base_tokenizer.config, "salience_gain", 1.0)
+        current_salience_bias = getattr(base_tokenizer.config, "salience_bias", 0.0)
+        current_temperature_bias = getattr(base_tokenizer.config, "temperature_bias", 0.0)
 
         turn_result = selected_candidate.turn_result
         empathy_priority = turn_result.bridge_packet.control.empathy_priority
@@ -200,19 +215,47 @@ class GEAReflectionController:
             proposed_tokens = min(8, current_tokens + (1 if emotional_bandwidth >= 2 else 0))
             proposed_temperature = min(0.45, round(current_temperature + 0.02, 2))
             proposed_directives = min(6, current_directives + 1)
+            proposed_salience_gain = min(1.5, round(current_salience_gain + 0.05, 2))
+            proposed_salience_bias = min(0.25, round(current_salience_bias + 0.02, 2))
+            proposed_temperature_bias = min(0.2, round(current_temperature_bias + 0.01, 2))
         else:
             proposed_threshold = min(0.95, round(current_threshold + self.adaptation_step, 2))
             proposed_tokens = max(4, current_tokens - (1 if emotional_bandwidth <= 1 else 0))
             proposed_temperature = max(0.1, round(current_temperature - 0.01, 2))
             proposed_directives = max(2, current_directives - 1)
+            proposed_salience_gain = max(0.6, round(current_salience_gain - 0.03, 2))
+            proposed_salience_bias = max(-0.25, round(current_salience_bias - 0.01, 2))
+            proposed_temperature_bias = max(-0.15, round(current_temperature_bias - 0.01, 2))
 
         if rejected_count or turn_result.runtime_retry_count:
             proposed_temperature = max(0.1, round(current_temperature - self.adaptation_step, 2))
             proposed_directives = max(2, current_directives - 1)
+            proposed_salience_gain = max(0.6, round(current_salience_gain - 0.05, 2))
+            proposed_temperature_bias = max(-0.15, round(current_temperature_bias - 0.03, 2))
 
         return {
             "salience_threshold": proposed_threshold,
             "base_temperature": proposed_temperature,
             "max_directives": proposed_directives,
             "bottleneck_tokens": proposed_tokens,
+            "salience_gain": proposed_salience_gain,
+            "salience_bias": proposed_salience_bias,
+            "temperature_bias": proposed_temperature_bias,
+        }
+
+    def _selected_metrics(
+        self,
+        selected_candidate: CognitiveCandidate,
+        winner_score: float,
+    ) -> dict[str, Any]:
+        turn_result = selected_candidate.turn_result
+        rejected_count = sum(1 for item in turn_result.execution_results if item.status == "rejected")
+        return {
+            "score": round(winner_score, 3),
+            "empathy_priority": turn_result.bridge_packet.control.empathy_priority,
+            "runtime_retry_count": turn_result.runtime_retry_count,
+            "runtime_rejected_count": rejected_count,
+            "semantic_rules": len(turn_result.memory_context.semantic_rules),
+            "action_count": len(turn_result.left_result.actions),
+            "calibrated_salience": turn_result.bridge_packet.salience,
         }

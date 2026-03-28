@@ -53,6 +53,7 @@ class ReflectionTests(unittest.TestCase):
                 CognitiveTokenizerConfig(
                     weights_path=base / "bridge_weights.pt",
                     adaptation_path=base / "bridge_config.json",
+                    reflection_history_path=base / "bridge_reflections.jsonl",
                 )
             )
             controller = GEAReflectionController()
@@ -64,7 +65,11 @@ class ReflectionTests(unittest.TestCase):
                     "base_temperature": 0.19,
                     "max_directives": 5,
                     "bottleneck_tokens": 7,
+                    "salience_gain": 1.12,
+                    "salience_bias": 0.03,
+                    "temperature_bias": -0.02,
                 },
+                selected_metrics={"score": 1.0, "runtime_retry_count": 0},
             )
 
             controller.apply_neuroplasticity(tokenizer, outcome)
@@ -73,13 +78,19 @@ class ReflectionTests(unittest.TestCase):
                 CognitiveTokenizerConfig(
                     weights_path=base / "bridge_weights.pt",
                     adaptation_path=base / "bridge_config.json",
+                    reflection_history_path=base / "bridge_reflections.jsonl",
                 )
             )
+            history = (base / "bridge_reflections.jsonl").read_text(encoding="utf-8").splitlines()
 
-        self.assertEqual(reloaded.config.salience_threshold, 0.42)
-        self.assertEqual(reloaded.config.base_temperature, 0.19)
-        self.assertEqual(reloaded.config.max_directives, 5)
-        self.assertEqual(reloaded.config.bottleneck_tokens, 7)
+            self.assertEqual(reloaded.config.salience_threshold, 0.42)
+            self.assertEqual(reloaded.config.base_temperature, 0.19)
+            self.assertEqual(reloaded.config.max_directives, 5)
+            self.assertEqual(reloaded.config.bottleneck_tokens, 7)
+            self.assertEqual(reloaded.config.salience_gain, 1.12)
+            self.assertEqual(reloaded.config.salience_bias, 0.03)
+            self.assertEqual(reloaded.config.temperature_bias, -0.02)
+            self.assertEqual(len(history), 1)
 
 
 if __name__ == "__main__":

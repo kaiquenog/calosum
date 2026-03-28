@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from calosum.shared.types import BridgeControlSignal, CognitiveBridgePacket, RightHemisphereState, SoftPromptToken
 
@@ -14,8 +15,12 @@ class CognitiveTokenizerConfig:
     base_temperature: float = 0.25
     salience_threshold: float = 0.7
     max_directives: int = 4
+    salience_gain: float = 1.0
+    salience_bias: float = 0.0
+    temperature_bias: float = 0.0
     weights_path: Path = Path(".calosum-runtime/state/bridge_weights.pt")
     adaptation_path: Path = Path(".calosum-runtime/state/bridge_config.json")
+    reflection_history_path: Path = Path(".calosum-runtime/state/bridge_reflections.jsonl")
 
 
 class CognitiveTokenizer:
@@ -72,7 +77,15 @@ class CognitiveTokenizer:
         except (OSError, json.JSONDecodeError):
             return
 
-        for key in ("bottleneck_tokens", "base_temperature", "salience_threshold", "max_directives"):
+        for key in (
+            "bottleneck_tokens",
+            "base_temperature",
+            "salience_threshold",
+            "max_directives",
+            "salience_gain",
+            "salience_bias",
+            "temperature_bias",
+        ):
             if key in data and hasattr(self.config, key):
                 setattr(self.config, key, data[key])
 
@@ -84,8 +97,17 @@ class CognitiveTokenizer:
             "base_temperature": self.config.base_temperature,
             "salience_threshold": self.config.salience_threshold,
             "max_directives": self.config.max_directives,
+            "salience_gain": self.config.salience_gain,
+            "salience_bias": self.config.salience_bias,
+            "temperature_bias": self.config.temperature_bias,
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def record_reflection_event(self, payload: dict[str, Any]) -> None:
+        path = Path(self.config.reflection_history_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     def translate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket:
         if self.use_neural and len(right_state.latent_vector) == self.latent_dim:
@@ -140,7 +162,11 @@ class CognitiveTokenizer:
         return self._build_packet(right_state, tokens, right_state.salience)
 
     def _build_packet(self, right_state: RightHemisphereState, tokens: list[SoftPromptToken], salience: float) -> CognitiveBridgePacket:
-        empathy_priority = salience >= self.config.salience_threshold
+        calibrated_salience = round(
+            min(1.0, max(0.0, salience * self.config.salience_gain + self.config.salience_bias)),
+            3,
+        )
+        empathy_priority = calibrated_salience >= self.config.salience_threshold
         directives = [
             "preserve typed reasoning",
             "ground decisions in available memory",
@@ -151,14 +177,28 @@ class CognitiveTokenizer:
 
         control = BridgeControlSignal(
             target_temperature=round(
-                self.config.base_temperature + (0.1 if empathy_priority else 0.0), 2
+                min(
+                    1.0,
+                    max(
+                        0.05,
+                        self.config.base_temperature
+                        + (0.1 if empathy_priority else 0.0)
+                        + self.config.temperature_bias,
+                    ),
+                ),
+                2,
             ),
             empathy_priority=empathy_priority,
             system_directives=directives[: self.config.max_directives],
             annotations={
                 "salience_threshold": self.config.salience_threshold,
                 "bottleneck_tokens": self.config.bottleneck_tokens,
-                "neural_active": getattr(self, "use_neural", False)
+                "neural_active": getattr(self, "use_neural", False),
+                "raw_salience": salience,
+                "calibrated_salience": calibrated_salience,
+                "salience_gain": self.config.salience_gain,
+                "salience_bias": self.config.salience_bias,
+                "temperature_bias": self.config.temperature_bias,
             },
         )
 
@@ -166,10 +206,11 @@ class CognitiveTokenizer:
             context_id=right_state.context_id,
             soft_prompts=tokens,
             control=control,
-            salience=salience,
+            salience=calibrated_salience,
             bridge_metadata={
                 "emotional_labels": right_state.emotional_labels,
                 "confidence": right_state.confidence,
+                "raw_salience": salience,
             },
         )
 

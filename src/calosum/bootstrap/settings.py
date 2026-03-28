@@ -29,6 +29,10 @@ class InfrastructureSettings:
     left_hemisphere_model: str | None = None
     left_hemisphere_provider: str | None = None
     left_hemisphere_reasoning_effort: str | None = None
+    embedding_endpoint: str | None = None
+    embedding_api_key: str | None = None
+    embedding_model: str | None = None
+    embedding_provider: str | None = None
     vault: dict[str, str] | None = None
 
     @classmethod
@@ -87,6 +91,10 @@ class InfrastructureSettings:
             left_hemisphere_model=env.get("CALOSUM_LEFT_MODEL"),
             left_hemisphere_provider=env.get("CALOSUM_LEFT_PROVIDER"),
             left_hemisphere_reasoning_effort=env.get("CALOSUM_LEFT_REASONING_EFFORT"),
+            embedding_endpoint=env.get("CALOSUM_EMBEDDING_ENDPOINT"),
+            embedding_api_key=env.get("CALOSUM_EMBEDDING_API_KEY"),
+            embedding_model=env.get("CALOSUM_EMBEDDING_MODEL"),
+            embedding_provider=env.get("CALOSUM_EMBEDDING_PROVIDER"),
             vault=vault if vault else None,
         )
         return settings.with_profile_defaults()
@@ -108,6 +116,10 @@ class InfrastructureSettings:
                 left_hemisphere_model=self.left_hemisphere_model,
                 left_hemisphere_provider=self.left_hemisphere_provider,
                 left_hemisphere_reasoning_effort=self.left_hemisphere_reasoning_effort,
+                embedding_endpoint=self.embedding_endpoint,
+                embedding_api_key=self.embedding_api_key,
+                embedding_model=self.embedding_model,
+                embedding_provider=self.embedding_provider,
                 vault=self.vault,
             )
 
@@ -129,6 +141,10 @@ class InfrastructureSettings:
                 left_hemisphere_model=self.left_hemisphere_model,
                 left_hemisphere_provider=self.left_hemisphere_provider,
                 left_hemisphere_reasoning_effort=self.left_hemisphere_reasoning_effort,
+                embedding_endpoint=self.embedding_endpoint,
+                embedding_api_key=self.embedding_api_key,
+                embedding_model=self.embedding_model,
+                embedding_provider=self.embedding_provider,
                 vault=self.vault,
             )
 

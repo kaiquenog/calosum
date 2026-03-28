@@ -56,19 +56,6 @@ class LeftHemisphereLogicalSLM:
             plan_steps=plan_steps,
         )
 
-        lambda_program = TypedLambdaProgram(
-            signature="Context -> Memory -> Decision",
-            expression=(
-                "(lambda context memory "
-                "(synthesize "
-                "(apply_soft_prompts context.bridge.soft_prompts) "
-                "(retrieve memory.semantic_rules) "
-                "(walk memory.knowledge_graph) "
-                "(emit typed_actions)))"
-            ),
-            expected_effect="Generate an empathetic and logically constrained decision.",
-        )
-
         actions = [
             PrimitiveAction(
                 action_type="respond_text",
@@ -112,6 +99,12 @@ class LeftHemisphereLogicalSLM:
                 )
             )
 
+        lambda_program = TypedLambdaProgram(
+            signature="Context -> Memory -> Decision",
+            expression=self._build_lambda_expression(actions),
+            expected_effect="Generate an empathetic and logically constrained decision.",
+        )
+
         reasoning_summary = [
             f"bridge_salience={bridge_packet.salience}",
             f"empathy_priority={empathy_priority}",
@@ -140,6 +133,20 @@ class LeftHemisphereLogicalSLM:
                 ],
                 "runtime_feedback": runtime_feedback or [],
             },
+        )
+
+    def _build_lambda_expression(self, actions: list[PrimitiveAction]) -> str:
+        if not actions:
+            return "(lambda context memory (sequence))"
+
+        emitted_actions = " ".join(f"(emit {action.action_type})" for action in actions)
+        return (
+            "(lambda context memory "
+            "(sequence "
+            "(apply_soft_prompts context.bridge.soft_prompts) "
+            "(retrieve memory.semantic_rules) "
+            "(walk memory.knowledge_graph) "
+            f"{emitted_actions}))"
         )
 
     async def areason(

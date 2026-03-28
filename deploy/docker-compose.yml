@@ -19,7 +19,8 @@ services:
       # APIs de Modelos de Linguagem são consumidas nativamente do pacote httpx para web e HuggingFace endpoints
       # Logo, os containers fake de "left-hemisphere" foram aposentados.
     volumes:
-      - calosum_data:/data
+      - ../.calosum-runtime:/data
+      - ../src:/app/src
     depends_on:
       - qdrant
       - otel-collector

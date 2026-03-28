@@ -56,7 +56,8 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.bridge": {"shared.types"},
     "domain.right_hemisphere": {"shared.types"},
     "domain.left_hemisphere": {"shared.types"},
-    "domain.runtime": {"shared.types"},
+    "domain.runtime": {"domain.runtime_dsl", "shared.types"},
+    "domain.runtime_dsl": {"shared.types"},
     "domain.memory": {"shared.types"},
     "domain.persistent_memory": {"domain.memory", "shared.serialization", "shared.types"},
     "domain.telemetry": {"shared.types"},
@@ -82,6 +83,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.llm_qwen", 
         "adapters.memory_qdrant",
         "adapters.right_hemisphere_hf",
+        "adapters.text_embeddings",
         "domain.memory",
         "domain.orchestrator",
         "domain.persistent_memory",
@@ -109,8 +111,9 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.action_runtime": {"shared.async_utils", "shared.types"},
     "adapters.llm_payloads": {"shared.types"},
     "adapters.llm_qwen": {"adapters.llm_payloads", "shared.async_utils", "shared.types"},
-    "adapters.memory_qdrant": {"shared.async_utils", "shared.types", "domain.memory"},
+    "adapters.memory_qdrant": {"adapters.text_embeddings", "shared.async_utils", "shared.types", "domain.memory"},
     "adapters.right_hemisphere_hf": {"shared.types"},
+    "adapters.text_embeddings": {"shared.async_utils"},
     "adapters.night_trainer": set(),
 
     # ROOT

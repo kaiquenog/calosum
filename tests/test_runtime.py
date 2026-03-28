@@ -116,6 +116,62 @@ class StrictRuntimeTests(unittest.TestCase):
 
         self.assertEqual(execution[0].status, "executed")
 
+    def test_runtime_respects_lambda_sequence_order(self) -> None:
+        runtime = StrictLambdaRuntime()
+        result = LeftHemisphereResult(
+            response_text="test",
+            lambda_program=TypedLambdaProgram(
+                signature="Unit -> Actions",
+                expression="lambda _: sequence(load_semantic_rules(), respond_text())",
+                expected_effect="ordered execution",
+            ),
+            actions=[
+                PrimitiveAction(
+                    action_type="respond_text",
+                    typed_signature="ResponsePlan -> SafeTextMessage",
+                    payload={"text": "ok"},
+                    safety_invariants=["text only"],
+                ),
+                PrimitiveAction(
+                    action_type="load_semantic_rules",
+                    typed_signature="MemoryContext -> RuleSet",
+                    payload={"rules": ["r1"]},
+                    safety_invariants=["safe"],
+                ),
+            ],
+            reasoning_summary=[],
+        )
+
+        execution = runtime.run(result)
+
+        self.assertEqual([item.action_type for item in execution], ["load_semantic_rules", "respond_text"])
+
+    def test_runtime_supports_symbolic_conditionals(self) -> None:
+        runtime = StrictLambdaRuntime()
+        result = LeftHemisphereResult(
+            response_text="test",
+            lambda_program=TypedLambdaProgram(
+                signature="Context -> Decision",
+                expression="(lambda context (if (has_action propose_plan) (emit propose_plan) (emit respond_text)))",
+                expected_effect="conditional execution",
+            ),
+            actions=[
+                PrimitiveAction(
+                    action_type="propose_plan",
+                    typed_signature="DecisionContext -> TypedPlan",
+                    payload={"steps": ["a"]},
+                    safety_invariants=["advisory only"],
+                )
+            ],
+            reasoning_summary=[],
+        )
+
+        execution = runtime.run(result)
+
+        self.assertEqual(len(execution), 1)
+        self.assertEqual(execution[0].action_type, "propose_plan")
+        self.assertEqual(execution[0].status, "executed")
+
 
 if __name__ == "__main__":
     unittest.main()

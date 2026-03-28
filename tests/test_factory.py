@@ -68,6 +68,20 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
         self.assertEqual(description["left_hemisphere_backend"], "openai_responses_adapter")
 
+    def test_builder_derives_embedding_backend_from_openai_settings_for_qdrant(self) -> None:
+        settings = InfrastructureSettings(
+            profile=InfrastructureProfile.DOCKER,
+            vector_db_url="http://qdrant:6333",
+            left_hemisphere_endpoint="https://api.openai.com/v1",
+            left_hemisphere_api_key="sk-test",
+        ).with_profile_defaults()
+        builder = CalosumAgentBuilder(settings)
+        description = builder.describe()
+
+        self.assertEqual(description["embedding_provider"], "openai")
+        self.assertEqual(description["embedding_model"], "text-embedding-3-small")
+        self.assertEqual(description["embedding_endpoint"], "https://api.openai.com/v1")
+
 
 if __name__ == "__main__":
     unittest.main()

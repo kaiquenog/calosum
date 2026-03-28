@@ -2,7 +2,7 @@
 
 O **Calosum** é um esqueleto para a construção de um Agente de Inteligência Artificial Neuro-simbólico. Ele foi estruturado simulando partes do córtex cerebral humano, dividindo a responsabilidade do agente em diferentes "regiões", como um hemisfério emocional e um lógico, conectados por uma ponte cognitiva.
 
-Atualmente, o repositório é um **alicerce arquitetural**. Isso significa que a base de código (o design, os contratos e a infraestrutura) está pronta, possuindo simulações locais (mocks) que demonstram como o fluxo completo de pensamento do agente acontece, mas a integração com provedores reais (como um LLM da OpenAI para o raciocínio ou um banco vetorial Qdrant para memória) deve ser implementada como o próximo passo.
+Atualmente, o repositório é um **alicerce arquitetural com integrações reais parciais**. A base de código, os contratos e a infraestrutura já estão prontos; o hemisfério esquerdo pode falar com OpenAI ou endpoints OpenAI-compatible, e a memória vetorial já usa Qdrant com embeddings configuráveis e fallback explícito quando a stack local ou remota não estiver disponível.
 
 ## Arquitetura Base
 
@@ -65,6 +65,19 @@ CALOSUM_LEFT_MODEL="gpt-5-mini"
 
 Com esse formato, o adapter autodetecta a OpenAI oficial e usa `Responses API` com Structured Outputs. Para workloads mais pesados, troque o modelo para `gpt-5.4`.
 
+### 2.2. Usando embeddings reais na memória vetorial
+
+Se o Qdrant estiver ativo, voce pode configurar um backend de embeddings dedicado:
+
+```bash
+CALOSUM_VECTORDB_URL="http://localhost:6333"
+CALOSUM_EMBEDDING_ENDPOINT="https://api.openai.com/v1"
+CALOSUM_EMBEDDING_API_KEY="sua-chave"
+CALOSUM_EMBEDDING_MODEL="text-embedding-3-small"
+```
+
+Sem essas variaveis, o builder reaproveita a configuracao OpenAI do hemisferio esquerdo quando ela estiver presente. Se nenhum backend remoto ou local estiver disponivel, o adapter cai para um embedding lexical deterministico, preservando a busca vetorial sem falha dura.
+
 ### 3. Experimentos de Ciclo Cognitivo e Reflexão
 
 Na pasta `examples/`, você encontra scripts focados em demonstrar as features específicas de fluxo interno do agente.
@@ -112,7 +125,7 @@ Se o seu objetivo é treinar o agente, ajustar pesos (LoRA/PEFT) ou modificar o 
 
 1. **A Regra de Ouro (Isolamento de Tensores):** Todo o código de Machine Learning (`torch`, `transformers`, `peft`) **deve viver exclusivamente na camada `adapters/`**. O núcleo do sistema (`domain/`) não conhece tensores, apenas tipos nativos e contratos (`shared/`).
 2. **Treinamento Contínuo (Sleep Mode):** Os ajustes finos contínuos e atualizações de pesos LoRA acontecem em rotinas específicas, como as implementadas em `src/calosum/adapters/night_trainer.py`.
-3. **Percepção e Embeddings (Text-JEPA):** Para calibrar a extração de "saliência" (urgência/emoção) ou trocar o modelo de embeddings, as alterações devem ocorrer em `src/calosum/adapters/right_hemisphere_hf.py`.
+3. **Percepção e Embeddings (Text-JEPA):** Para calibrar a extração de "saliência" (urgência/emoção) do hemisfério direito, altere `src/calosum/adapters/right_hemisphere_hf.py`. Para a memória vetorial do Qdrant, os backends de embedding ficam em `src/calosum/adapters/text_embeddings.py`.
 4. **Raciocínio Lógico (LLM):** Mudanças de system prompt, extração estruturada e injeção de "soft prompts" do corpo caloso residem nos adapters do Hemisfério Esquerdo (ex: `src/calosum/adapters/llm_qwen.py`).
 5. **Governança (Harness):** Qualquer tentativa de importar bibliotecas de ML diretamente no `domain/` ou `shared/` será bloqueada pelo validador arquitetural `harness_checks.py`. Sempre passe os dados através das interfaces (Ports).
 

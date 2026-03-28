@@ -12,6 +12,10 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - `CALOSUM_LEFT_MODEL`: Nome do modelo (ex: `Qwen/Qwen-3.5-9B-Instruct`).
 - `CALOSUM_LEFT_PROVIDER`: Opcional. Forca o modo `openai_responses`, `openai_chat` ou `openai_compatible_chat`.
 - `CALOSUM_LEFT_REASONING_EFFORT`: Opcional. Quando o provider e OpenAI Responses, envia `reasoning.effort` para modelos compatíveis.
+- `CALOSUM_EMBEDDING_ENDPOINT`: Opcional. Endpoint para embeddings usados pelo adapter Qdrant.
+- `CALOSUM_EMBEDDING_MODEL`: Opcional. Modelo de embedding. Em OpenAI oficial, o default e `text-embedding-3-small`.
+- `CALOSUM_EMBEDDING_PROVIDER`: Opcional. Forca `openai`, `openai_compatible`, `huggingface` ou `lexical`.
+- `CALOSUM_EMBEDDING_API_KEY`: Opcional. Chave especifica para o backend de embeddings.
 - `CALOSUM_API_PORT`: Porta para a API REST/SSE (padrão: 8000).
 - `CALOSUM_VAULT_*`: Variáveis prefixadas com este padrão são automaticamente injetadas de forma segura no `ActionRuntime` (ex: `CALOSUM_VAULT_GITHUB_TOKEN`).
 
@@ -30,6 +34,7 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - Os eventos de telemetria vão para `.calosum-runtime/telemetry/events.jsonl`.
 - Se o Qdrant não for configurado, a memória vetorial salva localmente em formato `.jsonl` serializado.
 - Sem configuracao explicita, a API e o comando `python3 -m calosum.bootstrap.cli chat` passam a adotar este modo localmente para permitir que a UI consulte a mesma telemetria entre processos.
+- Quando o Qdrant estiver ativo, o adapter de memoria usa embeddings configuraveis. Sem endpoint externo ou stack local de Sentence Transformers, ele cai para um embedding lexical deterministico para manter a busca vetorial funcional.
 
 ### 3. Docker
 `CALOSUM_INFRA_PROFILE=docker`
@@ -62,5 +67,6 @@ Nesse fluxo, a CLI grava a telemetria em `.calosum-runtime/telemetry/events.json
 ## OpenAI
 
 - Se `CALOSUM_LEFT_ENDPOINT` apontar para `https://api.openai.com/v1`, o adapter autodetecta OpenAI oficial e usa `Responses API` com Structured Outputs.
+- Se `CALOSUM_VECTORDB_URL` estiver configurado e nenhum backend de embedding separado for informado, o builder reutiliza o endpoint OpenAI oficial para embeddings e deriva `text-embedding-3-small`.
 - Se voce apontar para um endpoint local no formato OpenAI-compatible, como Ollama ou vLLM, o adapter mantem `chat/completions`.
 - Para workloads mais inteligentes e pesados, prefira `gpt-5.4`. Para menor custo e latencia, prefira `gpt-5-mini`.

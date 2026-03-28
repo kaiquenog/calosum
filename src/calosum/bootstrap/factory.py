@@ -8,6 +8,7 @@ from calosum.adapters.action_runtime import ConcreteActionRuntime
 from calosum.adapters.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.adapters.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
 from calosum.adapters.right_hemisphere_hf import HuggingFaceRightHemisphereAdapter
+from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 from calosum.domain.memory import DualMemorySystem
 from calosum.domain.orchestrator import CalosumAgent
 from calosum.domain.persistent_memory import PersistentDualMemorySystem
@@ -23,6 +24,7 @@ class CalosumAgentBuilder:
     settings: InfrastructureSettings
     _last_right_hemisphere_backend: str | None = field(default=None, init=False, repr=False)
     _last_left_hemisphere_backend: str | None = field(default=None, init=False, repr=False)
+    _last_embedding_backend: str | None = field(default=None, init=False, repr=False)
 
     def build(self) -> CalosumAgent:
         if self.settings.left_hemisphere_endpoint:
@@ -67,7 +69,11 @@ class CalosumAgentBuilder:
 
     def build_memory_system(self):
         if self.settings.vector_db_url:
-            return QdrantDualMemoryAdapter(QdrantAdapterConfig(url=self.settings.vector_db_url))
+            embedder = self.build_text_embedder()
+            return QdrantDualMemoryAdapter(
+                QdrantAdapterConfig(url=self.settings.vector_db_url),
+                embedder=embedder,
+            )
         
         if self.settings.profile in {
             InfrastructureProfile.PERSISTENT,
@@ -82,6 +88,29 @@ class CalosumAgentBuilder:
         if self.settings.otlp_jsonl is not None:
             return CognitiveTelemetryBus(OTLPJsonlTelemetrySink(self.settings.otlp_jsonl))
         return CognitiveTelemetryBus(InMemoryTelemetrySink())
+
+    def build_text_embedder(self) -> TextEmbeddingAdapter:
+        endpoint = self.settings.embedding_endpoint
+        api_key = self.settings.embedding_api_key
+        provider = self.settings.embedding_provider
+        model = self.settings.embedding_model
+
+        if endpoint is None and self._left_endpoint_supports_embeddings():
+            endpoint = self.settings.left_hemisphere_endpoint
+            api_key = api_key or self.settings.left_hemisphere_api_key
+            provider = provider or self._default_embedding_provider()
+            model = model or "text-embedding-3-small"
+
+        embedder = TextEmbeddingAdapter(
+            TextEmbeddingAdapterConfig(
+                provider=provider or "auto",
+                api_url=endpoint,
+                api_key=api_key,
+                model_name=model or "text-embedding-3-small",
+            )
+        )
+        self._last_embedding_backend = embedder.backend_name()
+        return embedder
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -103,6 +132,10 @@ class CalosumAgentBuilder:
             "left_hemisphere_model": self.settings.left_hemisphere_model,
             "left_hemisphere_provider": self.settings.left_hemisphere_provider,
             "left_hemisphere_reasoning_effort": self.settings.left_hemisphere_reasoning_effort,
+            "embedding_backend": self._embedding_backend_name(),
+            "embedding_endpoint": self.settings.embedding_endpoint or self._derived_embedding_endpoint(),
+            "embedding_model": self.settings.embedding_model or self._derived_embedding_model(),
+            "embedding_provider": self.settings.embedding_provider or self._derived_embedding_provider(),
         }
 
     def _memory_backend_name(self) -> str:
@@ -126,6 +159,11 @@ class CalosumAgentBuilder:
     def _left_hemisphere_backend_name(self) -> str:
         return self._last_left_hemisphere_backend or self._left_hemisphere_backend_name_from_settings()
 
+    def _embedding_backend_name(self) -> str | None:
+        if not self.settings.vector_db_url:
+            return None
+        return self._last_embedding_backend or self._derived_embedding_provider() or "auto"
+
     def _left_hemisphere_backend_name_from_settings(self) -> str:
         endpoint = (self.settings.left_hemisphere_endpoint or "").lower()
         provider = (self.settings.left_hemisphere_provider or "auto").lower()
@@ -141,3 +179,37 @@ class CalosumAgentBuilder:
         if endpoint:
             return "openai_compatible_chat_adapter"
         return "openai_compatible_chat_adapter_default"
+
+    def _left_endpoint_supports_embeddings(self) -> bool:
+        endpoint = (self.settings.left_hemisphere_endpoint or "").lower()
+        provider = (self.settings.left_hemisphere_provider or "").lower()
+        if "api.openai.com" in endpoint:
+            return True
+        return provider in {"openai", "openai_responses", "responses"}
+
+    def _default_embedding_provider(self) -> str:
+        endpoint = (self.settings.left_hemisphere_endpoint or "").lower()
+        if "api.openai.com" in endpoint:
+            return "openai"
+        return "openai_compatible"
+
+    def _derived_embedding_endpoint(self) -> str | None:
+        if self.settings.embedding_endpoint:
+            return self.settings.embedding_endpoint
+        if self._left_endpoint_supports_embeddings():
+            return self.settings.left_hemisphere_endpoint
+        return None
+
+    def _derived_embedding_model(self) -> str | None:
+        if self.settings.embedding_model:
+            return self.settings.embedding_model
+        if self._left_endpoint_supports_embeddings():
+            return "text-embedding-3-small"
+        return None
+
+    def _derived_embedding_provider(self) -> str | None:
+        if self.settings.embedding_provider:
+            return self.settings.embedding_provider
+        if self._left_endpoint_supports_embeddings():
+            return self._default_embedding_provider()
+        return None
