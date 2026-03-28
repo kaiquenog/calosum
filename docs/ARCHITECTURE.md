@@ -18,7 +18,7 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
    Tipos compartilhados, contratos de dados e utilitários puros de serialização.
 2. **`domain/`** (`advanced_interfaces.py`, `bridge.py`, `orchestrator.py`, `right_hemisphere.py`, `left_hemisphere.py`, `memory.py`, `persistent_memory.py`, `runtime.py`, `telemetry.py`, `metacognition.py`, `agent_execution.py`)
    Modelos de negócios do agente neuro-simbólico. Pura lógica sem detalhes I/O diretos.
-3. **`adapters/`** (`llm_qwen.py`, `memory_qdrant.py`, `action_runtime.py`, `right_hemisphere_hf.py`, `night_trainer.py`)
+3. **`adapters/`** (`llm_qwen.py`, `llm_payloads.py`, `memory_qdrant.py`, `action_runtime.py`, `right_hemisphere_hf.py`, `night_trainer.py`)
    Implementações concretas dos ports que conversam com LLMs reais, bancos vetoriais, redes neurais de embedding ou executam tarefas lógicas seguras.
 4. **`bootstrap/`** (`settings.py`, `factory.py`, `cli.py`, `api.py`, `__main__.py`)
    Entrada da aplicação que avalia configurações locais, inicia a API REST/SSE e monta todo o motor ligando os mundos.

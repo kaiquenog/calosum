@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Activity, Brain, CheckCircle, Clock, Zap } from 'lucide-react';
 import './App.css';
 
@@ -47,15 +47,25 @@ interface Dashboard {
   reflection: ReflectionEvent[];
 }
 
+const SESSION_STORAGE_KEY = 'calosum.telemetry.session_id';
+const DEFAULT_SESSION_ID = 'terminal-session';
+
 function App() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState('teste-ui-123');
+  const [sessionId, setSessionId] = useState(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_SESSION_ID;
+    }
+    return window.localStorage.getItem(SESSION_STORAGE_KEY) ?? DEFAULT_SESSION_ID;
+  });
   const apiBase = import.meta.env.VITE_CALOSUM_API_BASE ?? 'http://localhost:8000';
 
-  const fetchDashboard = async () => {
-    setLoading(true);
+  const fetchDashboard = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const response = await fetch(`${apiBase}/v1/telemetry/dashboard/${sessionId}`);
@@ -68,14 +78,26 @@ function App() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erro de conexão');
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
-  };
+  }, [apiBase, sessionId]);
 
   useEffect(() => {
-    fetchDashboard();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    void fetchDashboard(false);
+    const intervalId = window.setInterval(() => {
+      void fetchDashboard(true);
+    }, 2500);
+
+    return () => window.clearInterval(intervalId);
+  }, [fetchDashboard]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-8 font-sans">
@@ -97,7 +119,7 @@ function App() {
             placeholder="Session ID"
           />
           <button 
-            onClick={fetchDashboard}
+            onClick={() => void fetchDashboard(false)}
             disabled={loading}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
           >
@@ -114,7 +136,9 @@ function App() {
       )}
 
       {!dashboard ? (
-        <div className="text-center text-gray-500 py-20">Nenhum dado de telemetria encontrado para esta sessão.</div>
+        <div className="text-center text-gray-500 py-20">
+          Nenhum dado de telemetria encontrado para a sessão <span className="font-mono text-gray-300">{sessionId}</span>.
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

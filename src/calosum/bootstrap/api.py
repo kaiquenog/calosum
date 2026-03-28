@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from functools import lru_cache
 from typing import Any
 
@@ -9,7 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
 from calosum.bootstrap.factory import CalosumAgentBuilder
-from calosum.bootstrap.settings import InfrastructureSettings
+from calosum.bootstrap.settings import (
+    InfrastructureSettings,
+    should_enable_local_persistence_defaults,
+    with_local_persistence_defaults,
+)
 from calosum.shared.serialization import to_primitive
 from calosum.shared.types import UserTurn
 
@@ -20,7 +25,15 @@ app = FastAPI(title="Calosum API")
 
 @lru_cache(maxsize=1)
 def get_settings() -> InfrastructureSettings:
-    return InfrastructureSettings.from_sources()
+    return resolve_api_settings(os.environ)
+
+
+def resolve_api_settings(environ: dict[str, str] | None = None) -> InfrastructureSettings:
+    env = environ or os.environ
+    settings = InfrastructureSettings.from_sources(environ=env)
+    if should_enable_local_persistence_defaults(settings, environ=env):
+        return with_local_persistence_defaults(settings)
+    return settings
 
 
 @lru_cache(maxsize=1)

@@ -8,7 +8,12 @@ from typing import Any
 from calosum.bootstrap.factory import CalosumAgentBuilder
 from calosum.domain.metacognition import CognitiveVariantSpec
 from calosum.shared.serialization import to_json, to_primitive
-from calosum.bootstrap.settings import InfrastructureProfile, InfrastructureSettings
+from calosum.bootstrap.settings import (
+    InfrastructureProfile,
+    InfrastructureSettings,
+    should_enable_local_persistence_defaults,
+    with_local_persistence_defaults,
+)
 from calosum.shared.types import Modality, MultimodalSignal, UserTurn
 
 
@@ -63,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    settings = InfrastructureSettings.from_sources(args=args)
+    settings = _resolve_settings(args)
     builder = CalosumAgentBuilder(settings)
     agent = builder.build()
 
@@ -193,6 +198,13 @@ def _handle_chat(agent, args: argparse.Namespace) -> int:
             print(f"Error handling turn: {e}", file=sys.stderr)
             
     return 0
+
+
+def _resolve_settings(args: argparse.Namespace) -> InfrastructureSettings:
+    settings = InfrastructureSettings.from_sources(args=args)
+    if args.command == "chat" and should_enable_local_persistence_defaults(settings, args=args):
+        return with_local_persistence_defaults(settings)
+    return settings
 
 
 if __name__ == "__main__":

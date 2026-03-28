@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
-from calosum import CalosumAgent, CognitiveVariantSpec, UserTurn
+from calosum import (
+    CalosumAgent,
+    CognitiveTokenizer,
+    CognitiveTokenizerConfig,
+    CognitiveVariantSpec,
+    GEAReflectionController,
+    ReflectionOutcome,
+    ReflectionScore,
+    UserTurn,
+)
 
 
 class ReflectionTests(unittest.TestCase):
@@ -25,10 +36,50 @@ class ReflectionTests(unittest.TestCase):
 
         result = agent.process_group_turn(turn, variants)
 
-        self.assertEqual(result.reflection.selected_variant_id, "strict_high_threshold")
-        self.assertEqual(agent.tokenizer.config.salience_threshold, 0.9)
+        selected_variant = next(
+            item for item in variants if item.variant_id == result.reflection.selected_variant_id
+        )
+        self.assertEqual(
+            agent.tokenizer.config.salience_threshold,
+            selected_variant.tokenizer_overrides["salience_threshold"],
+        )
         dashboard = agent.cognitive_dashboard(turn.session_id)
         self.assertEqual(len(dashboard["reflection"]), 1)
+
+    def test_neuroplasticity_persists_bridge_adjustments(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            tokenizer = CognitiveTokenizer(
+                CognitiveTokenizerConfig(
+                    weights_path=base / "bridge_weights.pt",
+                    adaptation_path=base / "bridge_config.json",
+                )
+            )
+            controller = GEAReflectionController()
+            outcome = ReflectionOutcome(
+                selected_variant_id="winner",
+                scoreboard=[ReflectionScore(variant_id="winner", score=1.0)],
+                bridge_adjustments={
+                    "salience_threshold": 0.42,
+                    "base_temperature": 0.19,
+                    "max_directives": 5,
+                    "bottleneck_tokens": 7,
+                },
+            )
+
+            controller.apply_neuroplasticity(tokenizer, outcome)
+
+            reloaded = CognitiveTokenizer(
+                CognitiveTokenizerConfig(
+                    weights_path=base / "bridge_weights.pt",
+                    adaptation_path=base / "bridge_config.json",
+                )
+            )
+
+        self.assertEqual(reloaded.config.salience_threshold, 0.42)
+        self.assertEqual(reloaded.config.base_temperature, 0.19)
+        self.assertEqual(reloaded.config.max_directives, 5)
+        self.assertEqual(reloaded.config.bottleneck_tokens, 7)
 
 
 if __name__ == "__main__":

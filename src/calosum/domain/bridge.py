@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +15,7 @@ class CognitiveTokenizerConfig:
     salience_threshold: float = 0.7
     max_directives: int = 4
     weights_path: Path = Path(".calosum-runtime/state/bridge_weights.pt")
+    adaptation_path: Path = Path(".calosum-runtime/state/bridge_config.json")
 
 
 class CognitiveTokenizer:
@@ -28,6 +30,7 @@ class CognitiveTokenizer:
 
     def __init__(self, config: CognitiveTokenizerConfig | None = None) -> None:
         self.config = config or CognitiveTokenizerConfig()
+        self._load_adaptation_state()
         self._init_neural_bridge()
 
     def _init_neural_bridge(self) -> None:
@@ -58,6 +61,31 @@ class CognitiveTokenizer:
             self.use_neural = True
         except ImportError:
             self.use_neural = False
+
+    def _load_adaptation_state(self) -> None:
+        path = Path(self.config.adaptation_path)
+        if not path.exists():
+            return
+
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+
+        for key in ("bottleneck_tokens", "base_temperature", "salience_threshold", "max_directives"):
+            if key in data and hasattr(self.config, key):
+                setattr(self.config, key, data[key])
+
+    def persist_adaptation_state(self) -> None:
+        path = Path(self.config.adaptation_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "bottleneck_tokens": self.config.bottleneck_tokens,
+            "base_temperature": self.config.base_temperature,
+            "salience_threshold": self.config.salience_threshold,
+            "max_directives": self.config.max_directives,
+        }
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def translate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket:
         if self.use_neural and len(right_state.latent_vector) == self.latent_dim:

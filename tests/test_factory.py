@@ -57,6 +57,17 @@ class InfrastructureBuilderTests(unittest.TestCase):
         self.assertEqual(description["otel_collector_endpoint"], "http://otel-collector:4318")
         self.assertEqual(description["jaeger_ui_url"], "http://jaeger:16686")
 
+    def test_builder_describes_openai_responses_backend_when_openai_base_url_is_configured(self) -> None:
+        settings = InfrastructureSettings(
+            left_hemisphere_endpoint="https://api.openai.com/v1",
+            left_hemisphere_api_key="sk-test",
+            left_hemisphere_model="gpt-5-mini",
+        ).with_profile_defaults()
+        builder = CalosumAgentBuilder(settings)
+        description = builder.describe()
+
+        self.assertEqual(description["left_hemisphere_backend"], "openai_responses_adapter")
+
 
 if __name__ == "__main__":
     unittest.main()

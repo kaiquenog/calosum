@@ -118,6 +118,8 @@ class GEAReflectionController:
         for key, value in outcome.bridge_adjustments.items():
             if hasattr(tokenizer.config, key):
                 setattr(tokenizer.config, key, value)
+        if hasattr(tokenizer, "persist_adaptation_state"):
+            tokenizer.persist_adaptation_state()
 
     def _score_candidate(self, candidate: CognitiveCandidate) -> tuple[float, list[str]]:
         turn_result = candidate.turn_result
@@ -154,6 +156,13 @@ class GEAReflectionController:
             score += 0.15
             reasons.append("semantic memory reused")
 
+        if turn_result.runtime_retry_count == 0:
+            score += 0.1
+            reasons.append("no runtime retries needed")
+        else:
+            score -= turn_result.runtime_retry_count * 0.15
+            reasons.append(f"runtime retries={turn_result.runtime_retry_count}")
+
         salience_gap = abs(
             bridge.salience - turn_result.bridge_packet.control.annotations["salience_threshold"]
         )
@@ -168,13 +177,42 @@ class GEAReflectionController:
         base_tokenizer: CognitiveTokenizer,
     ) -> dict[str, Any]:
         overrides = dict(selected_candidate.variant.tokenizer_overrides)
-        if "salience_threshold" in overrides:
-            return {"salience_threshold": overrides["salience_threshold"]}
+        direct_overrides = {
+            key: value
+            for key, value in overrides.items()
+            if key in {"salience_threshold", "base_temperature", "max_directives", "bottleneck_tokens"}
+        }
+        if direct_overrides:
+            return direct_overrides
 
         current_threshold = base_tokenizer.config.salience_threshold
-        if selected_candidate.turn_result.bridge_packet.control.empathy_priority:
+        current_temperature = base_tokenizer.config.base_temperature
+        current_directives = base_tokenizer.config.max_directives
+        current_tokens = base_tokenizer.config.bottleneck_tokens
+
+        turn_result = selected_candidate.turn_result
+        empathy_priority = turn_result.bridge_packet.control.empathy_priority
+        rejected_count = sum(1 for item in turn_result.execution_results if item.status == "rejected")
+        emotional_bandwidth = len(turn_result.right_state.emotional_labels)
+
+        if empathy_priority:
             proposed_threshold = max(0.1, round(current_threshold - self.adaptation_step, 2))
+            proposed_tokens = min(8, current_tokens + (1 if emotional_bandwidth >= 2 else 0))
+            proposed_temperature = min(0.45, round(current_temperature + 0.02, 2))
+            proposed_directives = min(6, current_directives + 1)
         else:
             proposed_threshold = min(0.95, round(current_threshold + self.adaptation_step, 2))
+            proposed_tokens = max(4, current_tokens - (1 if emotional_bandwidth <= 1 else 0))
+            proposed_temperature = max(0.1, round(current_temperature - 0.01, 2))
+            proposed_directives = max(2, current_directives - 1)
 
-        return {"salience_threshold": proposed_threshold}
+        if rejected_count or turn_result.runtime_retry_count:
+            proposed_temperature = max(0.1, round(current_temperature - self.adaptation_step, 2))
+            proposed_directives = max(2, current_directives - 1)
+
+        return {
+            "salience_threshold": proposed_threshold,
+            "base_temperature": proposed_temperature,
+            "max_directives": proposed_directives,
+            "bottleneck_tokens": proposed_tokens,
+        }

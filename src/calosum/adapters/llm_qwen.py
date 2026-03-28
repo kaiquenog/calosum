@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
+from calosum.adapters.llm_payloads import (
+    build_left_hemisphere_prompt,
+    extract_chat_content,
+    extract_responses_content,
+    left_hemisphere_result_schema,
+)
 from calosum.shared.async_utils import run_sync
 from calosum.shared.types import (
     ActionExecutionResult,
@@ -16,6 +25,8 @@ from calosum.shared.types import (
     UserTurn,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class QwenAdapterConfig:
@@ -23,20 +34,29 @@ class QwenAdapterConfig:
     api_key: str = "empty"
     model_name: str = "Qwen/Qwen-3.5-9B-Instruct"
     max_tokens: int = 4096
+    provider: str = "auto"
+    reasoning_effort: str | None = None
 
 
 class QwenLeftHemisphereAdapter:
     """
-    Adapter real que se comunica com um modelo Qwen3.5 (via vLLM/Ollama ou endpoint compatível).
-    Ele empacota o contexto em um prompt e obriga o modelo a responder estruturadamente em JSON.
+    Adapter estruturado para o hemisferio esquerdo.
+
+    Mantem compatibilidade com endpoints locais no formato OpenAI-compatible,
+    mas detecta automaticamente a OpenAI oficial e usa o Responses API com
+    Structured Outputs quando apropriado.
     """
 
-    def __init__(self, config: QwenAdapterConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: QwenAdapterConfig | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
         self.config = config or QwenAdapterConfig()
-        self.client = httpx.AsyncClient(
-            headers={"Authorization": f"Bearer {self.config.api_key}"},
-            timeout=300.0,
-        )
+        headers: dict[str, str] = {}
+        if self.config.api_key and self.config.api_key != "empty":
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+        self.client = client or httpx.AsyncClient(headers=headers, timeout=300.0)
 
     def reason(
         self,
@@ -48,7 +68,11 @@ class QwenLeftHemisphereAdapter:
     ) -> LeftHemisphereResult:
         return run_sync(
             self.areason(
-                user_turn, bridge_packet, memory_context, runtime_feedback, attempt
+                user_turn=user_turn,
+                bridge_packet=bridge_packet,
+                memory_context=memory_context,
+                runtime_feedback=runtime_feedback,
+                attempt=attempt,
             )
         )
 
@@ -60,61 +84,47 @@ class QwenLeftHemisphereAdapter:
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
     ) -> LeftHemisphereResult:
-        prompt = self._build_prompt(user_turn, bridge_packet, memory_context, runtime_feedback)
-
-        payload = {
-            "model": self.config.model_name,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a logical neuro-symbolic agent. Output valid JSON only, corresponding to LeftHemisphereResult format.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": self.config.max_tokens,
-            "response_format": {"type": "json_object"},
-        }
+        prompt = build_left_hemisphere_prompt(
+            user_turn,
+            bridge_packet,
+            memory_context,
+            runtime_feedback,
+        )
+        request = self._build_request(prompt)
 
         try:
-            response = await self.client.post(self.config.api_url, json=payload)
+            response = await self.client.post(request["url"], json=request["payload"])
             response.raise_for_status()
             data = response.json()
-            msg = data["choices"][0]["message"]
-            content = msg.get("content", "")
-            
-            # Limpa block ticks (```json e ```) que LLMs podem injetar
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].strip()
-                
-            # Tratamento para modelos pequenos (Qwen 0.5B/1.5B) que enviam seu "Thinking Process" antes do JSON
-            if "{" in content and "}" in content:
-                start_idx = content.find("{")
-                end_idx = content.rfind("}") + 1
-                content = content[start_idx:end_idx]
-            
-            if not content.strip():
-                reasoning = msg.get("reasoning", "")
-                if reasoning:
-                    return self._fallback_result(f"Modelo retornou apenas reasoning vazio de content: {reasoning}")
-                return self._fallback_result("Conteúdo de resposta vazio do modelo.")
+            content = self._extract_content(data, request["api_mode"])
 
-            try:
-                parsed = json.loads(content)
-                return self._parse_to_result(parsed)
-            except json.JSONDecodeError as e:
-                return LeftHemisphereResult(
-                    response_text=content,
-                    lambda_program=TypedLambdaProgram("Any", "()", "None"),
-                    actions=[],
-                    reasoning_summary=[f"Raw text extraction (JSON parse failed: {e})"],
-                    telemetry={"adapter": "QwenLeftHemisphereAdapter"}
+            if not content.strip():
+                return self._fallback_result(
+                    f"empty_response_from_{request['api_mode']}",
+                    request["api_mode"],
+                    request["resolved_model"],
                 )
-        except Exception as e:
-            import traceback
-            # Fallback seguro com repr(e)
-            return self._fallback_result(repr(e))
+
+            parsed = json.loads(content)
+            return self._parse_to_result(
+                parsed,
+                api_mode=request["api_mode"],
+                resolved_model=request["resolved_model"],
+            )
+        except json.JSONDecodeError as exc:
+            return LeftHemisphereResult(
+                response_text="",
+                lambda_program=TypedLambdaProgram("Any", "()", "None"),
+                actions=[],
+                reasoning_summary=[f"Structured output parse failed: {exc}"],
+                telemetry={
+                    "adapter": "QwenLeftHemisphereAdapter",
+                    "api_mode": request["api_mode"],
+                    "model_name": request["resolved_model"],
+                },
+            )
+        except Exception as exc:
+            return self._fallback_result(repr(exc), request["api_mode"], request["resolved_model"])
 
     def repair(
         self,
@@ -127,7 +137,12 @@ class QwenLeftHemisphereAdapter:
     ) -> LeftHemisphereResult:
         return run_sync(
             self.arepair(
-                user_turn, bridge_packet, memory_context, previous_result, rejected_results, attempt
+                user_turn=user_turn,
+                bridge_packet=bridge_packet,
+                memory_context=memory_context,
+                previous_result=previous_result,
+                rejected_results=rejected_results,
+                attempt=attempt,
             )
         )
 
@@ -140,46 +155,161 @@ class QwenLeftHemisphereAdapter:
         rejected_results: list[ActionExecutionResult],
         attempt: int,
     ) -> LeftHemisphereResult:
-        feedback = [f"Ação {r.action_type} rejeitada: {', '.join(r.violations)}" for r in rejected_results]
+        feedback = [
+            f"Ação {item.action_type} rejeitada: {', '.join(item.violations)}"
+            for item in rejected_results
+        ]
         return await self.areason(user_turn, bridge_packet, memory_context, feedback, attempt)
 
-    def _build_prompt(
+    def _build_request(self, prompt: str) -> dict[str, Any]:
+        api_mode = self._resolve_api_mode()
+        resolved_model = self._resolve_model_name()
+
+        if api_mode == "openai_responses":
+            return {
+                "api_mode": api_mode,
+                "resolved_model": resolved_model,
+                "url": self._responses_url(),
+                "payload": self._responses_payload(prompt, resolved_model),
+            }
+
+        if api_mode == "openai_chat":
+            return {
+                "api_mode": api_mode,
+                "resolved_model": resolved_model,
+                "url": self._chat_completions_url(),
+                "payload": self._openai_chat_payload(prompt, resolved_model),
+            }
+
+        return {
+            "api_mode": "openai_compatible_chat",
+            "resolved_model": resolved_model,
+            "url": self._chat_completions_url(),
+            "payload": self._compatible_chat_payload(prompt, resolved_model),
+        }
+
+    def _resolve_api_mode(self) -> str:
+        provider = self.config.provider.strip().lower()
+        if provider in {"openai_responses", "openai_chat", "openai_compatible_chat"}:
+            return provider
+        if provider in {"openai", "responses"}:
+            return "openai_responses"
+        if provider in {"chat"}:
+            return "openai_chat"
+
+        parsed = urlparse(self.config.api_url)
+        hostname = (parsed.hostname or "").lower()
+        path = parsed.path.rstrip("/")
+
+        if hostname == "api.openai.com":
+            if path.endswith("/chat/completions"):
+                return "openai_chat"
+            return "openai_responses"
+
+        return "openai_compatible_chat"
+
+    def _resolve_model_name(self) -> str:
+        model = self.config.model_name.strip()
+        aliases = {
+            "gpt-5.4-mini": "gpt-5-mini",
+            "gpt-5.4-nano": "gpt-5-nano",
+        }
+        normalized = aliases.get(model, model)
+        if normalized != model:
+            logger.warning("Normalizing unsupported model alias %s -> %s", model, normalized)
+        return normalized
+
+    def _responses_url(self) -> str:
+        base = self.config.api_url.rstrip("/")
+        if base.endswith("/responses"):
+            return base
+        if base.endswith("/v1"):
+            return f"{base}/responses"
+        return f"{base}/v1/responses"
+
+    def _chat_completions_url(self) -> str:
+        base = self.config.api_url.rstrip("/")
+        if base.endswith("/chat/completions"):
+            return base
+        if base.endswith("/v1"):
+            return f"{base}/chat/completions"
+        return f"{base}/v1/chat/completions"
+
+    def _responses_payload(self, prompt: str, resolved_model: str) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": resolved_model,
+            "instructions": (
+                "You are a logical neuro-symbolic agent. Return JSON that matches the "
+                "requested schema exactly."
+            ),
+            "input": prompt,
+            "max_output_tokens": self.config.max_tokens,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "left_hemisphere_result",
+                    "strict": True,
+                    "schema": left_hemisphere_result_schema(),
+                }
+            },
+        }
+        if self.config.reasoning_effort:
+            payload["reasoning"] = {"effort": self.config.reasoning_effort}
+        return payload
+
+    def _openai_chat_payload(self, prompt: str, resolved_model: str) -> dict[str, Any]:
+        return {
+            "model": resolved_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a logical neuro-symbolic agent. Return JSON that matches "
+                        "the requested schema exactly."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": self.config.max_tokens,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "left_hemisphere_result",
+                    "strict": True,
+                    "schema": left_hemisphere_result_schema(),
+                },
+            },
+        }
+
+    def _compatible_chat_payload(self, prompt: str, resolved_model: str) -> dict[str, Any]:
+        return {
+            "model": resolved_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a logical neuro-symbolic agent. Output valid JSON only, "
+                        "corresponding to LeftHemisphereResult format."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": self.config.max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+
+    def _extract_content(self, data: dict[str, Any], api_mode: str) -> str:
+        if api_mode == "openai_responses":
+            return extract_responses_content(data)
+        return extract_chat_content(data)
+
+    def _parse_to_result(
         self,
-        user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
-        memory_context: MemoryContext,
-        feedback: list[str] | None,
-    ) -> str:
-        rules = [r.statement for r in memory_context.semantic_rules]
-        return f"""
-Analyze the input and generate a JSON.
-
-Input: {user_turn.user_text}
-
-Soft Prompts (Bridge):
-{[t.token for t in bridge_packet.soft_prompts]}
-
-Semantic Rules: {rules}
-Runtime Feedback: {feedback or []}
-
-Available Action Types (Use exactly these for action_type, and matching payload):
-- "respond_text": {{ "text": "your response here" }}
-- "propose_plan": {{ "steps": ["step1", "step2"] }}
-- "search_web": {{ "query": "search keywords" }}
-- "write_file": {{ "path": "file/path.txt", "content": "file content" }}
-
-Expected JSON Schema:
-{{
-  "response_text": "string",
-  "lambda_program": {{ "signature": "string", "expression": "string", "expected_effect": "string" }},
-  "actions": [
-    {{ "action_type": "string", "typed_signature": "string", "payload": {{}}, "safety_invariants": ["string"] }}
-  ],
-  "reasoning_summary": ["string"]
-}}
-"""
-
-    def _parse_to_result(self, parsed: dict) -> LeftHemisphereResult:
+        parsed: dict[str, Any],
+        *,
+        api_mode: str,
+        resolved_model: str,
+    ) -> LeftHemisphereResult:
         lambda_prog = parsed.get("lambda_program", {})
         program = TypedLambdaProgram(
             signature=lambda_prog.get("signature", "Any -> Any"),
@@ -187,28 +317,43 @@ Expected JSON Schema:
             expected_effect=lambda_prog.get("expected_effect", ""),
         )
 
-        actions = []
-        for act in parsed.get("actions", []):
-            actions.append(PrimitiveAction(
-                action_type=act.get("action_type", "unknown"),
-                typed_signature=act.get("typed_signature", "Any -> Any"),
-                payload=act.get("payload", {}),
-                safety_invariants=act.get("safety_invariants", []),
-            ))
+        actions = [
+            PrimitiveAction(
+                action_type=item.get("action_type", "unknown"),
+                typed_signature=item.get("typed_signature", "Any -> Any"),
+                payload=item.get("payload", {}),
+                safety_invariants=item.get("safety_invariants", []),
+            )
+            for item in parsed.get("actions", [])
+        ]
 
         return LeftHemisphereResult(
-            response_text=parsed.get("response_text", parsed.get("result", parsed.get("message", ""))),
+            response_text=parsed.get("response_text", ""),
             lambda_program=program,
             actions=actions,
             reasoning_summary=parsed.get("reasoning_summary", []),
-            telemetry={"adapter": "QwenLeftHemisphereAdapter"}
+            telemetry={
+                "adapter": "QwenLeftHemisphereAdapter",
+                "api_mode": api_mode,
+                "model_name": resolved_model,
+            },
         )
 
-    def _fallback_result(self, error: str) -> LeftHemisphereResult:
+    def _fallback_result(
+        self,
+        error: str,
+        api_mode: str,
+        resolved_model: str,
+    ) -> LeftHemisphereResult:
         return LeftHemisphereResult(
             response_text="Desculpe, meu subsistema de raciocínio falhou temporariamente.",
             lambda_program=TypedLambdaProgram("Fallback", "()", "None"),
             actions=[],
             reasoning_summary=[f"Erro LLM: {error}"],
-            telemetry={"error": error}
+            telemetry={
+                "adapter": "QwenLeftHemisphereAdapter",
+                "api_mode": api_mode,
+                "model_name": resolved_model,
+                "error": error,
+            },
         )

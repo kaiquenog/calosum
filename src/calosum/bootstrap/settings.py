@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Mapping
@@ -27,6 +27,8 @@ class InfrastructureSettings:
     left_hemisphere_endpoint: str | None = None
     left_hemisphere_api_key: str | None = None
     left_hemisphere_model: str | None = None
+    left_hemisphere_provider: str | None = None
+    left_hemisphere_reasoning_effort: str | None = None
     vault: dict[str, str] | None = None
 
     @classmethod
@@ -83,6 +85,8 @@ class InfrastructureSettings:
             left_hemisphere_endpoint=env.get("CALOSUM_LEFT_ENDPOINT"),
             left_hemisphere_api_key=env.get("CALOSUM_LEFT_API_KEY"),
             left_hemisphere_model=env.get("CALOSUM_LEFT_MODEL"),
+            left_hemisphere_provider=env.get("CALOSUM_LEFT_PROVIDER"),
+            left_hemisphere_reasoning_effort=env.get("CALOSUM_LEFT_REASONING_EFFORT"),
             vault=vault if vault else None,
         )
         return settings.with_profile_defaults()
@@ -102,6 +106,8 @@ class InfrastructureSettings:
                 left_hemisphere_endpoint=self.left_hemisphere_endpoint,
                 left_hemisphere_api_key=self.left_hemisphere_api_key,
                 left_hemisphere_model=self.left_hemisphere_model,
+                left_hemisphere_provider=self.left_hemisphere_provider,
+                left_hemisphere_reasoning_effort=self.left_hemisphere_reasoning_effort,
                 vault=self.vault,
             )
 
@@ -121,6 +127,8 @@ class InfrastructureSettings:
                 left_hemisphere_endpoint=self.left_hemisphere_endpoint,
                 left_hemisphere_api_key=self.left_hemisphere_api_key,
                 left_hemisphere_model=self.left_hemisphere_model,
+                left_hemisphere_provider=self.left_hemisphere_provider,
+                left_hemisphere_reasoning_effort=self.left_hemisphere_reasoning_effort,
                 vault=self.vault,
             )
 
@@ -131,3 +139,29 @@ def _path(value: str | os.PathLike[str] | None) -> Path | None:
     if value is None or value == "":
         return None
     return Path(value)
+
+
+def should_enable_local_persistence_defaults(
+    settings: InfrastructureSettings,
+    *,
+    args: object | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    env = dict(environ or os.environ)
+
+    explicit_profile = getattr(args, "infra_profile", None) is not None or "CALOSUM_INFRA_PROFILE" in env
+    explicit_memory_dir = getattr(args, "memory_dir", None) is not None or "CALOSUM_MEMORY_DIR" in env
+    explicit_telemetry = getattr(args, "otlp_jsonl", None) is not None or "CALOSUM_OTLP_JSONL" in env
+
+    if explicit_profile or explicit_memory_dir or explicit_telemetry:
+        return False
+
+    return (
+        settings.profile == InfrastructureProfile.EPHEMERAL
+        and settings.memory_dir is None
+        and settings.otlp_jsonl is None
+    )
+
+
+def with_local_persistence_defaults(settings: InfrastructureSettings) -> InfrastructureSettings:
+    return replace(settings, profile=InfrastructureProfile.PERSISTENT).with_profile_defaults()

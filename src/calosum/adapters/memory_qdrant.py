@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import math
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -28,6 +31,7 @@ class QdrantAdapterConfig:
     url: str = "http://localhost:6333"
     episodes_collection: str = "episodes"
     rules_collection: str = "semantic_rules"
+    vector_size: int = 384
 
 
 class QdrantDualMemoryAdapter:
@@ -45,29 +49,25 @@ class QdrantDualMemoryAdapter:
 
     def _ensure_collections(self):
         # Setup blocks synchronous during init.
-        # Usa um threshold dummy vector size de 384 (e.g. all-MiniLM-L6-v2)
-        VECTOR_SIZE = 384
         for col_name in [self.config.episodes_collection, self.config.rules_collection]:
             if not self.client.collection_exists(col_name):
                 self.client.create_collection(
                     collection_name=col_name,
-                    vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+                    vectors_config=VectorParams(
+                        size=self.config.vector_size,
+                        distance=Distance.COSINE,
+                    ),
                 )
 
     def build_context(self, user_turn: UserTurn, episodic_limit: int = 5) -> MemoryContext:
         return run_sync(self.abuild_context(user_turn, episodic_limit))
 
     async def abuild_context(self, user_turn: UserTurn, episodic_limit: int = 5) -> MemoryContext:
-        """
-        Em produção real, calcularíamos o embedding de 'user_turn.user_text'
-        para buscar os vetores mais próximos. Neste esqueleto, como não temos
-        um modelo de embedding acoplado no construtor de modo síncrono, fazemos um fetch genérico.
-        """
-        # Exemplo simulando fetch de episódios recentes (sem busca vetorial exata p/ simplificar):
-        res, _ = await self.aclient.scroll(
-            collection_name=self.config.episodes_collection,
-            limit=episodic_limit,
-            with_payload=True,
+        query_vector = self._vector_for_text(user_turn.user_text)
+        res = await self._asearch_points(
+            self.config.episodes_collection,
+            query_vector,
+            episodic_limit,
         )
         
         episodes = []
@@ -95,14 +95,15 @@ class QdrantDualMemoryAdapter:
                     )
                 )
 
-        # Regras semanticas fixas para o contexto (recuperando como scroll tbm)
-        rules_res, _ = await self.aclient.scroll(
-            collection_name=self.config.rules_collection, limit=10, with_payload=True
+        rules_res = await self._asearch_points(
+            self.config.rules_collection,
+            query_vector,
+            10,
         )
         
         rules = [
             SemanticRule(
-                rule_id=str(r.id),
+                rule_id=r.payload.get("rule_id", str(r.id)),
                 statement=r.payload.get("statement", ""),
                 strength=float(r.payload.get("strength", 1.0)),
                 supporting_episodes=list(r.payload.get("supporting_episodes", [])),
@@ -124,19 +125,18 @@ class QdrantDualMemoryAdapter:
 
     async def astore_episode(self, episode: MemoryEpisode) -> None:
         point_id = str(uuid.uuid4())
-        # Dummy vector embedding genérico para o stub
-        dummy_vector = [0.0] * 384
+        vector = self._vector_for_episode(episode)
         
         await self.aclient.upsert(
             collection_name=self.config.episodes_collection,
             points=[
                 PointStruct(
                     id=point_id,
-                    vector=dummy_vector,
+                    vector=vector,
                     payload={
                         "text": episode.user_turn.user_text, 
                         "session": episode.user_turn.session_id,
-                        "emotional_labels": episode.right_state.emotional_labels if episode.right_state else []
+                        "emotional_labels": episode.right_state.emotional_labels if episode.right_state else [],
                     },
                 )
             ],
@@ -150,7 +150,9 @@ class QdrantDualMemoryAdapter:
         
         # 1. Fetch episodes
         res, _ = await self.aclient.scroll(
-            collection_name=self.config.episodes_collection, limit=100, with_payload=True
+            collection_name=self.config.episodes_collection,
+            limit=100,
+            with_payload=True,
         )
         
         episodes = []
@@ -185,13 +187,13 @@ class QdrantDualMemoryAdapter:
         # 3. Store Promoted Rules into Qdrant semantic_rules collection
         if report.promoted_rules:
             points = []
-            dummy_vector = [0.0] * 384
             for rule in report.promoted_rules:
                 points.append(
                     PointStruct(
                         id=str(uuid.uuid4()),
-                        vector=dummy_vector,
+                        vector=self._vector_for_text(rule.statement),
                         payload={
+                            "rule_id": rule.rule_id,
                             "statement": rule.statement,
                             "strength": rule.strength,
                             "tags": rule.tags,
@@ -205,6 +207,63 @@ class QdrantDualMemoryAdapter:
             )
 
         return report
+
+    async def _asearch_points(
+        self,
+        collection_name: str,
+        query_vector: list[float],
+        limit: int,
+    ) -> list:
+        if hasattr(self.aclient, "search"):
+            result = await self.aclient.search(
+                collection_name=collection_name,
+                query_vector=query_vector,
+                limit=limit,
+                with_payload=True,
+            )
+            return list(result)
+
+        if hasattr(self.aclient, "query_points"):
+            result = await self.aclient.query_points(
+                collection_name=collection_name,
+                query=query_vector,
+                limit=limit,
+                with_payload=True,
+            )
+            points = getattr(result, "points", None)
+            if points is not None:
+                return list(points)
+
+        result, _ = await self.aclient.scroll(
+            collection_name=collection_name,
+            limit=limit,
+            with_payload=True,
+        )
+        return list(result)
+
+    def _vector_for_episode(self, episode: MemoryEpisode) -> list[float]:
+        text = episode.user_turn.user_text
+        emotional_labels = " ".join(episode.right_state.emotional_labels)
+        return self._vector_for_text(f"{text} {emotional_labels}".strip())
+
+    def _vector_for_text(self, text: str) -> list[float]:
+        normalized = text.strip().lower() or "silence"
+        tokens = re.findall(r"\w+", normalized) or ["silence"]
+        vector = [0.0] * self.config.vector_size
+
+        for token in tokens:
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            for index in range(0, len(digest), 4):
+                chunk = digest[index:index + 4]
+                position = int.from_bytes(chunk[:2], "big") % self.config.vector_size
+                sign = 1.0 if chunk[2] % 2 == 0 else -1.0
+                magnitude = 1.0 + (chunk[3] / 255.0)
+                vector[position] += sign * magnitude
+
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm == 0:
+            return vector
+        return [round(value / norm, 6) for value in vector]
 
 
 def _placeholder_right_state(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import re
 from dataclasses import dataclass, field
 
 from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult, PrimitiveAction
@@ -33,8 +35,6 @@ class StrictLambdaRuntime:
         self.config = config or StrictLambdaRuntimeConfig()
 
     def run(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]:
-        import ast
-        
         # O modelo envia `left_result.lambda_program.expression` que pode ser python pseudo-código.
         # Nós usamos AST para garantir que não haja eval() malicioso e que ele só mapeie
         # para a lista `left_result.actions` que o modelo declarou no JSON.
@@ -45,14 +45,35 @@ class StrictLambdaRuntime:
             return [self._execute_action(action) for action in left_result.actions]
 
         try:
-            # Sandbox muito basico: garantimos que o código consegue ser parseado.
-            # Se for sintaxe invalida, rejeitamos toda a execucao.
-            tree = ast.parse(expression, mode='exec')
-            
-            # Checagem de seguranca de AST (não permitimos imports, por exemplo)
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.Import, ast.ImportFrom)):
-                    raise ValueError("Imports are forbidden in lambda sandbox")
+            if not expression.lstrip().startswith("("):
+                # Sandbox muito basico: garantimos que o código consegue ser parseado.
+                # Se for sintaxe invalida, rejeitamos toda a execucao.
+                tree = ast.parse(expression, mode='exec')
+                
+                # Checagem de seguranca de AST (não permitimos imports, por exemplo)
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.Import, ast.ImportFrom)):
+                        raise ValueError("Imports are forbidden in lambda sandbox")
+
+            alignment_violations = self._validate_program_alignment(
+                expression,
+                left_result.actions,
+            )
+            if alignment_violations:
+                validation_violations = [
+                    violation
+                    for action in left_result.actions
+                    for violation in self._validate_action(action)
+                ]
+                return [
+                    ActionExecutionResult(
+                        action_type="lambda_evaluation",
+                        typed_signature="validate_program_alignment",
+                        status="rejected",
+                        output={"reason": "lambda_action_mismatch"},
+                        violations=alignment_violations + validation_violations,
+                    )
+                ]
                     
         except Exception as e:
             return [ActionExecutionResult(
@@ -137,3 +158,72 @@ class StrictLambdaRuntime:
             violations.append("external side effects are disabled in the strict runtime")
 
         return violations
+
+    def _validate_program_alignment(
+        self,
+        expression: str,
+        actions: list[PrimitiveAction],
+    ) -> list[str]:
+        allowed_actions = self._allowed_actions_from_expression(expression)
+        if allowed_actions is None:
+            return []
+
+        violations: list[str] = []
+        action_types = [item.action_type for item in actions]
+        undeclared = [item for item in action_types if item not in allowed_actions]
+        if undeclared:
+            violations.append(
+                "lambda program does not reference declared action(s): " + ", ".join(sorted(set(undeclared)))
+            )
+
+        if not action_types and allowed_actions:
+            violations.append("lambda program references actions but action frontier is empty")
+
+        return violations
+
+    def _allowed_actions_from_expression(self, expression: str) -> set[str] | None:
+        normalized = expression.strip()
+        if not normalized:
+            return set()
+
+        if normalized.startswith("("):
+            return self._allowed_actions_from_symbolic_expression(normalized)
+
+        try:
+            tree = ast.parse(normalized, mode="exec")
+        except SyntaxError:
+            return None
+
+        names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                called = node.func
+                if isinstance(called, ast.Name):
+                    names.add(called.id)
+                elif isinstance(called, ast.Attribute):
+                    names.add(called.attr)
+        return self._map_function_names_to_actions(names)
+
+    def _allowed_actions_from_symbolic_expression(self, expression: str) -> set[str] | None:
+        if "typed_actions" in expression or "emit typed_actions" in expression:
+            return None
+
+        names = set(re.findall(r"[a-z_][a-z0-9_]*", expression))
+        return self._map_function_names_to_actions(names)
+
+    def _map_function_names_to_actions(self, names: set[str]) -> set[str]:
+        aliases = {
+            "respond_text": "respond_text",
+            "emit_response": "respond_text",
+            "plan": "propose_plan",
+            "propose_plan": "propose_plan",
+            "search_web": "search_web",
+            "write_file": "write_file",
+            "load_semantic_rules": "load_semantic_rules",
+            "call_external_api": "call_external_api",
+        }
+        return {
+            aliases[name]
+            for name in names
+            if name in aliases
+        }

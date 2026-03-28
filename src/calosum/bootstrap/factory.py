@@ -22,19 +22,23 @@ logger = logging.getLogger(__name__)
 class CalosumAgentBuilder:
     settings: InfrastructureSettings
     _last_right_hemisphere_backend: str | None = field(default=None, init=False, repr=False)
+    _last_left_hemisphere_backend: str | None = field(default=None, init=False, repr=False)
 
     def build(self) -> CalosumAgent:
-        left_hemisphere = None
         if self.settings.left_hemisphere_endpoint:
             left_hemisphere = QwenLeftHemisphereAdapter(
                 QwenAdapterConfig(
                     api_url=self.settings.left_hemisphere_endpoint,
                     api_key=self.settings.left_hemisphere_api_key or "empty",
-                    model_name=self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct"
+                    model_name=self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct",
+                    provider=self.settings.left_hemisphere_provider or "auto",
+                    reasoning_effort=self.settings.left_hemisphere_reasoning_effort,
                 )
             )
+            self._last_left_hemisphere_backend = self._left_hemisphere_backend_name_from_settings()
         else:
             left_hemisphere = QwenLeftHemisphereAdapter()
+            self._last_left_hemisphere_backend = "openai_compatible_chat_adapter_default"
 
         right_hemisphere = self.build_right_hemisphere()
 
@@ -86,7 +90,7 @@ class CalosumAgentBuilder:
             "memory_backend": self._memory_backend_name(),
             "telemetry_backend": self._telemetry_backend_name(),
             "right_hemisphere_backend": self._right_hemisphere_backend_name(),
-            "left_hemisphere_backend": "qwen3.5_9b_adapter",
+            "left_hemisphere_backend": self._left_hemisphere_backend_name(),
             "action_runtime": "concrete_adapter",
             "memory_dir": str(self.settings.memory_dir) if self.settings.memory_dir else None,
             "otlp_jsonl": str(self.settings.otlp_jsonl) if self.settings.otlp_jsonl else None,
@@ -96,6 +100,9 @@ class CalosumAgentBuilder:
             "jaeger_ui_url": self.settings.jaeger_ui_url,
             "right_hemisphere_endpoint": self.settings.right_hemisphere_endpoint,
             "left_hemisphere_endpoint": self.settings.left_hemisphere_endpoint,
+            "left_hemisphere_model": self.settings.left_hemisphere_model,
+            "left_hemisphere_provider": self.settings.left_hemisphere_provider,
+            "left_hemisphere_reasoning_effort": self.settings.left_hemisphere_reasoning_effort,
         }
 
     def _memory_backend_name(self) -> str:
@@ -115,3 +122,22 @@ class CalosumAgentBuilder:
 
     def _right_hemisphere_backend_name(self) -> str:
         return self._last_right_hemisphere_backend or "optional_huggingface_with_fallback"
+
+    def _left_hemisphere_backend_name(self) -> str:
+        return self._last_left_hemisphere_backend or self._left_hemisphere_backend_name_from_settings()
+
+    def _left_hemisphere_backend_name_from_settings(self) -> str:
+        endpoint = (self.settings.left_hemisphere_endpoint or "").lower()
+        provider = (self.settings.left_hemisphere_provider or "auto").lower()
+
+        if provider in {"openai_responses", "openai", "responses"}:
+            return "openai_responses_adapter"
+        if provider in {"openai_chat", "chat"}:
+            return "openai_chat_adapter"
+        if "api.openai.com" in endpoint:
+            if endpoint.rstrip("/").endswith("/chat/completions"):
+                return "openai_chat_adapter"
+            return "openai_responses_adapter"
+        if endpoint:
+            return "openai_compatible_chat_adapter"
+        return "openai_compatible_chat_adapter_default"

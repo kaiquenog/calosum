@@ -53,6 +53,18 @@ python3 -m calosum.bootstrap.cli run-scenario caminho/do/cenario.json \
   --otlp-jsonl .calosum-telemetry/events.jsonl
 ```
 
+### 2.1. Usando OpenAI no hemisfério esquerdo
+
+Se quiser trocar temporariamente o endpoint local por OpenAI oficial, configure no `.env`:
+
+```bash
+CALOSUM_LEFT_ENDPOINT="https://api.openai.com/v1"
+CALOSUM_LEFT_API_KEY="sua-chave"
+CALOSUM_LEFT_MODEL="gpt-5-mini"
+```
+
+Com esse formato, o adapter autodetecta a OpenAI oficial e usa `Responses API` com Structured Outputs. Para workloads mais pesados, troque o modelo para `gpt-5.4`.
+
 ### 3. Experimentos de Ciclo Cognitivo e Reflexão
 
 Na pasta `examples/`, você encontra scripts focados em demonstrar as features específicas de fluxo interno do agente.
@@ -81,6 +93,8 @@ Você também pode agora rodar sessões de chat infinitas localmente pelo termin
 python3 -m calosum.bootstrap.cli chat
 ```
 
+O REPL usa a sessao `terminal-session` por padrao. Quando voce sobe a API e a UI localmente sem configuracao adicional, a telemetria desse chat passa a ser persistida em `.calosum-runtime/telemetry/events.jsonl`, permitindo que o painel visualize os turnos do terminal.
+
 ---
 
 ## Como Começar a Desenvolver (Onde Modificar?)
@@ -91,6 +105,16 @@ O projeto adota o estilo **Ports and Adapters**. Você não precisa quebrar as l
 2. Para entender as interfaces atuais, veja `src/calosum/shared/ports.py`.
 3. Para plugar um LLM de verdade no raciocínio, você pode implementar `LeftHemispherePort` e injetar o adapter pelo construtor em `src/calosum/bootstrap/factory.py`.
 4. Todo conhecimento consolidado fica nos Manuais, leia `docs/ARCHITECTURE.md` para entender as barreiras e `docs/PLANS.md` para documentar evoluções maiores.
+
+### Como Realizar Ajustes Finos (Fine-Tuning e ML)
+
+Se o seu objetivo é treinar o agente, ajustar pesos (LoRA/PEFT) ou modificar o comportamento dos embeddings e modelos fundacionais, o **conhecimento mais importante é o isolamento da camada de ML**:
+
+1. **A Regra de Ouro (Isolamento de Tensores):** Todo o código de Machine Learning (`torch`, `transformers`, `peft`) **deve viver exclusivamente na camada `adapters/`**. O núcleo do sistema (`domain/`) não conhece tensores, apenas tipos nativos e contratos (`shared/`).
+2. **Treinamento Contínuo (Sleep Mode):** Os ajustes finos contínuos e atualizações de pesos LoRA acontecem em rotinas específicas, como as implementadas em `src/calosum/adapters/night_trainer.py`.
+3. **Percepção e Embeddings (Text-JEPA):** Para calibrar a extração de "saliência" (urgência/emoção) ou trocar o modelo de embeddings, as alterações devem ocorrer em `src/calosum/adapters/right_hemisphere_hf.py`.
+4. **Raciocínio Lógico (LLM):** Mudanças de system prompt, extração estruturada e injeção de "soft prompts" do corpo caloso residem nos adapters do Hemisfério Esquerdo (ex: `src/calosum/adapters/llm_qwen.py`).
+5. **Governança (Harness):** Qualquer tentativa de importar bibliotecas de ML diretamente no `domain/` ou `shared/` será bloqueada pelo validador arquitetural `harness_checks.py`. Sempre passe os dados através das interfaces (Ports).
 
 ---
 

@@ -107,7 +107,8 @@ MODULE_RULES: dict[str, set[str]] = {
 
     # ADAPTERS
     "adapters.action_runtime": {"shared.async_utils", "shared.types"},
-    "adapters.llm_qwen": {"shared.async_utils", "shared.types"},
+    "adapters.llm_payloads": {"shared.types"},
+    "adapters.llm_qwen": {"adapters.llm_payloads", "shared.async_utils", "shared.types"},
     "adapters.memory_qdrant": {"shared.async_utils", "shared.types", "domain.memory"},
     "adapters.right_hemisphere_hf": {"shared.types"},
     "adapters.night_trainer": set(),

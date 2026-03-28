@@ -65,7 +65,7 @@ class OTLPJsonlTelemetrySink:
         session_id: str | None = None,
         channel: str | None = None,
     ) -> list[TelemetryEvent]:
-        filtered = self.events
+        filtered = self._read_persisted_events() if self.path.exists() else self.events
         if session_id is not None:
             filtered = [event for event in filtered if event.session_id == session_id]
         if channel is not None:
@@ -93,6 +93,10 @@ class OTLPJsonlTelemetrySink:
                                     "attributes": [
                                         {"key": "calosum.turn_id", "value": {"stringValue": event.turn_id}},
                                         {
+                                            "key": "calosum.recorded_at",
+                                            "value": {"stringValue": event.recorded_at},
+                                        },
+                                        {
                                             "key": "calosum.payload",
                                             "value": {"stringValue": json.dumps(event.payload, ensure_ascii=False)},
                                         },
@@ -111,6 +115,81 @@ class OTLPJsonlTelemetrySink:
                 }
             ]
         }
+
+    def _read_persisted_events(self) -> list[TelemetryEvent]:
+        events: list[TelemetryEvent] = []
+        with self.path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                raw = line.strip()
+                if not raw:
+                    continue
+                try:
+                    envelope = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                events.extend(self._events_from_envelope(envelope))
+        return events
+
+    def _events_from_envelope(self, envelope: dict[str, Any]) -> list[TelemetryEvent]:
+        events: list[TelemetryEvent] = []
+        for resource_span in envelope.get("resourceSpans", []):
+            session_id = self._attribute_string(
+                resource_span.get("resource", {}).get("attributes", []),
+                "calosum.session_id",
+            )
+            for scope_span in resource_span.get("scopeSpans", []):
+                for span in scope_span.get("spans", []):
+                    attributes = span.get("attributes", [])
+                    payload_raw = self._attribute_string(attributes, "calosum.payload")
+                    if not session_id or payload_raw is None:
+                        continue
+                    try:
+                        payload = json.loads(payload_raw)
+                    except json.JSONDecodeError:
+                        continue
+
+                    metrics: dict[str, float] = {}
+                    for attribute in attributes:
+                        key = attribute.get("key", "")
+                        if not key.startswith("calosum.metric."):
+                            continue
+                        metric_name = key.removeprefix("calosum.metric.")
+                        metric_value = self._numeric_attribute_value(attribute.get("value", {}))
+                        if metric_value is not None:
+                            metrics[metric_name] = metric_value
+
+                    events.append(
+                        TelemetryEvent(
+                            channel=span.get("name", ""),
+                            session_id=session_id,
+                            turn_id=self._attribute_string(attributes, "calosum.turn_id") or "",
+                            recorded_at=self._attribute_string(attributes, "calosum.recorded_at") or "",
+                            payload=payload,
+                            trace_id=span.get("traceId", ""),
+                            span_id=span.get("spanId", ""),
+                            metrics=metrics,
+                        )
+                    )
+        return events
+
+    def _attribute_string(self, attributes: list[dict[str, Any]], key: str) -> str | None:
+        for attribute in attributes:
+            if attribute.get("key") != key:
+                continue
+            value = attribute.get("value", {})
+            if "stringValue" in value:
+                return value["stringValue"]
+        return None
+
+    def _numeric_attribute_value(self, value: dict[str, Any]) -> float | None:
+        for field_name in ("doubleValue", "intValue"):
+            if field_name not in value:
+                continue
+            try:
+                return float(value[field_name])
+            except (TypeError, ValueError):
+                return None
+        return None
 
 
 class CognitiveTelemetryBus:

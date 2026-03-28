@@ -12,6 +12,9 @@ Painel React para visualizacao da telemetria cognitiva exposta pela API do Calos
 
 - por padrao, o frontend consome `http://localhost:8000`
 - para alterar o backend, defina `VITE_CALOSUM_API_BASE`
+- por padrao, o painel observa a sessao `terminal-session`
+- o session id escolhido fica salvo no navegador
+- o dashboard faz polling automatico da API para refletir novos turnos sem refresh manual
 
 ## Escopo Atual
 

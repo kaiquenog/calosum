@@ -10,6 +10,8 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - `CALOSUM_VECTORDB_URL`: Endpoint do Qdrant (ex: `http://localhost:6333`).
 - `CALOSUM_LEFT_ENDPOINT`: URL base da API compatível com OpenAI (ex: vLLM, Ollama).
 - `CALOSUM_LEFT_MODEL`: Nome do modelo (ex: `Qwen/Qwen-3.5-9B-Instruct`).
+- `CALOSUM_LEFT_PROVIDER`: Opcional. Forca o modo `openai_responses`, `openai_chat` ou `openai_compatible_chat`.
+- `CALOSUM_LEFT_REASONING_EFFORT`: Opcional. Quando o provider e OpenAI Responses, envia `reasoning.effort` para modelos compatíveis.
 - `CALOSUM_API_PORT`: Porta para a API REST/SSE (padrão: 8000).
 - `CALOSUM_VAULT_*`: Variáveis prefixadas com este padrão são automaticamente injetadas de forma segura no `ActionRuntime` (ex: `CALOSUM_VAULT_GITHUB_TOKEN`).
 
@@ -20,12 +22,14 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - A memória vetorial e a telemetria rodam totalmente na memória RAM (arrays de Python).
 - Nada é salvo no disco. Ideal para rodar a suíte de testes rápidos.
 - Se a stack opcional de `transformers`/`sentence-transformers` não estiver disponível, o bootstrap faz fallback para o hemisfério direito heurístico sem abortar a inicialização.
+- Se voce iniciar explicitamente API ou chat com este perfil configurado, a UI nao enxergara eventos de outros processos porque a telemetria fica isolada em memoria.
 
 ### 2. Persistent
 `CALOSUM_INFRA_PROFILE=persistent`
 - Salva dados na pasta local `.calosum-runtime/`.
 - Os eventos de telemetria vão para `.calosum-runtime/telemetry/events.jsonl`.
 - Se o Qdrant não for configurado, a memória vetorial salva localmente em formato `.jsonl` serializado.
+- Sem configuracao explicita, a API e o comando `python3 -m calosum.bootstrap.cli chat` passam a adotar este modo localmente para permitir que a UI consulte a mesma telemetria entre processos.
 
 ### 3. Docker
 `CALOSUM_INFRA_PROFILE=docker`
@@ -43,3 +47,20 @@ A infraestrutura prevê a execução de consolidação noturna e neuroplasticida
 A telemetria cognitiva está preparada para exportar logs `JSONL` compatíveis com o formato OpenTelemetry. Quando o perfil Docker é ativado, esses logs podem ser consumidos por coletores (ex: `otel-collector`) para roteamento a visualizadores de rastreamento distribuído (Jaeger).
 
 Adicionalmente, os dados de telemetria da sessão estão disponíveis em tempo real através da API REST (`/v1/telemetry/dashboard/{session_id}`) e consumidos ativamente pelo painel UI React.
+
+## Fluxo Local Recomendado
+
+Para observar um chat local na UI:
+
+1. Suba a API do Calosum.
+2. Inicie o chat com `python3 -m calosum.bootstrap.cli chat`.
+3. Abra a UI apontando para a API.
+4. Observe a sessao `terminal-session`, que e o identificador padrao do REPL e do painel.
+
+Nesse fluxo, a CLI grava a telemetria em `.calosum-runtime/telemetry/events.jsonl` e a API reidrata o dashboard a partir do mesmo arquivo.
+
+## OpenAI
+
+- Se `CALOSUM_LEFT_ENDPOINT` apontar para `https://api.openai.com/v1`, o adapter autodetecta OpenAI oficial e usa `Responses API` com Structured Outputs.
+- Se voce apontar para um endpoint local no formato OpenAI-compatible, como Ollama ou vLLM, o adapter mantem `chat/completions`.
+- Para workloads mais inteligentes e pesados, prefira `gpt-5.4`. Para menor custo e latencia, prefira `gpt-5-mini`.
