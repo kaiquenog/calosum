@@ -1,0 +1,63 @@
+services:
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["python3", "examples/group_reflection.py"]
+    environment:
+      CALOSUM_ROLE: orchestrator
+      CALOSUM_RIGHT_ENDPOINT: http://right-hemisphere:8081
+      CALOSUM_LEFT_ENDPOINT: http://left-hemisphere:8082
+      CALOSUM_MEMORY_ENDPOINT: http://memory:8083
+      CALOSUM_TELEMETRY_ENDPOINT: http://telemetry:8084
+    depends_on:
+      - right-hemisphere
+      - left-hemisphere
+      - memory
+      - telemetry
+
+  right-hemisphere:
+    image: python:3.13-slim
+    command:
+      [
+        "python3",
+        "-c",
+        "import time; print('right hemisphere placeholder ready'); time.sleep(3600)",
+      ]
+    environment:
+      CALOSUM_ROLE: right_hemisphere_jepa
+      CALOSUM_ACCELERATOR: spatial_tensor_cluster
+
+  left-hemisphere:
+    image: python:3.13-slim
+    command:
+      [
+        "python3",
+        "-c",
+        "import time; print('left hemisphere placeholder ready'); time.sleep(3600)",
+      ]
+    environment:
+      CALOSUM_ROLE: left_hemisphere_slm
+      CALOSUM_ACCELERATOR: edge_mx_quantized
+
+  memory:
+    image: python:3.13-slim
+    command:
+      [
+        "python3",
+        "-c",
+        "import time; print('dual memory placeholder ready'); time.sleep(3600)",
+      ]
+    environment:
+      CALOSUM_ROLE: dual_memory
+
+  telemetry:
+    image: python:3.13-slim
+    command:
+      [
+        "python3",
+        "-c",
+        "import time; print('telemetry placeholder ready'); time.sleep(3600)",
+      ]
+    environment:
+      CALOSUM_ROLE: telemetry
