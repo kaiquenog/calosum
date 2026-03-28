@@ -198,7 +198,7 @@ class CalosumAgent:
             )
         )
 
-    def cognitive_dashboard(self, session_id: str) -> dict[str, list[dict]]:
+    def cognitive_dashboard(self, session_id: str | None = None) -> dict[str, list[dict]]:
         return self.telemetry_bus.dashboard_for_session(session_id)
 
     async def _store_selected_episode(self, result: AgentTurnResult) -> None:

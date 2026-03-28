@@ -83,12 +83,13 @@ class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
         payload = captured["payload"]
         assert isinstance(payload, dict)
         self.assertEqual(captured["url"], "https://api.openai.com/v1/responses")
-        self.assertEqual(payload["model"], "gpt-5-mini")
+        self.assertEqual(payload["model"], "gpt-4o-mini")
         self.assertEqual(payload["reasoning"], {"effort": "low"})
         self.assertEqual(payload["text"]["format"]["type"], "json_schema")
+        self.assertEqual(payload["text"]["format"]["strict"], False)
         self.assertEqual(result.response_text, "Resposta estruturada")
         self.assertEqual(result.telemetry["api_mode"], "openai_responses")
-        self.assertEqual(result.telemetry["model_name"], "gpt-5-mini")
+        self.assertEqual(result.telemetry["model_name"], "gpt-4o-mini")
 
     async def test_openai_compatible_endpoint_keeps_chat_completions_contract(self) -> None:
         captured: dict[str, object] = {}

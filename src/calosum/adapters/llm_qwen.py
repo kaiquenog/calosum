@@ -211,8 +211,8 @@ class QwenLeftHemisphereAdapter:
     def _resolve_model_name(self) -> str:
         model = self.config.model_name.strip()
         aliases = {
-            "gpt-5.4-mini": "gpt-5-mini",
-            "gpt-5.4-nano": "gpt-5-nano",
+            "gpt-5.4-mini": "gpt-4o-mini",
+            "gpt-5.4-nano": "gpt-4o-mini",
         }
         normalized = aliases.get(model, model)
         if normalized != model:
@@ -248,7 +248,7 @@ class QwenLeftHemisphereAdapter:
                 "format": {
                     "type": "json_schema",
                     "name": "left_hemisphere_result",
-                    "strict": True,
+                    "strict": False,
                     "schema": left_hemisphere_result_schema(),
                 }
             },
@@ -275,7 +275,7 @@ class QwenLeftHemisphereAdapter:
                 "type": "json_schema",
                 "json_schema": {
                     "name": "left_hemisphere_result",
-                    "strict": True,
+                    "strict": False,
                     "schema": left_hemisphere_result_schema(),
                 },
             },

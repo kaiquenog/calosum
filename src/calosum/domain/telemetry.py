@@ -298,14 +298,16 @@ class CognitiveTelemetryBus:
     ) -> None:
         self.record_reflection(session_id, turn_id, payload)
 
-    def dashboard_for_session(self, session_id: str) -> dict[str, list[dict[str, Any]]]:
+    def dashboard_for_session(self, session_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
         if not hasattr(self.sink, "query"):
             raise TypeError("dashboard_for_session requires a queryable telemetry sink")
         channels = ("felt", "thought", "decision", "execution", "reflection")
         dashboard: dict[str, list[dict[str, Any]]] = {}
         for channel in channels:
+            events = self.sink.query(session_id=session_id, channel=channel)
+            # Include session_id and recorded_at in the payload for UI filtering and timeline
             dashboard[channel] = [
-                event.payload for event in self.sink.query(session_id=session_id, channel=channel)
+                {**event.payload, "_session_id": event.session_id, "_recorded_at": event.recorded_at} for event in events
             ]
         return dashboard
 

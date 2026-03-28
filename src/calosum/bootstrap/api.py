@@ -100,6 +100,20 @@ async def get_dashboard(session_id: str) -> JSONResponse:
         return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
 
 
+@app.get("/v1/telemetry/dashboard")
+async def get_global_dashboard() -> JSONResponse:
+    """
+    Retorna o dashboard cognitivo global contendo os eventos de todas as sessões.
+    """
+    try:
+        agent = get_agent()
+        dashboard = agent.cognitive_dashboard(None)
+        return JSONResponse({"status": "ok", "dashboard": dashboard})
+    except Exception as e:
+        logger.error("Error retrieving dashboard", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
 @app.get("/v1/chat/sse")
 async def chat_sse(request: Request, text: str, session_id: str = "api-session"):
     """
