@@ -26,8 +26,14 @@
 
 ## Controle de Entropia Modular
 
-Conforme a base de código cresce, a fragmentação de dezenas de módulos na mesma pasta aumenta a "entropia" (confundindo desenvolvedores humanos e agentes IA focados na manutenabilidade). Para isso, implementou-se:
+Conforme a base de código cresce, a fragmentação de dezenas de módulos na mesma pasta aumenta a "entropia" (confundindo desenvolvedores humanos e agentes IA focados na manutenabilidade). No estado atual do Calosum, a organizacao aplicada e:
 
-1. **Subdiretórios Estritos**: Todo arquivo Python agora deve residir no subdiretório semântico correto (`shared`, `domain`, `adapters`, `bootstrap`).
-2. **Invariantes por Pacote**: Em vez de arquivos silenciosos, o `__init__.py` de todo pacote contém uma declaração docstring oficial explicando o que o pacote **não pode fazer**, balizando o escopo de imediato.
-3. **Checagem Recursiva**: O `harness_checks.py` foi atualizado para varrer tudo recursivamente e validar injeção de dependência hierárquica usando FQDN (*Fully Qualified Domain Names*) para os módulos.
+1. **Pacotes Semanticos Como Default**: O codigo de produto fica organizado prioritariamente em `shared`, `domain`, `adapters` e `bootstrap`. Utilitarios de governanca do repositorio podem continuar no nivel raiz do pacote quando isso simplifica a execucao, como ocorre com `src/calosum/harness_checks.py`.
+2. **Docstrings de Fronteira por Pacote Semantico**: Os subpacotes semanticos carregam `__init__.py` com o papel e a invariante de design do pacote. O `src/calosum/__init__.py` permanece focado na surface publica do pacote, nao em policiamento arquitetural.
+3. **Checagem Recursiva com Regras FQDN**: O `harness_checks.py` varre recursivamente `src/calosum` e valida artefatos obrigatorios, links minimos de docs, formato de planos, tamanho maximo de modulos e fronteiras de importacao via nomes de modulo qualificados (*Fully Qualified Domain Names*).
+
+## Limites Atuais do Harness
+
+- O harness nao exige hoje que todo arquivo Python esteja dentro dos quatro subpacotes semanticos.
+- O harness nao valida ainda a presenca ou o conteudo das docstrings de `__init__.py`.
+- O harness verifica fronteiras de importacao a partir de `MODULE_RULES`; quando a estrutura muda, esse mapa e a documentacao precisam evoluir juntos.

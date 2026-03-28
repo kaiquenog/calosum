@@ -16,12 +16,16 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
 
 1. **`shared/`** (`types.py`, `ports.py`, `async_utils.py`, `serialization.py`)
    Tipos compartilhados, contratos de dados e utilitários puros de serialização.
-2. **`domain/`** (`bridge.py`, `orchestrator.py`, `right_hemisphere.py`, `left_hemisphere.py`, `memory.py`, `persistent_memory.py`, `runtime.py`, `telemetry.py`, `metacognition.py`, `agent_execution.py`)
+2. **`domain/`** (`advanced_interfaces.py`, `bridge.py`, `orchestrator.py`, `right_hemisphere.py`, `left_hemisphere.py`, `memory.py`, `persistent_memory.py`, `runtime.py`, `telemetry.py`, `metacognition.py`, `agent_execution.py`)
    Modelos de negócios do agente neuro-simbólico. Pura lógica sem detalhes I/O diretos.
 3. **`adapters/`** (`llm_qwen.py`, `memory_qdrant.py`, `action_runtime.py`, `right_hemisphere_hf.py`, `night_trainer.py`)
    Implementações concretas dos ports que conversam com LLMs reais, bancos vetoriais, redes neurais de embedding ou executam tarefas lógicas seguras.
 4. **`bootstrap/`** (`settings.py`, `factory.py`, `cli.py`, `api.py`, `__main__.py`)
    Entrada da aplicação que avalia configurações locais, inicia a API REST/SSE e monta todo o motor ligando os mundos.
+
+## Governanca de Harness
+
+Fora das quatro camadas principais, o repositorio mantem `harness_checks.py` na raiz do pacote `calosum` como utilitario de governanca. Ele nao faz parte do runtime do agente; sua funcao e validar artefatos obrigatorios, planos, limites de modulo e fronteiras de importacao.
 
 ## Interface de Usuário (UI)
 
@@ -39,5 +43,5 @@ O projeto também possui um componente frontend na pasta `ui/` construído com R
 ## Crescimento Controlado
 
 - Toda nova integracao externa deve entrar em `adapters` atrás de um `Protocol`.
-- A arquitetura está mecanicamente enforçada pelo `harness_checks.py`. Exceções devem ser evitadas para poupar crescimento desordenado.
+- A arquitetura esta mecanicamente enforcada pelo `harness_checks.py` no que diz respeito a docs obrigatorios, planos, tamanho de modulo e fronteiras de importacao. Regras novas devem virar checks mecanicos quando se tornarem recorrentes.
 - Toda mudanca cross-cutting deve ter plano versionado.
