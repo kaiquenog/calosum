@@ -24,7 +24,7 @@ class FaultyLeftHemisphere:
             response_text="unsafe attempt",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> UnsafeDecision",
-                expression="(lambda _ call_external_api)",
+                expression="lambda ctx: call_external_api()",
                 expected_effect="unsafe",
             ),
             actions=[
@@ -56,7 +56,7 @@ class FaultyLeftHemisphere:
             response_text="repaired response",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> SafeDecision",
-                expression="(lambda _ respond_text)",
+                expression="lambda ctx: respond_text()",
                 expected_effect="safe",
             ),
             actions=[
@@ -89,6 +89,24 @@ class FaultyLeftHemisphere:
         )
 
 
+class MockLeftHemisphere:
+    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+        return LeftHemisphereResult(
+            response_text="Mocked response",
+            lambda_program=TypedLambdaProgram("Context -> Response", "()", "None"),
+            actions=[],
+            reasoning_summary=[],
+        )
+
+    async def areason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+        return self.reason(user_turn, bridge_packet, memory_context, runtime_feedback, attempt)
+
+    def repair(self, *args, **kwargs):
+        return self.reason(*args[:3])
+
+    async def arepair(self, *args, **kwargs):
+        return self.reason(*args[:3])
+
 class AsyncRetryAndPersistenceTests(unittest.IsolatedAsyncioTestCase):
     async def test_async_pipeline_retries_after_runtime_rejection(self) -> None:
         agent = CalosumAgent(
@@ -111,7 +129,7 @@ class AsyncRetryAndPersistenceTests(unittest.IsolatedAsyncioTestCase):
             base = Path(temp_dir)
             memory_system = PersistentDualMemorySystem.from_directory(base / "memory")
             telemetry_bus = CognitiveTelemetryBus(OTLPJsonlTelemetrySink(base / "telemetry.jsonl"))
-            agent = CalosumAgent(memory_system=memory_system, telemetry_bus=telemetry_bus)
+            agent = CalosumAgent(left_hemisphere=MockLeftHemisphere(), memory_system=memory_system, telemetry_bus=telemetry_bus)
 
             repeated_preference = (
                 "Prefiro respostas curtas com passos claros quando a situacao estiver urgente."

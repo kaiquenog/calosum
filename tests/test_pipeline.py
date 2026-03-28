@@ -2,12 +2,36 @@ from __future__ import annotations
 
 import unittest
 
-from calosum import CalosumAgent, Modality, MultimodalSignal, UserTurn
+from calosum import CalosumAgent, LeftHemisphereResult, Modality, MultimodalSignal, PrimitiveAction, TypedLambdaProgram, UserTurn
 
+class MockLeftHemisphere:
+    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+        return LeftHemisphereResult(
+            response_text="Mocked plan",
+            lambda_program=TypedLambdaProgram("Context -> Plan", "lambda _: propose_plan()", "plan"),
+            actions=[
+                PrimitiveAction(
+                    action_type="propose_plan",
+                    typed_signature="Context -> Plan",
+                    payload={"steps": ["1"]},
+                    safety_invariants=["safe"]
+                )
+            ],
+            reasoning_summary=[],
+        )
+
+    async def areason(self, *args, **kwargs):
+        return self.reason(*args[:3])
+
+    def repair(self, *args, **kwargs):
+        return self.reason(*args[:3])
+
+    async def arepair(self, *args, **kwargs):
+        return self.reason(*args[:3])
 
 class PipelineIntegrationTests(unittest.TestCase):
     def test_process_turn_generates_plan_executes_actions_and_records_telemetry(self) -> None:
-        agent = CalosumAgent()
+        agent = CalosumAgent(left_hemisphere=MockLeftHemisphere())
         turn = UserTurn(
             session_id="pipeline-session",
             user_text="Estou frustrado e preciso de um plano urgente para reorganizar este projeto.",

@@ -12,7 +12,7 @@ class StrictRuntimeTests(unittest.TestCase):
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Unit -> Unit",
-                expression="(lambda _ noop)",
+                expression="lambda _: noop()",
                 expected_effect="noop",
             ),
             actions=[
@@ -38,7 +38,7 @@ class StrictRuntimeTests(unittest.TestCase):
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Unit -> Plan",
-                expression="(lambda _ plan)",
+                expression="lambda _: plan()",
                 expected_effect="plan",
             ),
             actions=[

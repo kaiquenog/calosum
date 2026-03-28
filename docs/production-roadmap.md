@@ -1,27 +1,28 @@
 # Calosum Production Roadmap
 
-Este documento lista os próximos passos estratégicos para evoluir o Calosum, ordenados rigorosamente por prioridade de impacto, considerando que a fundação estrita (Ports & Adapters) e as conexões básicas (Qwen + Qdrant) já estão em vigor.
+Este documento lista os próximos passos estratégicos para evoluir o Calosum.
 
-## Fase 1: Interface e Usabilidade Básica (Prioridade Alta)
+> **Status Atual:** As Fases 1, 2 e o pipeline de Destilação Episódica da Fase 4 foram amplamente implementados no sprint de `2026-03-28-aspirational-roadmap.md`. O foco agora deve se voltar para Integrações Externas e Autonomia Avançada (Active Inference).
 
-Atualmente o agente só interage via comandos CLI diretos (`run-turn` e `run-scenario`). Para experimentação contínua, precisamos de interfaces vivas.
-1. **Interactive REPL (CLI Chat):** Criar um comando `python3 -m calosum.bootstrap.cli chat` que mantenha a sessão aberta no terminal para conversas interativas fluídas.
-2. **API REST / SSE:** Criar uma camada de rede simples (ex: FastAPI) acoplada na camada `bootstrap` para servir a porta do `Orchestrator` via WebSockets ou Server-Sent Events (SSE).
-3. **Integração Externa:** Desenvolver um script client conectando essa API ao Telegram ou WhatsApp para testes de campo.
+## Fase 1: Interface e Usabilidade (✅ Concluído)
 
-## Fase 2: Robustez nas Ferramentas (Prioridade Média-Alta)
+1. ~~**Interactive REPL (CLI Chat):**~~ Implementado via `python3 -m calosum.bootstrap.cli chat`.
+2. ~~**API REST / SSE:**~~ Implementado via FastAPI e Server-Sent Events (`calosum.bootstrap.api`).
+3. ~~**Observabilidade (Agent UI):**~~ Painel frontend em React construído para separar a telemetria do Hemisfério Direito, Hemisfério Esquerdo e Síntese.
 
-A estrutura do `ConcreteActionRuntime` já existe, mas suas "primitivas de ação" ainda não causam impacto real de rede ou disco.
-1. **Routing de Ações (Tools):** Mapear assinaturas do Qwen para ferramentas atômicas reais (ex. `execute_web_search()` com DuckDuckGo, `execute_file_write()`).
-2. **Sistema de Permissões:** O `ActionRuntime` precisará de um cofre de chaves (gerenciado via `settings.py`) para consumir APIs externas sem vazar contexto interno.
-3. **Observabilidade (Agent UI):** Ligar os eventos que já caem no `OTLPJsonlTelemetrySink` em um dashboard como Jaeger ou Langfuse, para enxergar visualmente quando o Qwen falhou no formato.
+## Fase 2: Robustez nas Ferramentas (✅ Concluído)
 
-## Fase 3: Raciocínio Avançado e Correção (Prioridade Média)
+1. ~~**Routing de Ações (Tools):**~~ `search_web` (via duckduckgo) e `write_file` integrados no `ConcreteActionRuntime`.
+2. ~~**Sistema de Permissões:**~~ Vault de credenciais injetado via `settings.py`.
+3. ~~**Cadeias de Markov e Múltiplos Passos:**~~ O loop de auto-correção via `AgentExecutionEngine` já captura erros e reprompta o modelo.
 
-O Orquestrador suporta `CognitiveVariantSpec`, mas precisamos de controle dinâmico dessas rotas.
-1. **Cadeias de Markov e Múltiplos Passos (HTN):** Expandir as retentivas de raciocínio. Se uma tool falha, injetar a mensagem de erro no prompt e re-pedir a ação.
-2. **Active Inference (Free Energy):** Modificar o Hemisfério Direito para calcular a *Loss* preditiva do input do usuário. Entradas muito "surpreendentes" abaixam a temperatura do LLM e disparam mais passos de reflexão antes de agir.
+## Fase 3: Integração com o Mundo (Prioridade Alta)
 
-## Fase 4: SOTA - Memória Dinâmica (Prioridade Baixa/Pesquisa)
+1. **Integração de Mensageria:** Desenvolver um script client conectando a API REST (ou SSE) ao Telegram ou WhatsApp para testes de campo.
+2. **Expansão de Ações (Tools):** Implementar ações de leitura de arquivos locais e execução de scripts sandboxed, para que o agente atue ativamente sobre projetos.
 
-1. **Destilação Episódica (Neuroplasticidade):** Criar o "Modo Noturno". Scripts que varrem o Qdrant de madrugada, consolidam o que foi aprendido, e treinam pequenos adaptadores LoRA. No dia seguinte, o Qwen-9B carrega os novos pesos, transformando *memória de trabalho* em *intuição implícita* (pesos do modelo).
+## Fase 4: SOTA - Memória e Inferência Ativa (Prioridade Média)
+
+1. ~~**Destilação Episódica (Neuroplasticidade):**~~ Implementado no `QdrantDualMemoryAdapter` integrando o `SleepModeConsolidator`. O agente consolida experiências em `SemanticRule`s no Qdrant.
+2. **Treinamento LoRA Contínuo:** Usar o backlog gerado pelo `SleepModeConsolidator` para efetivamente fazer *fine-tuning* local nos pesos do Qwen durante a noite.
+3. **Active Inference (Free Energy):** Modificar o Hemisfério Direito para calcular a *Loss* preditiva do input do usuário. Entradas muito "surpreendentes" abaixam a temperatura do LLM e disparam mais passos de reflexão antes de agir.

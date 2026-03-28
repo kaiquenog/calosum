@@ -11,6 +11,7 @@ Este diretorio e o sistema de registro do projeto.
 - [INFRASTRUCTURE.md](INFRASTRUCTURE.md): perfis, compose e dependencias de infraestrutura
 - [production-roadmap.md](production-roadmap.md): evolucao de producao e roadmap cientifico
 - [references/harness-engineering.md](references/harness-engineering.md): principios de governanca e growth control
+- [INIT_PROJECT.MD](INIT_PROJECT.MD): documento aspiracional original do projeto
 
 ## Catalogos
 

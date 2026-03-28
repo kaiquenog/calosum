@@ -230,9 +230,9 @@ def _memory_episode_from_dict(data: dict) -> MemoryEpisode:
         episode_id=data["episode_id"],
         recorded_at=_datetime(data["recorded_at"]),
         user_turn=_user_turn_from_dict(data["user_turn"]),
-        right_state=_right_state_from_dict(data["right_state"]),
-        bridge_packet=_bridge_packet_from_dict(data["bridge_packet"]),
-        left_result=_left_result_from_dict(data["left_result"]),
+        right_state=_right_state_from_dict(data.get("right_state", {})) if data.get("right_state") else None,
+        bridge_packet=_bridge_packet_from_dict(data.get("bridge_packet", {})) if data.get("bridge_packet") else None,
+        left_result=_left_result_from_dict(data.get("left_result", {})) if data.get("left_result") else None,
     )
 
 

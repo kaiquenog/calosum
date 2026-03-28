@@ -6,6 +6,7 @@ from typing import Any
 from calosum.adapters.action_runtime import ConcreteActionRuntime
 from calosum.adapters.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.adapters.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
+from calosum.adapters.right_hemisphere_hf import HuggingFaceRightHemisphereAdapter
 from calosum.domain.memory import DualMemorySystem
 from calosum.domain.orchestrator import CalosumAgent
 from calosum.domain.persistent_memory import PersistentDualMemorySystem
@@ -31,6 +32,7 @@ class CalosumAgentBuilder:
             left_hemisphere = QwenLeftHemisphereAdapter()
 
         return CalosumAgent(
+            right_hemisphere=HuggingFaceRightHemisphereAdapter(),
             left_hemisphere=left_hemisphere,
             action_runtime=ConcreteActionRuntime(vault=self.settings.vault),
             memory_system=self.build_memory_system(),

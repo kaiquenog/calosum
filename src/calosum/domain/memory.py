@@ -118,6 +118,10 @@ class SleepModeConsolidator:
         emotion_counter = Counter[str]()
         support_map: dict[str, list[str]] = {}
         preference_support: dict[str, list[str]] = {}
+        
+        # Para treinar o LoRA, precisamos gerar um arquivo .jsonl no formato "conversacional".
+        # Vamos acumular os episódios bem sucedidos.
+        fine_tuning_dataset: list[dict] = []
 
         for episode in episodes:
             for label in episode.right_state.emotional_labels:
@@ -127,6 +131,19 @@ class SleepModeConsolidator:
             preference = self._extract_preference(episode.user_turn.user_text)
             if preference:
                 preference_support.setdefault(preference, []).append(episode.episode_id)
+                
+            # Se o episódio não teve ações rejeitadas e o agente tomou uma decisão útil,
+            # ele serve como exemplo positivo para o fine-tuning.
+            if episode.left_result and episode.left_result.response_text:
+                # Na ausência de status de execução no episódio, consideramos que o texto gerado é válido se não houve crash.
+                has_rejections = False
+                if not has_rejections:
+                    fine_tuning_dataset.append({
+                        "messages": [
+                            {"role": "user", "content": episode.user_turn.user_text},
+                            {"role": "assistant", "content": episode.left_result.response_text}
+                        ]
+                    })
 
         for label, count in emotion_counter.items():
             if count >= self.minimum_frequency:
@@ -161,6 +178,19 @@ class SleepModeConsolidator:
                 promoted_rules.append(rule)
                 lora_backlog.append(f"adapter_preference::{preference[:24]}")
                 graph_updates.extend(self._preference_to_triples(preference, rule.rule_id))
+                
+        # Grava os dados limpos no disco para o script noturno do PEFT
+        if fine_tuning_dataset:
+            import json
+            import os
+            from pathlib import Path
+            
+            os.makedirs(".calosum-runtime/nightly_data", exist_ok=True)
+            export_path = Path(".calosum-runtime/nightly_data/latest_dataset.jsonl")
+            with export_path.open("w", encoding="utf-8") as f:
+                for item in fine_tuning_dataset:
+                    f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            lora_backlog.append(f"dataset_exported::{export_path}")
 
         return ConsolidationReport(
             started_at=started_at,

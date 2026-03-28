@@ -1,30 +1,44 @@
-# Infrastructure
+# Infraestrutura
 
-## Padrao de Organizacao
+O sistema `calosum` é agnóstico de ambiente, orquestrando dependências através da classe `InfrastructureSettings` e `CalosumAgentBuilder`.
 
-Infraestrutura e bootstrap usam `Builder/Abstract Factory`.
+## Variáveis de Ambiente
 
-- `settings.py` resolve perfil e endpoints
-- `factory.py` escolhe adapters concretos
-- `docker-compose.yml` define o ambiente local de infraestrutura interligada
+As configurações principais podem ser passadas via `.env` ou exportadas no terminal:
 
-## Perfis
+- `CALOSUM_INFRA_PROFILE`: Define o comportamento global (`ephemeral`, `persistent`, `docker`).
+- `CALOSUM_VECTORDB_URL`: Endpoint do Qdrant (ex: `http://localhost:6333`).
+- `CALOSUM_LEFT_ENDPOINT`: URL base da API compatível com OpenAI (ex: vLLM, Ollama).
+- `CALOSUM_LEFT_MODEL`: Nome do modelo (ex: `Qwen/Qwen-3.5-9B-Instruct`).
+- `CALOSUM_API_PORT`: Porta para a API REST/SSE (padrão: 8000).
+- `CALOSUM_VAULT_*`: Variáveis prefixadas com este padrão são automaticamente injetadas de forma segura no `ActionRuntime` (ex: `CALOSUM_VAULT_GITHUB_TOKEN`).
 
-- `ephemeral`: tudo em memoria
-- `persistent`: persistencia local em disco
-- `docker`: persistencia em volume, tracing via collector, vector DB disponivel na rede do compose e Web Server ativo na porta 8000.
+## Perfis de Execução
 
-## Compose Atual
+### 1. Ephemeral (Padrão)
+`CALOSUM_INFRA_PROFILE=ephemeral`
+- A memória vetorial e a telemetria rodam totalmente na memória RAM (arrays de Python).
+- Nada é salvo no disco. Ideal para rodar a suíte de testes rápidos.
 
-- `orchestrator`: processo principal isolado que roda a API Rest/SSE (FastAPI) em `http://localhost:8000`.
-- `qdrant`: banco Vetorial que atua com o adaptador Dual Memory.
-- `otel-collector`: recepcao de OTLP.
-- `jaeger`: visualizacao UI de traces.
+### 2. Persistent
+`CALOSUM_INFRA_PROFILE=persistent`
+- Salva dados na pasta local `.calosum-runtime/`.
+- Os eventos de telemetria vão para `.calosum-runtime/telemetry/events.jsonl`.
+- Se o Qdrant não for configurado, a memória vetorial salva localmente em formato `.jsonl` serializado.
 
-Observacao:
-- Containers fakes criados na fundação da arquitetura (`right-hemisphere` / `left-hemisphere`) foram extintos. O agente usa abstrações ativas do pacote `adapters` que interagem com o mundo real ou APIs externas, mantendo as regras estritas da aplicação rodando inteiramente na V-NET do container principal.
+### 3. Docker
+`CALOSUM_INFRA_PROFILE=docker`
+- Utiliza a stack definida em `deploy/docker-compose.yml`.
+- Sobe Qdrant, Jaeger (OpenTelemetry) e a API do Orquestrador.
+- **Machine Learning**: Os modelos da biblioteca `sentence-transformers` e `torch` baixam os pesos durante a criação da imagem e rodam na V-NET do container.
+- **Frontend UI:** Para rodar a interface de telemetria em React, inicie-a localmente usando `npm run dev` dentro do diretório `ui/`.
 
-## Pendencias Ja Encaixadas Na Infra
+## Rotinas Assíncronas (Sleep Mode)
 
-- `qdrant` está 100% vitalizado por `adapters.memory_qdrant`.
-- O servidor interativo pode ser contatado via API local ou com a CLI `python3 -m calosum.bootstrap.cli chat`.
+A infraestrutura prevê a execução de consolidação noturna e neuroplasticidade. O arquivo `adapters/night_trainer.py` pode ser executado isoladamente (como um CronJob no container ou na máquina host) para ler o `.jsonl` extraído do Qdrant e aplicar um fine-tuning via **PEFT/LoRA**.
+
+## Observabilidade (OTEL)
+
+A telemetria cognitiva está preparada para exportar logs `JSONL` compatíveis com o formato OpenTelemetry. Quando o perfil Docker é ativado, esses logs podem ser consumidos por coletores (ex: `otel-collector`) para roteamento a visualizadores de rastreamento distribuído (Jaeger).
+
+Adicionalmente, os dados de telemetria da sessão estão disponíveis em tempo real através da API REST (`/v1/telemetry/dashboard/{session_id}`) e consumidos ativamente pelo painel UI React.

@@ -52,6 +52,7 @@ class CliIntegrationTests(unittest.TestCase):
 
             env = os.environ.copy()
             env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
+            env["CALOSUM_LEFT_ENDPOINT"] = "http://127.0.0.1:9999/v1/chat/completions" # Fail fast for tests
             completed = subprocess.run(
                 [
                     "python3",

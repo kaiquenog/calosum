@@ -81,6 +81,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.action_runtime", 
         "adapters.llm_qwen", 
         "adapters.memory_qdrant",
+        "adapters.right_hemisphere_hf",
         "domain.memory",
         "domain.orchestrator",
         "domain.persistent_memory",
@@ -107,6 +108,8 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.action_runtime": {"shared.async_utils", "shared.types"},
     "adapters.llm_qwen": {"shared.async_utils", "shared.types"},
     "adapters.memory_qdrant": {"shared.async_utils", "shared.types", "domain.memory"},
+    "adapters.right_hemisphere_hf": {"shared.types"},
+    "adapters.night_trainer": set(),
 
     # ROOT
     "harness_checks": set(),

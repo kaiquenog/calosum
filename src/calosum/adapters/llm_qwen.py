@@ -82,10 +82,17 @@ class QwenLeftHemisphereAdapter:
             msg = data["choices"][0]["message"]
             content = msg.get("content", "")
             
-            if content.startswith("```json"):
-                content = content.replace("```json", "").replace("```", "").strip()
-            elif content.startswith("```"):
-                content = content.replace("```", "").strip()
+            # Limpa block ticks (```json e ```) que LLMs podem injetar
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].strip()
+                
+            # Tratamento para modelos pequenos (Qwen 0.5B/1.5B) que enviam seu "Thinking Process" antes do JSON
+            if "{" in content and "}" in content:
+                start_idx = content.find("{")
+                end_idx = content.rfind("}") + 1
+                content = content[start_idx:end_idx]
             
             if not content.strip():
                 reasoning = msg.get("reasoning", "")
