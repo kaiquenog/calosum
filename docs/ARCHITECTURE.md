@@ -14,18 +14,20 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
 
 ## Camadas
 
-1. **`shared/`** (`types.py`, `ports.py`, `async_utils.py`, `serialization.py`)
-   Tipos compartilhados, contratos de dados e utilitários puros de serialização.
-2. **`domain/`** (`advanced_interfaces.py`, `bridge.py`, `orchestrator.py`, `right_hemisphere.py`, `left_hemisphere.py`, `memory.py`, `persistent_memory.py`, `runtime.py`, `runtime_dsl.py`, `telemetry.py`, `metacognition.py`, `agent_execution.py`)
-   Modelos de negócios do agente neuro-simbólico. Pura lógica sem detalhes I/O diretos.
-3. **`adapters/`** (`llm_qwen.py`, `llm_payloads.py`, `memory_qdrant.py`, `text_embeddings.py`, `action_runtime.py`, `right_hemisphere_hf.py`, `night_trainer.py`)
-   Implementações concretas dos ports que conversam com LLMs reais, bancos vetoriais, redes neurais de embedding ou executam tarefas lógicas seguras.
+1. **`shared/`** (`types.py`, `ports.py`, `tools.py`, `async_utils.py`, `serialization.py`)
+   Tipos compartilhados, contratos de dados, `ToolRegistry` e utilitários puros de serialização. Inclui os descritores de Sprint 0: `CapabilityDescriptor`, `ModelDescriptor`, `ToolDescriptor`, `ComponentHealth`.
+2. **`domain/`** (`agent_execution.py`, `bridge.py`, `event_bus.py`, `left_hemisphere.py`, `memory.py`, `metacognition.py`, `multiagent.py`, `orchestrator.py`, `persistent_memory.py`, `right_hemisphere.py`, `runtime.py`, `runtime_dsl.py`, `telemetry.py`, `verifier.py`)
+   Modelos de negócios do agente neuro-simbólico. Pura lógica sem detalhes I/O diretos. `agent_execution.py` concentra o loop de retry/repair; `orchestrator.py` decide entre turno simples e group turn via threshold de surpresa/ambiguidade.
+3. **`adapters/`** (`action_runtime.py`, `active_inference.py`, `bridge_store.py`, `channel_telegram.py`, `knowledge_graph_nanorag.py`, `llm_failover.py`, `llm_payloads.py`, `llm_qwen.py`, `memory_qdrant.py`, `night_trainer.py`, `night_trainer_dspy.py`, `night_trainer_lora.py`, `right_hemisphere_hf.py`, `text_embeddings.py`, `tools/code_execution.py`, `tools/http_request.py`)
+   Implementações concretas dos ports. Todo código que depende de SDKs externos (torch, transformers, peft, qdrant-client, dspy, openai, httpx, telegram) reside aqui exclusivamente.
 4. **`bootstrap/`** (`settings.py`, `factory.py`, `cli.py`, `api.py`, `__main__.py`)
-   Entrada da aplicação que avalia configurações locais, inicia a API REST/SSE e monta todo o motor ligando os mundos.
+   Entrada da aplicação. `factory.py` instancia adapters, constrói `capability_snapshot` real e injeta tudo no domain via `CalosumAgentBuilder`. É o único ponto autorizado a acoplar adapters e domain.
 
 ## Governanca de Harness
 
-Fora das quatro camadas principais, o repositorio mantem `harness_checks.py` na raiz do pacote `calosum` como utilitario de governanca. Ele nao faz parte do runtime do agente; sua funcao e validar artefatos obrigatorios, planos, limites de modulo e fronteiras de importacao.
+Fora das quatro camadas principais, o repositório mantém `harness_checks.py` na raiz do pacote `calosum` como utilitário de governança. Ele não faz parte do runtime do agente; sua função é validar artefatos obrigatórios, planos, limites de módulo (<400 linhas) e fronteiras de importação via AST.
+
+Todo novo módulo Python deve ser registrado em `MODULE_RULES` dentro de `harness_checks.py` com o conjunto explícito de imports internos permitidos. Módulos sem regra geram violação `missing_module_rule` que quebra o build. Consulte `docs/references/harness-engineering.md` para a lista completa de checks e seus códigos de erro.
 
 ## Interface de Usuário (UI)
 

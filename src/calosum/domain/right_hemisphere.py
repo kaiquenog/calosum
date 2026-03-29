@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Any
 
-from calosum.shared.types import MemoryContext, Modality, RightHemisphereState, UserTurn
+from calosum.shared.types import MemoryContext, Modality, RightHemisphereState, UserTurn, CognitiveWorkspace
 
 
 @dataclass(slots=True)
@@ -41,7 +41,7 @@ class RightHemisphereJEPA:
     def __init__(self, config: RightHemisphereJEPAConfig | None = None) -> None:
         self.config = config or RightHemisphereJEPAConfig()
 
-    def perceive(self, user_turn: UserTurn, memory_context: Any | None = None) -> RightHemisphereState:
+    def perceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
         seed = self._build_seed(user_turn)
         latent_vector = self._latent_from_seed(seed, self.config.latent_size)
         emotional_labels = self._extract_emotional_labels(user_turn)
@@ -54,7 +54,7 @@ class RightHemisphereJEPA:
 
         surprise_score = self._calculate_surprise(latent_vector, memory_context)
 
-        return RightHemisphereState(
+        state = RightHemisphereState(
             context_id=user_turn.turn_id,
             latent_vector=latent_vector,
             salience=salience,
@@ -68,9 +68,18 @@ class RightHemisphereJEPA:
                 "seed_fingerprint": seed[:12],
             },
         )
+        
+        if workspace is not None:
+            workspace.right_notes.update({
+                "salience": salience,
+                "surprise_score": surprise_score,
+                "emotional_labels": emotional_labels or ["neutral"],
+            })
+            
+        return state
 
-    async def aperceive(self, user_turn: UserTurn, memory_context: Any | None = None) -> RightHemisphereState:
-        return self.perceive(user_turn, memory_context)
+    async def aperceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
+        return self.perceive(user_turn, memory_context, workspace)
 
     def _calculate_surprise(self, latent_vector: list[float], memory_context: Any | None) -> float:
         if not memory_context or not memory_context.recent_episodes:

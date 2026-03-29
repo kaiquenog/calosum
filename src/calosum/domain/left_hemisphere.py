@@ -10,6 +10,7 @@ from calosum.shared.types import (
     PrimitiveAction,
     TypedLambdaProgram,
     UserTurn,
+    CognitiveWorkspace,
 )
 
 
@@ -41,6 +42,7 @@ class LeftHemisphereLogicalSLM:
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
         rules = [rule.statement for rule in memory_context.semantic_rules[:2]]
         knowledge_facts = memory_context.knowledge_triples[:3]
@@ -123,7 +125,7 @@ class LeftHemisphereLogicalSLM:
             f"attempt={attempt}",
         ]
 
-        return LeftHemisphereResult(
+        result = LeftHemisphereResult(
             response_text=response_text,
             lambda_program=lambda_program,
             actions=actions,
@@ -140,6 +142,15 @@ class LeftHemisphereLogicalSLM:
                 "runtime_feedback": runtime_feedback or [],
             },
         )
+
+        if workspace is not None:
+            workspace.left_notes.update({
+                "response_text": result.response_text,
+                "reasoning_summary": result.reasoning_summary,
+                "actions": [a.action_type for a in result.actions],
+            })
+
+        return result
 
     def _build_lambda_expression(self, actions: list[PrimitiveAction]) -> str:
         if not actions:
@@ -162,6 +173,7 @@ class LeftHemisphereLogicalSLM:
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
         return self.reason(
             user_turn=user_turn,
@@ -169,6 +181,7 @@ class LeftHemisphereLogicalSLM:
             memory_context=memory_context,
             runtime_feedback=runtime_feedback,
             attempt=attempt,
+            workspace=workspace,
         )
 
     def repair(
@@ -180,6 +193,7 @@ class LeftHemisphereLogicalSLM:
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
         feedback = [
             f"{item.action_type}:{'; '.join(item.violations)}" for item in rejected_results
@@ -192,6 +206,7 @@ class LeftHemisphereLogicalSLM:
             memory_context=memory_context,
             runtime_feedback=feedback,
             attempt=attempt,
+            workspace=workspace,
         )
 
     async def arepair(
@@ -203,6 +218,7 @@ class LeftHemisphereLogicalSLM:
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
         return self.repair(
             user_turn=user_turn,
@@ -212,6 +228,7 @@ class LeftHemisphereLogicalSLM:
             rejected_results=rejected_results,
             attempt=attempt,
             critique_feedback=critique_feedback,
+            workspace=workspace,
         )
 
     def _prefers_short_response(self, memory_context: MemoryContext) -> bool:

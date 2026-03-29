@@ -224,7 +224,11 @@ class CognitiveTelemetryBus:
                 session_id=session_id,
                 turn_id=turn_id,
                 recorded_at=timestamp,
-                payload=result.telemetry.thought,
+                payload={
+                    **result.telemetry.thought,
+                    "bridge_config": result.telemetry.bridge_config,
+                    "active_variant": result.telemetry.active_variant,
+                },
                 trace_id=trace_id,
                 span_id=self._span_id(trace_id, "thought"),
                 metrics={
@@ -240,7 +244,10 @@ class CognitiveTelemetryBus:
                 session_id=session_id,
                 turn_id=turn_id,
                 recorded_at=timestamp,
-                payload=result.telemetry.decision,
+                payload={
+                    **result.telemetry.decision,
+                    "capabilities": result.telemetry.capabilities,
+                },
                 trace_id=trace_id,
                 span_id=self._span_id(trace_id, "decision"),
                 metrics={

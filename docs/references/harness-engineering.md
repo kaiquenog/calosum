@@ -34,6 +34,20 @@ Conforme a base de código cresce, a fragmentação de dezenas de módulos na me
 
 ## Limites Atuais do Harness
 
-- O harness nao exige hoje que todo arquivo Python esteja dentro dos quatro subpacotes semanticos.
-- O harness nao valida ainda a presenca ou o conteudo das docstrings de `__init__.py`.
-- O harness verifica fronteiras de importacao a partir de `MODULE_RULES`; quando a estrutura muda, esse mapa e a documentacao precisam evoluir juntos.
+- O harness não exige que todo arquivo Python esteja dentro dos quatro subpacotes semânticos; `harness_checks.py` é mantido no nível raiz do pacote por simplicidade de execução.
+- O harness não valida ainda a presença ou o conteúdo das docstrings de `__init__.py` por pacote semântico.
+- O harness verifica fronteiras de importação a partir de `MODULE_RULES`; quando a estrutura muda (novos módulos, renomeações), esse mapa **e** esta documentação precisam evoluir juntos. Módulos não registrados em `MODULE_RULES` geram violação `missing_module_rule` que quebra o build.
+- O harness não executa em CI remota ainda; roda manualmente via `PYTHONPATH=src python3 -m calosum.harness_checks`.
+
+## Checks Atuais (harness_checks.py)
+
+| Check | Descrição |
+|---|---|
+| `missing_required_path` | Artefatos obrigatórios ausentes (AGENTS.md, docs/index.md, etc.) |
+| `agents_too_long` | AGENTS.md excedeu 120 linhas |
+| `agents_missing_link` | AGENTS.md não referencia link obrigatório de docs |
+| `docs_index_missing_ref` | docs/index.md não referencia doc obrigatório |
+| `plan_missing_heading` | Plano em active/ ou completed/ sem heading obrigatório |
+| `module_too_large` | Módulo .py com mais de 400 linhas |
+| `missing_module_rule` | Módulo não registrado em MODULE_RULES |
+| `forbidden_internal_import` | Módulo importa pacote não permitido pela regra de fronteira |

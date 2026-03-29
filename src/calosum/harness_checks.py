@@ -50,7 +50,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "shared.schemas": set(),
     "shared.async_utils": set(),
     "shared.serialization": set(),
-    "shared.tools": set(),
+    "shared.tools": {"shared.types"},
 
     # DOMAIN
     "domain.agent_execution": {"shared.async_utils", "shared.ports", "shared.types"},
@@ -64,8 +64,10 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.persistent_memory": {"domain.memory", "shared.serialization", "shared.types"},
     "domain.telemetry": {"shared.types"},
     "domain.tool_registry": {"shared.types"},
+    "domain.workspace": {"domain.orchestrator", "shared.types"},
     "domain.metacognition": {"domain.bridge", "shared.types"},
     "domain.multiagent": {"domain.event_bus", "shared.types"},
+    "domain.self_model": {"domain.orchestrator", "shared.types"},
     "domain.verifier": {"shared.schemas", "shared.types"},
     "domain.orchestrator": {
         "shared.async_utils",
@@ -78,8 +80,10 @@ MODULE_RULES: dict[str, set[str]] = {
         "shared.ports",
         "domain.right_hemisphere",
         "domain.runtime",
+        "domain.self_model",
         "domain.telemetry",
         "domain.verifier",
+        "domain.workspace",
         "shared.types",
     },
 
@@ -102,7 +106,8 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.persistent_memory",
         "domain.right_hemisphere",
         "bootstrap.settings",
-        "domain.telemetry"
+        "domain.telemetry",
+        "shared.types"
     },
     "bootstrap.cli": {
         "bootstrap.factory",
@@ -155,6 +160,8 @@ MODULE_RULES: dict[str, set[str]] = {
         "shared.ports",
         "domain.right_hemisphere",
         "domain.runtime",
+        "domain.self_model",
+        "domain.workspace",
         "shared.serialization",
         "bootstrap.settings",
         "domain.telemetry",

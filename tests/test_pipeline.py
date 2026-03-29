@@ -65,6 +65,14 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertEqual(len(dashboard["decision"]), 1)
         self.assertEqual(len(dashboard["execution"]), 1)
 
+        # Check telemetry enrichment (Sprint 0)
+        thought_event = dashboard["thought"][0]
+        self.assertIn("bridge_config", thought_event)
+        self.assertIn("target_temperature", thought_event["bridge_config"])
+        self.assertIn("active_variant", thought_event)
+
+        decision_event = dashboard["decision"][0]
+        self.assertIn("capabilities", decision_event)
 
 if __name__ == "__main__":
     unittest.main()

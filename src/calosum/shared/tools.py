@@ -55,6 +55,19 @@ class ToolRegistry:
     def list_schemas(self) -> list[ToolSchema]:
         return list(self._schemas.values())
 
+    def get_descriptors(self) -> list["ToolDescriptor"]:
+        from calosum.shared.types import ToolDescriptor, ComponentHealth
+        return [
+            ToolDescriptor(
+                name=schema.name,
+                description=schema.description,
+                requires_approval=schema.needs_approval,
+                required_permissions=schema.required_permissions,
+                health=ComponentHealth.HEALTHY,
+            )
+            for schema in self._schemas.values()
+        ]
+
     def _matches_type(self, value: Any, expected_type: Any) -> bool:
         normalized = str(expected_type).strip().lower()
         expected_map = {

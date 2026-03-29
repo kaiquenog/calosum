@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from calosum.shared.schemas import collect_left_result_schema_issues
-from calosum.shared.types import ActionExecutionResult, CritiqueVerdict, LeftHemisphereResult, UserTurn
+from calosum.shared.types import ActionExecutionResult, CritiqueVerdict, FailureType, LeftHemisphereResult, UserTurn, CognitiveWorkspace
 from calosum.shared.types import FailureType
 
 
@@ -16,6 +16,7 @@ class HeuristicVerifier:
         user_turn: UserTurn,
         left_result: LeftHemisphereResult,
         execution_results: list[ActionExecutionResult],
+        workspace: CognitiveWorkspace | None = None,
     ) -> CritiqueVerdict:
         issues: list[str] = []
         fixes: list[str] = []
@@ -39,7 +40,7 @@ class HeuristicVerifier:
             reasoning.append(f"Failure taxonomy: {categories}.")
             confidence = max(0.35, 1.0 - (len(issues) * 0.1) - (len(unique_failure_types) * 0.05))
 
-        return CritiqueVerdict(
+        verdict = CritiqueVerdict(
             is_valid=is_valid,
             critique_reasoning=reasoning,
             identified_issues=issues,
@@ -48,13 +49,23 @@ class HeuristicVerifier:
             failure_types=unique_failure_types,
         )
 
+        if workspace is not None and issues:
+            workspace.verifier_feedback.append({
+                "issues": issues,
+                "fixes": fixes,
+                "failure_types": [f.value for f in unique_failure_types],
+            })
+
+        return verdict
+
     async def averify(
         self,
         user_turn: UserTurn,
         left_result: LeftHemisphereResult,
         execution_results: list[ActionExecutionResult],
+        workspace: CognitiveWorkspace | None = None,
     ) -> CritiqueVerdict:
-        return self.verify(user_turn, left_result, execution_results)
+        return self.verify(user_turn, left_result, execution_results, workspace)
 
     def _check_response_safety(
         self,

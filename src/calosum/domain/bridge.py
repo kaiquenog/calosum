@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from calosum.shared.types import BridgeControlSignal, CognitiveBridgePacket, RightHemisphereState, SoftPromptToken
+from calosum.shared.types import BridgeControlSignal, CognitiveBridgePacket, RightHemisphereState, SoftPromptToken, CognitiveWorkspace
 from calosum.shared.ports import BridgeStateStorePort
 
 
@@ -105,10 +105,21 @@ class CognitiveTokenizer:
         if self.store:
             self.store.record_reflection_event(payload)
 
-    def translate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket:
+    def translate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket:
         if self.use_neural and len(right_state.latent_vector) == self.latent_dim:
-            return self._neural_translate(right_state)
-        return self._heuristic_translate(right_state)
+            packet = self._neural_translate(right_state)
+        else:
+            packet = self._heuristic_translate(right_state)
+            
+        if workspace is not None:
+            workspace.bridge_state.update({
+                "target_temperature": packet.control.target_temperature,
+                "empathy_priority": packet.control.empathy_priority,
+                "directives": packet.control.system_directives,
+                "salience_calibrated": packet.salience,
+            })
+            
+        return packet
 
     def _neural_translate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket:
         import torch
@@ -216,5 +227,5 @@ class CognitiveTokenizer:
             },
         )
 
-    async def atranslate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket:
-        return self.translate(right_state)
+    async def atranslate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket:
+        return self.translate(right_state, workspace)

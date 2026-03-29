@@ -117,6 +117,27 @@ class InfrastructureBuilderTests(unittest.TestCase):
             "http://secondary.local/v1/chat/completions",
         )
 
+    def test_builder_extracts_capability_snapshot(self) -> None:
+        settings = InfrastructureSettings(
+            left_hemisphere_endpoint="https://api.openai.com/v1",
+            left_hemisphere_model="gpt-4o",
+            left_hemisphere_provider="openai",
+        ).with_profile_defaults()
+        builder = CalosumAgentBuilder(settings)
+        snapshot = builder.build_capability_snapshot()
+
+        self.assertEqual(snapshot.left_hemisphere.model_name, "gpt-4o")
+        self.assertEqual(snapshot.left_hemisphere.provider, "openai")
+        self.assertEqual(snapshot.left_hemisphere.backend, "openai_responses_adapter")
+        
+        self.assertEqual(snapshot.right_hemisphere.model_name, "jepa")
+        self.assertEqual(snapshot.knowledge_graph.model_name, "nanorag")
+
+        # The description should contain the snapshot serialized
+        description = builder.describe()
+        self.assertIn("capabilities", description)
+        self.assertEqual(description["capabilities"]["left_hemisphere"]["model_name"], "gpt-4o")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,9 @@ from calosum.domain.telemetry import CognitiveTelemetryBus
 from calosum.domain.verifier import HeuristicVerifier
 from calosum.shared.types import (
     AgentTurnResult,
+    CapabilityDescriptor,
+    CognitiveArchitectureMap,
+    CognitiveWorkspace,
     MemoryEpisode,
     UserTurn,
     utc_now,
@@ -71,6 +74,7 @@ class CalosumAgent:
         reflection_controller: ReflectionControllerPort | None = None,
         verifier: VerifierPort | None = None,
         config: CalosumAgentConfig | None = None,
+        capability_snapshot: CapabilityDescriptor | None = None,
     ) -> None:
         self.right_hemisphere = right_hemisphere or RightHemisphereJEPA()
         self.tokenizer = tokenizer or CognitiveTokenizer()
@@ -81,6 +85,7 @@ class CalosumAgent:
         self.reflection_controller = reflection_controller or GEAReflectionController()
         self.verifier = verifier or HeuristicVerifier()
         self.config = config or CalosumAgentConfig()
+        self.capability_snapshot = capability_snapshot
         self.event_bus = InternalEventBus()
         self.execution_engine = AgentExecutionEngine(
             action_runtime=self.action_runtime,
@@ -88,11 +93,21 @@ class CalosumAgent:
             verifier=self.verifier,
         )
 
+        from calosum.domain.self_model import build_self_model
+        self.self_model: CognitiveArchitectureMap = build_self_model(self)
+        
+        # Último workspace por sessão
+        self.last_workspace_by_session: dict[str, CognitiveWorkspace] = {}
+
     def process_turn(self, user_turn: UserTurn) -> AgentTurnResult | GroupTurnResult:
         return run_sync(self.aprocess_turn(user_turn))
 
     async def aprocess_turn(self, user_turn: UserTurn) -> AgentTurnResult | GroupTurnResult:
         started_at = perf_counter()
+        
+        from calosum.domain.workspace import init_turn_workspace
+        workspace = init_turn_workspace(self, user_turn)
+        self.last_workspace_by_session[user_turn.session_id] = workspace
         
         await self.event_bus.publish(CognitiveEvent("UserTurnEvent", user_turn, user_turn.turn_id))
 
@@ -106,7 +121,7 @@ class CalosumAgent:
 
         right_state = await maybe_await(
             self.execution_engine.call_component(
-                self.right_hemisphere, "aperceive", "perceive", user_turn, memory_context
+                self.right_hemisphere, "aperceive", "perceive", user_turn, memory_context, workspace
             )
         )
         
@@ -128,7 +143,12 @@ class CalosumAgent:
             max_width = self.config.branching_budget.max_width
             variants = default_cognitive_personas(max_width)
             
-            return await self.aprocess_group_turn(user_turn, variants, _precomputed_memory=memory_context, _precomputed_right=right_state)
+            return await self.aprocess_group_turn(user_turn, variants, _precomputed_memory=memory_context, _precomputed_right=right_state, _precomputed_workspace=workspace)
+
+        capabilities_dict = None
+        if self.capability_snapshot:
+            from dataclasses import asdict
+            capabilities_dict = asdict(self.capability_snapshot)
 
         result = await self.execution_engine.run_variant(
             user_turn=user_turn,
@@ -136,6 +156,8 @@ class CalosumAgent:
             right_state=right_state,
             tokenizer=self.tokenizer,
             left_hemisphere=self.left_hemisphere,
+            capabilities=capabilities_dict,
+            workspace=workspace,
         )
         result.latency_ms = round((perf_counter() - started_at) * 1000.0, 3)
         
@@ -162,11 +184,18 @@ class CalosumAgent:
         variants: list[CognitiveVariantSpec],
         _precomputed_memory: Any | None = None,
         _precomputed_right: Any | None = None,
+        _precomputed_workspace: CognitiveWorkspace | None = None,
     ) -> GroupTurnResult:
         if not variants:
             raise ValueError("process_group_turn requires at least one variant")
 
         started_at = perf_counter()
+        
+        workspace = _precomputed_workspace
+        if workspace is None:
+            from calosum.domain.workspace import init_turn_workspace
+            workspace = init_turn_workspace(self, user_turn)
+            self.last_workspace_by_session[user_turn.session_id] = workspace
         
         memory_context = _precomputed_memory
         if memory_context is None:
@@ -180,10 +209,15 @@ class CalosumAgent:
         if right_state is None:
             right_state = await maybe_await(
                 self.execution_engine.call_component(
-                    self.right_hemisphere, "aperceive", "perceive", user_turn, memory_context
+                    self.right_hemisphere, "aperceive", "perceive", user_turn, memory_context, workspace
                 )
             )
         candidates: list[CognitiveCandidate] = []
+
+        capabilities_dict = None
+        if self.capability_snapshot:
+            from dataclasses import asdict
+            capabilities_dict = asdict(self.capability_snapshot)
 
         for variant in variants:
             variant_started_at = perf_counter()
@@ -197,6 +231,8 @@ class CalosumAgent:
                 left_hemisphere=left_hemisphere,
                 variant_label=variant.variant_id,
                 bridge_directives=variant.bridge_directives,
+                capabilities=capabilities_dict,
+                workspace=workspace,
             )
             turn_result.latency_ms = round((perf_counter() - variant_started_at) * 1000.0, 3)
             candidates.append(CognitiveCandidate(variant=variant, turn_result=turn_result))

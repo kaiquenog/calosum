@@ -45,9 +45,11 @@ class AgentExecutionEngine:
         left_hemisphere: LeftHemispherePort,
         variant_label: str | None = None,
         bridge_directives: list[str] | None = None,
+        capabilities: dict[str, Any] | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> AgentTurnResult:
         bridge_packet = await maybe_await(
-            self.call_component(tokenizer, "atranslate", "translate", right_state)
+            self.call_component(tokenizer, "atranslate", "translate", right_state, workspace)
         )
         bridge_packet = self._apply_variant_bridge_overrides(
             bridge_packet,
@@ -64,6 +66,7 @@ class AgentExecutionEngine:
                 memory_context,
                 None,
                 0,
+                workspace,
             )
         )
         left_result, execution_results, retry_count, critique_revision_count = await self._execute_with_retries(
@@ -72,13 +75,17 @@ class AgentExecutionEngine:
             memory_context=memory_context,
             left_hemisphere=left_hemisphere,
             left_result=left_result,
+            workspace=workspace,
         )
         telemetry = self._build_telemetry(
             right_state=right_state,
+            bridge_packet=bridge_packet,
             left_result=left_result,
             execution_results=execution_results,
             retry_count=retry_count,
             critique_revision_count=critique_revision_count,
+            capabilities=capabilities,
+            variant_label=variant_label,
         )
         return AgentTurnResult(
             user_turn=user_turn,
@@ -125,6 +132,7 @@ class AgentExecutionEngine:
         memory_context: MemoryContext,
         left_hemisphere: LeftHemispherePort,
         left_result: LeftHemisphereResult,
+        workspace: CognitiveWorkspace | None = None,
     ) -> tuple[LeftHemisphereResult, list[ActionExecutionResult], int, int]:
         retry_count = 0
         critique_revision_count = 0
@@ -132,7 +140,7 @@ class AgentExecutionEngine:
 
         while True:
             execution_results = await maybe_await(
-                self.call_component(self.action_runtime, "arun", "run", current_result)
+                self.call_component(self.action_runtime, "arun", "run", current_result, workspace)
             )
             rejected_results = [
                 result for result in execution_results if result.status == "rejected"
@@ -141,7 +149,7 @@ class AgentExecutionEngine:
             critique_verdict = None
             if self.verifier:
                 critique_verdict = await maybe_await(
-                    self.call_component(self.verifier, "averify", "verify", user_turn, current_result, execution_results)
+                    self.call_component(self.verifier, "averify", "verify", user_turn, current_result, execution_results, workspace)
                 )
 
             is_valid = critique_verdict.is_valid if critique_verdict else not rejected_results
@@ -162,6 +170,7 @@ class AgentExecutionEngine:
                 rejected_results=rejected_results,
                 attempt=retry_count,
                 critique_verdict=critique_verdict,
+                workspace=workspace,
             )
 
     async def _repair_left_result(
@@ -175,6 +184,7 @@ class AgentExecutionEngine:
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_verdict: CritiqueVerdict | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
         feedback = self._format_runtime_feedback(rejected_results, critique_verdict)
         
@@ -193,6 +203,10 @@ class AgentExecutionEngine:
             ]
             if self._supports_critique_feedback(repair_method):
                 repair_args.append(feedback)
+                
+            if workspace is not None:
+                if self._supports_workspace_kwarg(repair_method):
+                    return await maybe_await(repair_method(*repair_args, workspace=workspace))
 
             return await maybe_await(repair_method(*repair_args))
 
@@ -206,6 +220,7 @@ class AgentExecutionEngine:
                 memory_context,
                 feedback,
                 attempt,
+                workspace,
             )
         )
 
@@ -213,15 +228,25 @@ class AgentExecutionEngine:
         self,
         *,
         right_state: RightHemisphereState,
+        bridge_packet: CognitiveBridgePacket,
         left_result: LeftHemisphereResult,
         execution_results: list[ActionExecutionResult],
         retry_count: int,
         critique_revision_count: int,
+        capabilities: dict[str, Any] | None = None,
+        variant_label: str | None = None,
     ) -> CognitiveTelemetrySnapshot:
         action_count = len(execution_results)
         executed_count = sum(1 for result in execution_results if result.status == "executed")
         rejected_count = sum(1 for result in execution_results if result.status == "rejected")
         tool_success_rate = round(executed_count / action_count, 3) if action_count else 1.0
+        
+        bridge_config = {
+            "target_temperature": bridge_packet.control.target_temperature,
+            "empathy_priority": bridge_packet.control.empathy_priority,
+            "system_directives_count": len(bridge_packet.control.system_directives),
+        }
+        
         return CognitiveTelemetrySnapshot(
             felt={
                 "context_id": right_state.context_id,
@@ -245,6 +270,9 @@ class AgentExecutionEngine:
                 "runtime_rejected_count": rejected_count,
                 "critique_revision_count": critique_revision_count,
             },
+            capabilities=capabilities or {},
+            bridge_config=bridge_config,
+            active_variant=variant_label or "default",
         )
 
     def clone_component_with_overrides(self, component: Any, overrides: dict[str, Any]) -> Any:
@@ -270,6 +298,40 @@ class AgentExecutionEngine:
         method = getattr(component, async_method_name, None)
         if method is None:
             method = getattr(component, sync_method_name)
+
+        # Extract workspace if it was passed as the last argument
+        # Check if the method actually supports 'workspace' before passing it
+        from calosum.shared.types import CognitiveWorkspace
+        
+        args_list = list(args)
+        workspace_arg = None
+        if args_list and isinstance(args_list[-1], CognitiveWorkspace) or args_list and args_list[-1] is None:
+            # We assume the last arg might be workspace if we passed it from orchestrator
+            # Let's be safer:
+            pass
+
+        # Since we are passing *args, we should ideally use kwargs for optional injected params, 
+        # but the current architecture passes them as positional. Let's do a smart trim.
+        
+        # If the last argument is workspace (or None meant to be workspace)
+        # we check if the method supports it.
+        # However, to be completely safe, we should check the method signature's length.
+        try:
+            sig = inspect.signature(method)
+            # Count how many positional arguments the method can take
+            # Exclude 'self'
+            params = list(sig.parameters.values())
+            max_positional = sum(1 for p in params if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD))
+            
+            if len(args) > max_positional:
+                # We have more args than the method accepts. Trim the excess (which should be the workspace).
+                # But wait, what if there's *args in the method?
+                has_var_args = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
+                if not has_var_args:
+                    args = args[:max_positional]
+        except (TypeError, ValueError):
+            pass
+
         return method(*args)
 
     def _format_runtime_feedback(
@@ -285,6 +347,22 @@ class AgentExecutionEngine:
             feedback.extend([f"CRITIQUE_ISSUE: {issue}" for issue in critique_verdict.identified_issues])
             feedback.extend([f"SUGGESTED_FIX: {fix}" for fix in critique_verdict.suggested_fixes])
         return feedback
+
+    def _supports_workspace_kwarg(self, method: Any) -> bool:
+        try:
+            parameters = inspect.signature(method).parameters.values()
+        except (TypeError, ValueError):
+            return False
+
+        for parameter in parameters:
+            if parameter.name == "workspace":
+                return True
+            if parameter.kind in {
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            }:
+                return True
+        return False
 
     def _supports_critique_feedback(self, method: Any) -> bool:
         try:

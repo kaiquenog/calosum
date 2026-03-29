@@ -24,6 +24,7 @@ from calosum.domain.persistent_memory import (
 from calosum.domain.right_hemisphere import RightHemisphereJEPA
 from calosum.bootstrap.settings import InfrastructureProfile, InfrastructureSettings
 from calosum.domain.telemetry import CognitiveTelemetryBus, InMemoryTelemetrySink, OTLPJsonlTelemetrySink
+from calosum.shared.types import CapabilityDescriptor, ComponentHealth, ModelDescriptor, ToolDescriptor
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +45,21 @@ class CalosumAgentBuilder:
         from calosum.domain.bridge import CognitiveTokenizer
         from calosum.adapters.bridge_store import LocalBridgeStateStore
         tokenizer = CognitiveTokenizer(store=LocalBridgeStateStore())
+        
+        action_runtime = ConcreteActionRuntime(vault=self.settings.vault)
+        memory_system = self.build_memory_system()
+        telemetry_bus = self.build_telemetry_bus()
+
+        capability_snapshot = self.build_capability_snapshot(action_runtime)
 
         return CalosumAgent(
             right_hemisphere=right_hemisphere,
             tokenizer=tokenizer,
             left_hemisphere=left_hemisphere,
-            action_runtime=ConcreteActionRuntime(vault=self.settings.vault),
-            memory_system=self.build_memory_system(),
-            telemetry_bus=self.build_telemetry_bus(),
+            action_runtime=action_runtime,
+            memory_system=memory_system,
+            telemetry_bus=telemetry_bus,
+            capability_snapshot=capability_snapshot,
         )
 
     def build_left_hemisphere(self):
@@ -188,10 +196,57 @@ class CalosumAgentBuilder:
             )
         return QwenLeftHemisphereAdapter()
 
+    def build_capability_snapshot(self, action_runtime: ConcreteActionRuntime | None = None) -> CapabilityDescriptor:
+        right_model = ModelDescriptor(
+            provider="local",
+            model_name="jepa",
+            backend=self._right_hemisphere_backend_name(),
+            health=ComponentHealth.HEALTHY,
+        )
+
+        left_model = ModelDescriptor(
+            provider=self.settings.left_hemisphere_provider or "auto",
+            model_name=self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct",
+            backend=self._left_hemisphere_backend_name(),
+            health=ComponentHealth.HEALTHY,
+        )
+
+        embedding_model = None
+        if self._embedding_backend_name():
+            embedding_model = ModelDescriptor(
+                provider=self._derived_embedding_provider() or "auto",
+                model_name=self._derived_embedding_model() or "auto",
+                backend=self._embedding_backend_name() or "auto",
+                health=ComponentHealth.HEALTHY,
+            )
+
+        kg_model = ModelDescriptor(
+            provider="local",
+            model_name="nanorag",
+            backend=self._knowledge_graph_backend_name(),
+            health=ComponentHealth.HEALTHY,
+        )
+
+        tools = []
+        if action_runtime:
+            tools = action_runtime.get_registered_tools()
+
+        return CapabilityDescriptor(
+            right_hemisphere=right_model,
+            left_hemisphere=left_model,
+            embeddings=embedding_model,
+            knowledge_graph=kg_model,
+            tools=tools,
+            health=ComponentHealth.HEALTHY,
+        )
+
     def describe(self) -> dict[str, Any]:
+        from dataclasses import asdict
+        snapshot = self.build_capability_snapshot()
         return {
             "pattern": "ports_and_adapters_with_builder_factory",
             "profile": self.settings.profile.value,
+            "capabilities": asdict(snapshot),
             "memory_backend": self._memory_backend_name(),
             "telemetry_backend": self._telemetry_backend_name(),
             "right_hemisphere_backend": self._right_hemisphere_backend_name(),

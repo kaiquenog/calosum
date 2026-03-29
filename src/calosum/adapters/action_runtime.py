@@ -6,7 +6,7 @@ from calosum.adapters.tools.code_execution import CodeExecutionTool
 from calosum.adapters.tools.http_request import HttpRequestTool
 from calosum.shared.async_utils import run_sync
 from calosum.shared.tools import ToolRegistry, ToolSchema
-from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult
+from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult, ToolDescriptor, CognitiveWorkspace
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +64,13 @@ class ConcreteActionRuntime:
         
         return registry
 
-    def run(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]:
-        return run_sync(self.arun(left_result))
+    def run(self, left_result: LeftHemisphereResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]:
+        return run_sync(self.arun(left_result, workspace))
 
-    async def arun(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]:
+    def get_registered_tools(self) -> list[ToolDescriptor]:
+        return self.registry.get_descriptors()
+
+    async def arun(self, left_result: LeftHemisphereResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]:
         results = []
         for action in left_result.actions:
             schema = self.registry.get_schema(action.action_type)
@@ -165,6 +168,12 @@ class ConcreteActionRuntime:
                         violations=[f"Runtime crash: {e}"],
                     )
                 )
+
+        if workspace is not None:
+            workspace.runtime_feedback.extend(
+                [{"action": res.action_type, "status": res.status, "violations": res.violations} for res in results]
+            )
+
         return results
 
     def _missing_permissions(self, schema: ToolSchema) -> list[str]:

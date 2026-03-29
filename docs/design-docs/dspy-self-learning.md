@@ -2,7 +2,9 @@
 
 ## Contexto
 
-Atualmente, o Calosum conta com um mecanismo de "Sleep Mode" projetado para a Fase 4 de evolução do sistema (SOTA - Memória e Inferência Ativa). O objetivo desse modo noturno é realizar a "Destilação Episódica" e o "Treinamento Contínuo", inicialmente idealizado apenas como *fine-tuning* de pesos (LoRA) no arquivo `adapters/night_trainer.py`. No entanto, o ajuste fino de pesos nem sempre é a abordagem mais eficiente, interpretável ou estável para aprimorar o raciocínio lógico (Hemisfério Esquerdo), podendo ser suscetível a "esquecimento catastrófico" (catastrophic forgetting).
+> **Status (2026-03-29):** Os adapters `NightTrainerDSPyAdapter` (`adapters/night_trainer_dspy.py`) e `NightTrainerLoRAAdapter` (`adapters/night_trainer_lora.py`) foram implementados. O orquestrador `adapters/night_trainer.py` seleciona o backend via `CALOSUM_NIGHT_TRAINER_BACKEND`. Pendente: integração completa com o loop de sleep mode para disparar otimização automática a partir de `dspy_dataset.jsonl` e `lora_sharegpt.jsonl`.
+
+O Calosum conta com um mecanismo de "Sleep Mode" (Fase 4) para "Destilação Episódica" e "Treinamento Contínuo". O `adapters/night_trainer.py` inicialmente focava em fine-tuning LoRA puro, mas o ajuste fino de pesos pode ser suscetível a "esquecimento catastrófico" (catastrophic forgetting). O DSPy oferece uma alternativa mais estável via otimização de prompts.
 
 ## O Que é o DSPy?
 

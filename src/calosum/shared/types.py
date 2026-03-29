@@ -26,6 +26,68 @@ class FailureType(StrEnum):
     INCOMPLETE_RESULT = "incomplete"
 
 
+class ComponentHealth(StrEnum):
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(slots=True)
+class ToolDescriptor:
+    name: str
+    description: str
+    requires_approval: bool
+    required_permissions: list[str]
+    health: ComponentHealth = ComponentHealth.HEALTHY
+
+
+@dataclass(slots=True)
+class ModelDescriptor:
+    provider: str
+    model_name: str
+    backend: str
+    health: ComponentHealth = ComponentHealth.HEALTHY
+
+
+@dataclass(slots=True)
+class CapabilityDescriptor:
+    right_hemisphere: ModelDescriptor | None
+    left_hemisphere: ModelDescriptor | None
+    embeddings: ModelDescriptor | None
+    knowledge_graph: ModelDescriptor | None
+    tools: list[ToolDescriptor]
+    health: ComponentHealth = ComponentHealth.HEALTHY
+
+
+@dataclass(slots=True)
+class ArchitectureComponent:
+    component_id: str
+    role: str
+    adapter_class: str
+    health: ComponentHealth
+
+
+@dataclass(slots=True)
+class ComponentConnection:
+    source: str
+    target: str
+    protocol: str
+
+
+@dataclass(slots=True)
+class AdaptationSurface:
+    tunable_parameters: list[str]
+    supported_directives: list[str]
+
+
+@dataclass(slots=True)
+class CognitiveArchitectureMap:
+    components: list[ArchitectureComponent]
+    connections: list[ComponentConnection]
+    adaptation_surface: AdaptationSurface
+    capabilities: CapabilityDescriptor
+
+
 @dataclass(slots=True)
 class MultimodalSignal:
     modality: Modality
@@ -33,6 +95,23 @@ class MultimodalSignal:
     payload: Any
     quality: float = 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class CognitiveWorkspace:
+    """
+    Memoria operacional compartilhada de um turno.
+    Cada componente preenche sua respectiva secao ao longo do pipeline.
+    """
+    task_frame: dict[str, Any] = field(default_factory=dict)
+    self_model_ref: dict[str, Any] | None = None
+    capability_snapshot: CapabilityDescriptor | None = None
+    right_notes: dict[str, Any] = field(default_factory=dict)
+    bridge_state: dict[str, Any] = field(default_factory=dict)
+    left_notes: dict[str, Any] = field(default_factory=dict)
+    verifier_feedback: list[dict[str, Any]] = field(default_factory=list)
+    runtime_feedback: list[dict[str, Any]] = field(default_factory=list)
+    pending_questions: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -239,6 +318,9 @@ class CognitiveTelemetrySnapshot:
     felt: dict[str, Any]
     thought: dict[str, Any]
     decision: dict[str, Any]
+    capabilities: dict[str, Any] = field(default_factory=dict)
+    bridge_config: dict[str, Any] = field(default_factory=dict)
+    active_variant: str = "default"
 
 
 @dataclass(slots=True)

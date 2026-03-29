@@ -6,6 +6,7 @@ from calosum.shared.types import (
     ActionExecutionResult,
     AgentTurnResult,
     CognitiveBridgePacket,
+    CognitiveWorkspace,
     ConsolidationReport,
     CritiqueVerdict,
     LeftHemisphereResult,
@@ -25,14 +26,14 @@ class ChannelPort(Protocol):
 
 @runtime_checkable
 class RightHemispherePort(Protocol):
-    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None) -> RightHemisphereState: ...
-    async def aperceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None) -> RightHemisphereState: ...
+    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState: ...
+    async def aperceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState: ...
 
 
 @runtime_checkable
 class CognitiveTokenizerPort(Protocol):
-    def translate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket: ...
-    async def atranslate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket: ...
+    def translate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket: ...
+    async def atranslate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket: ...
 
 
 @runtime_checkable
@@ -44,6 +45,7 @@ class LeftHemispherePort(Protocol):
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult: ...
 
     async def areason(
@@ -53,6 +55,7 @@ class LeftHemispherePort(Protocol):
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult: ...
 
     def repair(
@@ -64,6 +67,7 @@ class LeftHemispherePort(Protocol):
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult: ...
 
     async def arepair(
@@ -75,6 +79,7 @@ class LeftHemispherePort(Protocol):
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult: ...
 
 
@@ -92,9 +97,9 @@ class MemorySystemPort(Protocol):
 
 @runtime_checkable
 class ActionRuntimePort(Protocol):
-    def run(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]: ...
-    async def arun(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]: ...
-
+    def run(self, left_result: LeftHemisphereResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]: ...
+    async def arun(self, left_result: LeftHemisphereResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]: ...
+    def get_registered_tools(self) -> list["ToolDescriptor"]: ...
 
 @runtime_checkable
 class TelemetryBusPort(Protocol):
@@ -142,6 +147,7 @@ class VerifierPort(Protocol):
         user_turn: UserTurn,
         left_result: LeftHemisphereResult,
         execution_results: list[ActionExecutionResult],
+        workspace: CognitiveWorkspace | None = None,
     ) -> "CritiqueVerdict": ...
 
     async def averify(
@@ -149,4 +155,5 @@ class VerifierPort(Protocol):
         user_turn: UserTurn,
         left_result: LeftHemisphereResult,
         execution_results: list[ActionExecutionResult],
+        workspace: CognitiveWorkspace | None = None,
     ) -> "CritiqueVerdict": ...

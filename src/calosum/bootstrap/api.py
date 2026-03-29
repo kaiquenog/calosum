@@ -110,6 +110,75 @@ async def health_check() -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+@app.get("/v1/system/info")
+async def system_info() -> JSONResponse:
+    """
+    Retorna o snapshot das capacidades e configuracoes da arquitetura atual.
+    (Baseline de Capability State - Sprint 0)
+    """
+    try:
+        builder = get_builder()
+        # O agent ja pode ter sido instanciado, forçamos um descritivo
+        # baseado no builder. O describe() inclui o CapabilityDescriptor
+        info = builder.describe()
+        return JSONResponse({"status": "ok", "info": info})
+    except Exception as e:
+        logger.error("Error retrieving system info", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
+@app.get("/v1/system/architecture")
+async def system_architecture() -> JSONResponse:
+    """
+    Retorna o Self-Model da arquitetura (componentes, conexões, health).
+    """
+    try:
+        agent = get_agent()
+        return JSONResponse({"status": "ok", "architecture": to_primitive(agent.self_model)})
+    except Exception as e:
+        logger.error("Error retrieving system architecture", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
+@app.get("/v1/system/capabilities")
+async def system_capabilities() -> JSONResponse:
+    """
+    Retorna as capacidades ativas extraídas do Self-Model.
+    """
+    try:
+        agent = get_agent()
+        return JSONResponse({"status": "ok", "capabilities": to_primitive(agent.self_model.capabilities)})
+    except Exception as e:
+        logger.error("Error retrieving system capabilities", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
+@app.get("/v1/system/state")
+async def system_state(session_id: str | None = None) -> JSONResponse:
+    """
+    Retorna o workspace cognitivo do último turno da sessão fornecida.
+    Se não houver session_id, retorna o da sessão padrão (api-session) ou o mais recente disponível.
+    """
+    try:
+        agent = get_agent()
+        target_session = session_id or "api-session"
+        workspace = agent.last_workspace_by_session.get(target_session)
+        
+        if not workspace:
+            # Fallback se a sessao específica não tiver, pega a última registrada
+            if agent.last_workspace_by_session:
+                last_key = list(agent.last_workspace_by_session.keys())[-1]
+                workspace = agent.last_workspace_by_session[last_key]
+                
+        if not workspace:
+            return JSONResponse({"status": "error", "error": "No cognitive workspace found"}, status_code=404)
+            
+        return JSONResponse({"status": "ok", "state": to_primitive(workspace)})
+    except Exception as e:
+        logger.error("Error retrieving system state", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
 @app.get("/ready")
 async def readiness_check() -> JSONResponse:
     """
