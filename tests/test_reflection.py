@@ -43,18 +43,25 @@ class ReflectionTests(unittest.TestCase):
             agent.tokenizer.config.salience_threshold,
             selected_variant.tokenizer_overrides["salience_threshold"],
         )
+        self.assertEqual(result.reflection.cost_metrics["branch_count"], len(result.candidates))
+        self.assertGreaterEqual(result.reflection.cost_metrics["total_latency_ms"], 0.0)
         dashboard = agent.cognitive_dashboard(turn.session_id)
         self.assertEqual(len(dashboard["reflection"]), 1)
 
     def test_neuroplasticity_persists_bridge_adjustments(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)
+
+            from calosum.adapters.bridge_store import LocalBridgeStateStore
+            store = LocalBridgeStateStore(
+                weights_path=base / "bridge_weights.pt",
+                adaptation_path=base / "bridge_config.json",
+                reflection_history_path=base / "bridge_reflections.jsonl",
+            )
+
             tokenizer = CognitiveTokenizer(
-                CognitiveTokenizerConfig(
-                    weights_path=base / "bridge_weights.pt",
-                    adaptation_path=base / "bridge_config.json",
-                    reflection_history_path=base / "bridge_reflections.jsonl",
-                )
+                CognitiveTokenizerConfig(),
+                store=store,
             )
             controller = GEAReflectionController()
             outcome = ReflectionOutcome(
@@ -75,11 +82,8 @@ class ReflectionTests(unittest.TestCase):
             controller.apply_neuroplasticity(tokenizer, outcome)
 
             reloaded = CognitiveTokenizer(
-                CognitiveTokenizerConfig(
-                    weights_path=base / "bridge_weights.pt",
-                    adaptation_path=base / "bridge_config.json",
-                    reflection_history_path=base / "bridge_reflections.jsonl",
-                )
+                CognitiveTokenizerConfig(),
+                store=store,
             )
             history = (base / "bridge_reflections.jsonl").read_text(encoding="utf-8").splitlines()
 

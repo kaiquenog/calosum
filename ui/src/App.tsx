@@ -83,6 +83,7 @@ function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   
   // Use a fixed active session for the chat
   const activeSessionId = useMemo(() => {
@@ -175,6 +176,11 @@ function App() {
   const timelineEvents = useMemo(() => getTimelineEvents(), [getTimelineEvents]);
   
   const liveTimelineEvents = useMemo(() => getTimelineEvents(activeSessionId), [getTimelineEvents, activeSessionId]);
+  const liveEventsDesc = useMemo(() => {
+    return [...liveTimelineEvents].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  }, [liveTimelineEvents]);
 
   // Group events by session for a clearer view
   const groupedEvents = useMemo(() => {
@@ -220,6 +226,18 @@ function App() {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
   }, [chatMessages]);
+
+  // Track if chat is scrolled near bottom to show a quick affordance
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+      setIsAtBottom(nearBottom);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true } as any);
+    return () => el.removeEventListener('scroll', onScroll as any);
+  }, []);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -560,6 +578,8 @@ function App() {
     }
   };
 
+  const [historyView, setHistoryView] = useState<'timeline' | 'board3'>('board3');
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col font-sans">
       <header className="flex-none bg-gray-900 border-b border-gray-800 p-4 px-6 flex items-center justify-between shadow-sm z-10">
@@ -628,134 +648,141 @@ function App() {
 
       <main className="flex-1 flex overflow-hidden">
         {activeTab === 'chat' ? (
-          <>
-            {/* CHAT PANEL (LEFT) */}
-            <div className="w-1/3 min-w-[400px] border-r border-gray-800 bg-gray-950 flex flex-col z-0">
-              <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex justify-between items-center">
-                <h2 className="font-semibold text-gray-200 flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-blue-400" />
-                  Interaction
-                </h2>
-                <span className="text-[10px] font-mono text-gray-500 bg-gray-800 px-2 py-0.5 rounded border border-gray-700 truncate max-w-[150px]">
-                  {activeSessionId}
-                </span>
-              </div>
-              
-              <div 
-                ref={chatScrollRef}
-                className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth"
-              >
-                {chatMessages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
-                    <Bot className="w-12 h-12 text-gray-800" />
-                    <p className="text-sm">Envie uma mensagem para iniciar o ciclo cognitivo.</p>
-                  </div>
-                ) : (
-                  chatMessages.map((msg) => (
-                    <div 
-                      key={msg.id} 
-                      className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+          <div className="flex-1 overflow-y-auto bg-[#0a0a0c]">
+            <div className="max-w-5xl mx-auto p-6 space-y-6">
+              <div className="bg-gray-950 border border-gray-800 rounded-xl overflow-hidden">
+                <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex justify-between items-center">
+                  <h2 className="font-semibold text-gray-200 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-blue-400" />
+                    Interaction
+                  </h2>
+                  <span className="text-[10px] font-mono text-gray-500 bg-gray-800 px-2 py-0.5 rounded border border-gray-700 truncate max-w-[150px]">
+                    {activeSessionId}
+                  </span>
+                </div>
+                <div className="p-4 border-b border-gray-800">
+                  <form onSubmit={handleSendMessage} className="relative">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder="Digite sua mensagem..."
+                      disabled={isProcessing}
+                      className="w-full bg-gray-950 border border-gray-700 rounded-xl pl-4 pr-12 py-3 text-sm text-gray-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all disabled:opacity-50"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim() || isProcessing}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors"
                     >
-                      <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center border ${
-                        msg.role === 'user' 
-                          ? 'bg-blue-900/50 border-blue-500/30 text-blue-400' 
-                          : 'bg-purple-900/50 border-purple-500/30 text-purple-400'
-                      }`}>
-                        {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-                      </div>
-                      
-                      <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                        <div className={`p-3 rounded-2xl text-sm whitespace-pre-wrap ${
-                          msg.role === 'user'
-                            ? 'bg-blue-600 text-white rounded-tr-sm'
-                            : 'bg-gray-800 text-gray-200 rounded-tl-sm border border-gray-700'
-                        }`}>
-                          {msg.content || (msg.status === 'processing' && <span className="flex gap-1 items-center h-5"><span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span><span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span><span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span></span>)}
-                        </div>
-                        <span className="text-[10px] text-gray-500 mt-1 px-1">
-                          {formatTime(msg.timestamp.toISOString())}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              
-              <div className="p-4 bg-gray-900 border-t border-gray-800">
-                <form onSubmit={handleSendMessage} className="relative">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    placeholder="Digite sua mensagem..."
-                    disabled={isProcessing}
-                    className="w-full bg-gray-950 border border-gray-700 rounded-xl pl-4 pr-12 py-3 text-sm text-gray-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all disabled:opacity-50"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!chatInput.trim() || isProcessing}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors"
+                      {isProcessing ? <Activity className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    </button>
+                  </form>
+                </div>
+                <div className="relative">
+                  <div 
+                    ref={chatScrollRef}
+                    className="max-h-72 overflow-y-auto p-4 space-y-6 scroll-smooth"
                   >
-                    {isProcessing ? <Activity className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  </button>
-                </form>
-              </div>
-            </div>
-
-            {/* LIVE TELEMETRY PANEL (RIGHT) */}
-            <div className="flex-1 bg-[#0a0a0c] overflow-y-auto relative">
-              <div className="sticky top-0 z-10 bg-[#0a0a0c]/80 backdrop-blur-md border-b border-gray-800/50 p-4 px-6">
-                <h2 className="font-semibold text-gray-200 flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-emerald-400" />
-                  Live Cognitive Trace
-                </h2>
-              </div>
-              
-              <div className="p-6">
-                {liveTimelineEvents.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-gray-600">
-                    <Activity className="w-12 h-12 mb-4 opacity-20" />
-                    <p>Aguardando atividade cognitiva...</p>
-                  </div>
-                ) : (
-                  <div className="relative pl-8 border-l border-gray-800/50 space-y-8 before:absolute before:inset-0 before:ml-[31px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0">
-                    {liveTimelineEvents.map((event) => (
-                      <div key={event.id} className="relative group">
-                        {/* Timeline dot */}
-                        <div className={`absolute -left-[41px] mt-1.5 w-6 h-6 rounded-full border-2 bg-gray-950 flex items-center justify-center ${renderEventColor(event.type).split(' ')[0]}`}>
-                          <div className="scale-75">
-                            {renderEventIcon(event.type)}
-                          </div>
-                        </div>
-
-                        {/* Event Card */}
-                        <div className={`bg-gray-900/40 backdrop-blur-sm rounded-xl border p-5 transition-colors hover:bg-gray-800/60 shadow-lg ${renderEventColor(event.type)}`}>
-                          <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-700/50">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold uppercase tracking-widest text-sm text-gray-200">
-                                {event.type}
-                              </span>
-                              {event.data.turn_id && (
-                                <span className="text-[10px] font-mono text-gray-500 bg-gray-950 px-2 py-0.5 rounded border border-gray-800">
-                                  {event.data.turn_id.split('-')[0]}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-xs font-mono text-gray-500 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {formatTime(event.timestamp)}
-                            </span>
+                    {chatMessages.length === 0 ? (
+                      <div className="h-40 flex flex-col items-center justify-center text-gray-500 space-y-4">
+                        <Bot className="w-12 h-12 text-gray-800" />
+                        <p className="text-sm">Envie uma mensagem para iniciar o ciclo cognitivo.</p>
+                      </div>
+                    ) : (
+                      chatMessages.map((msg) => (
+                        <div 
+                          key={msg.id} 
+                          className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+                        >
+                          <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center border ${
+                            msg.role === 'user' 
+                              ? 'bg-blue-900/50 border-blue-500/30 text-blue-400' 
+                              : 'bg-purple-900/50 border-purple-500/30 text-purple-400'
+                          }`}>
+                            {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                           </div>
                           
-                          {renderEventContent(event)}
+                          <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                            <div className={`p-3 rounded-2xl text-sm whitespace-pre-wrap ${
+                              msg.role === 'user'
+                                ? 'bg-blue-600 text-white rounded-tr-sm'
+                                : 'bg-gray-800 text-gray-200 rounded-tl-sm border border-gray-700'
+                            }`}>
+                              {msg.content || (msg.status === 'processing' && <span className="flex gap-1 items-center h-5"><span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span><span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span><span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span></span>)}
+                            </div>
+                            <span className="text-[10px] text-gray-500 mt-1 px-1">
+                              {formatTime(msg.timestamp.toISOString())}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
-                )}
+                  {!isAtBottom && (
+                    <button
+                      onClick={() => {
+                        if (chatScrollRef.current) {
+                          chatScrollRef.current.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' });
+                        }
+                      }}
+                      className="absolute bottom-2 right-4 z-10 px-3 py-1.5 rounded-full text-xs bg-gray-800/90 text-gray-200 border border-gray-700 shadow hover:bg-gray-700"
+                    >
+                      Ir para a última mensagem
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-gray-950 border border-gray-800 rounded-xl overflow-hidden">
+                <div className="p-4 border-b border-gray-800 bg-[#0a0a0c]/80 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                  <h3 className="font-semibold text-gray-200">Live Cognitive Trace (3 colunas)</h3>
+                </div>
+                <div className="p-4">
+                  {liveEventsDesc.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-600">
+                      <Activity className="w-12 h-12 mb-4 opacity-20" />
+                      <p>Aguardando atividade cognitiva...</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {(['felt','thought','decision'] as const).map((col) => {
+                        const colEvents = liveEventsDesc.filter(e => 
+                          col === 'decision' ? (e.type === 'decision' || e.type === 'execution' || e.type === 'reflection') : e.type === col
+                        );
+                        return (
+                          <div key={col} className="bg-gray-900/40 border border-gray-800 rounded-xl overflow-hidden">
+                            <div className="p-3 border-b border-gray-800 flex items-center gap-2">
+                              <span className="uppercase tracking-widest text-xs text-gray-400">{col === 'decision' ? 'decision • execution • reflection' : col}</span>
+                            </div>
+                            <div className="p-3 space-y-3">
+                              {colEvents.length === 0 ? (
+                                <div className="text-xs text-gray-500 italic">Sem eventos</div>
+                              ) : (
+                                colEvents.map((ev) => (
+                                  <div key={ev.id} className={`rounded-lg border p-4 ${renderEventColor(ev.type)} bg-opacity-40`}>
+                                    <div className="flex items-center justify-between mb-3">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-5 h-5">{renderEventIcon(ev.type)}</div>
+                                        <span className="text-xs uppercase tracking-wider text-gray-300">{ev.type}</span>
+                                      </div>
+                                      <span className="text-[10px] font-mono text-gray-500">{formatTime(ev.timestamp)}</span>
+                                    </div>
+                                    {renderEventContent(ev)}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </>
+          </div>
         ) : (
           /* HISTORY TAB */
           <div className="flex-1 overflow-y-auto bg-[#0a0a0c] p-8">
@@ -769,19 +796,37 @@ function App() {
                   <p className="text-gray-400 text-sm mt-1">Navegue pelas execuções passadas do agente cognitivo</p>
                 </div>
                 
-                <div className="flex items-center gap-2">
-                  <label htmlFor="session-select" className="text-sm text-gray-400">Filtrar:</label>
-                  <select 
-                    id="session-select"
-                    value={selectedSession} 
-                    onChange={(e) => setSelectedSession(e.target.value)}
-                    className="bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="all">Todas as sessões</option>
-                    {availableSessions.map(session => (
-                      <option key={session} value={session}>{session}</option>
-                    ))}
-                  </select>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="session-select" className="text-sm text-gray-400">Sessão:</label>
+                    <select 
+                      id="session-select"
+                      value={selectedSession} 
+                      onChange={(e) => setSelectedSession(e.target.value)}
+                      className="bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="all">Todas</option>
+                      {availableSessions.map(session => (
+                        <option key={session} value={session}>{session}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="h-6 w-px bg-gray-800" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-400">Visualização:</span>
+                    <button
+                      onClick={() => setHistoryView('timeline')}
+                      className={`px-3 py-1.5 rounded-md text-sm border ${historyView === 'timeline' ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-900 text-gray-300 border-gray-700 hover:bg-gray-800'}`}
+                    >
+                      Timeline
+                    </button>
+                    <button
+                      onClick={() => setHistoryView('board3')}
+                      className={`px-3 py-1.5 rounded-md text-sm border ${historyView === 'board3' ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-900 text-gray-300 border-gray-700 hover:bg-gray-800'}`}
+                    >
+                      3 Colunas
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -815,43 +860,74 @@ function App() {
                         </div>
                       </button>
 
-                      {/* Timeline Container */}
+                      {/* Timeline / 3-Column Board */}
                       {expandedSessions[sessionId] && (
                         <div className="p-6 bg-[#0a0a0c]">
-                          <div className="relative pl-8 border-l border-gray-800 space-y-8 before:absolute before:inset-0 before:ml-[31px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0">
-                            {events.map((event) => (
-                              <div key={event.id} className="relative group">
-                                {/* Timeline dot */}
-                                <div className={`absolute -left-[41px] mt-1.5 w-6 h-6 rounded-full border-2 bg-gray-950 flex items-center justify-center ${renderEventColor(event.type).split(' ')[0]}`}>
-                          <div className="scale-75">
-                                    {renderEventIcon(event.type)}
+                          {historyView === 'timeline' ? (
+                            <div className="relative pl-8 border-l border-gray-800 space-y-8 before:absolute before:inset-0 before:ml-[31px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0">
+                              {events.map((event) => (
+                                <div key={event.id} className="relative group">
+                                  <div className={`absolute -left-[41px] mt-1.5 w-6 h-6 rounded-full border-2 bg-gray-950 flex items-center justify-center ${renderEventColor(event.type).split(' ')[0]}`}>
+                                    <div className="scale-75">
+                                      {renderEventIcon(event.type)}
+                                    </div>
+                                  </div>
+                                  <div className={`bg-gray-800/30 rounded-xl border p-5 transition-colors hover:bg-gray-800/50 ${renderEventColor(event.type)}`}>
+                                    <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-700/50">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold uppercase tracking-widest text-sm text-gray-200">
+                                          {event.type}
+                                        </span>
+                                        {event.data.turn_id && (
+                                          <span className="text-[10px] font-mono text-gray-500 bg-gray-950 px-2 py-0.5 rounded border border-gray-800">
+                                            {event.data.turn_id.split('-')[0]}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-xs font-mono text-gray-500 flex items-center gap-1">
+                                        <Clock className="w-3 h-3" />
+                                        {formatTime(event.timestamp)}
+                                      </span>
+                                    </div>
+                                    {renderEventContent(event)}
                                   </div>
                                 </div>
-
-                                {/* Event Card */}
-                                <div className={`bg-gray-800/30 rounded-xl border p-5 transition-colors hover:bg-gray-800/50 ${renderEventColor(event.type)}`}>
-                                  <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-700/50">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-semibold uppercase tracking-widest text-sm text-gray-200">
-                                        {event.type}
-                                      </span>
-                                      {event.data.turn_id && (
-                                        <span className="text-[10px] font-mono text-gray-500 bg-gray-950 px-2 py-0.5 rounded border border-gray-800">
-                                          {event.data.turn_id.split('-')[0]}
-                                        </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                              {(['felt','thought','decision'] as const).map((col) => {
+                                const colEvents = events.filter(e => 
+                                  col === 'decision' ? (e.type === 'decision' || e.type === 'execution' || e.type === 'reflection') : e.type === col
+                                );
+                                return (
+                                  <div key={col} className="bg-gray-900/40 border border-gray-800 rounded-xl overflow-hidden">
+                                    <div className="p-3 border-b border-gray-800 flex items-center gap-2">
+                                      <span className="uppercase tracking-widest text-xs text-gray-400">{col === 'decision' ? 'decision • execution • reflection' : col}</span>
+                                    </div>
+                                    <div className="p-3 space-y-3">
+                                      {colEvents.length === 0 ? (
+                                        <div className="text-xs text-gray-500 italic">Sem eventos</div>
+                                      ) : (
+                                        colEvents.map(ev => (
+                                          <div key={ev.id} className={`rounded-lg border p-4 ${renderEventColor(ev.type)} bg-opacity-40`}>
+                                            <div className="flex items-center justify-between mb-3">
+                                              <div className="flex items-center gap-2">
+                                                <div className="w-5 h-5">{renderEventIcon(ev.type)}</div>
+                                                <span className="text-xs uppercase tracking-wider text-gray-300">{ev.type}</span>
+                                              </div>
+                                              <span className="text-[10px] font-mono text-gray-500">{formatTime(ev.timestamp)}</span>
+                                            </div>
+                                            {renderEventContent(ev)}
+                                          </div>
+                                        ))
                                       )}
                                     </div>
-                                    <span className="text-xs font-mono text-gray-500 flex items-center gap-1">
-                                      <Clock className="w-3 h-3" />
-                                      {formatTime(event.timestamp)}
-                                    </span>
                                   </div>
-                                  
-                                  {renderEventContent(event)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

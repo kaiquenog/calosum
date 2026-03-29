@@ -44,8 +44,13 @@ class CalosumAgentBuilder:
 
         right_hemisphere = self.build_right_hemisphere()
 
+        from calosum.domain.bridge import CognitiveTokenizer
+        from calosum.adapters.bridge_store import LocalBridgeStateStore
+        tokenizer = CognitiveTokenizer(store=LocalBridgeStateStore())
+
         return CalosumAgent(
             right_hemisphere=right_hemisphere,
+            tokenizer=tokenizer,
             left_hemisphere=left_hemisphere,
             action_runtime=ConcreteActionRuntime(vault=self.settings.vault),
             memory_system=self.build_memory_system(),
@@ -68,11 +73,18 @@ class CalosumAgentBuilder:
         return right_hemisphere
 
     def build_memory_system(self):
+        from pathlib import Path
+        from calosum.adapters.night_trainer import LocalDatasetExporter
+        from calosum.domain.memory import SleepModeConsolidator
+        
+        exporter = LocalDatasetExporter(Path(".calosum-runtime/nightly_data"))
+
         if self.settings.vector_db_url:
             embedder = self.build_text_embedder()
             return QdrantDualMemoryAdapter(
                 QdrantAdapterConfig(url=self.settings.vector_db_url),
                 embedder=embedder,
+                exporter=exporter,
             )
         
         if self.settings.profile in {
@@ -81,8 +93,11 @@ class CalosumAgentBuilder:
         }:
             if self.settings.memory_dir is None:
                 raise ValueError("persistent profiles require a resolved memory_dir")
-            return PersistentDualMemorySystem.from_directory(self.settings.memory_dir)
-        return DualMemorySystem()
+            return PersistentDualMemorySystem.from_directory(
+                self.settings.memory_dir,
+                consolidator=SleepModeConsolidator(exporter=exporter)
+            )
+        return DualMemorySystem(consolidator=SleepModeConsolidator(exporter=exporter))
 
     def build_telemetry_bus(self) -> CognitiveTelemetryBus:
         if self.settings.otlp_jsonl is not None:

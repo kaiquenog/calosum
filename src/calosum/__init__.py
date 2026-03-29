@@ -18,6 +18,7 @@ from calosum.domain.metacognition import (
     ReflectionOutcome,
     ReflectionScore,
 )
+from calosum.domain.multiagent import ExecutorRole, PlannerRole, VerifierRole
 from calosum.domain.orchestrator import CalosumAgent, CalosumAgentConfig
 from calosum.domain.persistent_memory import (
     JsonlEpisodicStore,

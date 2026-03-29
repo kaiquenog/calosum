@@ -35,6 +35,8 @@ class ReflectionOutcome:
     bridge_adjustments: dict[str, Any] = field(default_factory=dict)
     selected_metrics: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    pruning_reasons: dict[str, str] = field(default_factory=dict)
+    cost_metrics: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -71,6 +73,7 @@ class GEAReflectionController:
             raise ValueError("GEA reflection requires at least one candidate")
 
         scoreboard: list[ReflectionScore] = []
+        pruning_reasons: dict[str, str] = {}
         for candidate in candidates:
             score, reasons = self._score_candidate(candidate)
             scoreboard.append(
@@ -80,6 +83,8 @@ class GEAReflectionController:
                     reasons=reasons,
                 )
             )
+            if score < 1.0:
+                pruning_reasons[candidate.variant.variant_id] = "Low score due to: " + ", ".join(reasons)
 
         winner = max(scoreboard, key=lambda item: item.score)
         selected_candidate = next(
@@ -96,6 +101,12 @@ class GEAReflectionController:
             "winner chosen by combined empathy, runtime safety and action simplicity",
             f"selected_variant={winner.variant_id}",
         ]
+        
+        cost_metrics = {
+            "branch_count": len(candidates),
+            "variants_evaluated": len(candidates),
+            "total_latency_ms": sum(c.turn_result.latency_ms for c in candidates)
+        }
 
         return ReflectionOutcome(
             selected_variant_id=winner.variant_id,
@@ -103,6 +114,8 @@ class GEAReflectionController:
             bridge_adjustments=bridge_adjustments,
             selected_metrics=self._selected_metrics(selected_candidate, winner.score),
             notes=notes,
+            pruning_reasons=pruning_reasons,
+            cost_metrics=cost_metrics,
         )
 
     async def aevaluate(

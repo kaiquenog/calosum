@@ -133,14 +133,17 @@ class JsonlSemanticGraphStore:
 @dataclass(slots=True)
 class PersistentDualMemorySystem(DualMemorySystem):
     @classmethod
-    def from_directory(cls, base_path: str | Path) -> "PersistentDualMemorySystem":
+    def from_directory(cls, base_path: str | Path, consolidator=None) -> "PersistentDualMemorySystem":
         base_dir = Path(base_path)
         base_dir.mkdir(parents=True, exist_ok=True)
-        return cls(
-            episodic_store=JsonlEpisodicStore(base_dir / "episodic.jsonl"),
-            semantic_store=JsonlSemanticStore(base_dir / "semantic_rules.jsonl"),
-            graph_store=JsonlSemanticGraphStore(base_dir / "knowledge_graph.jsonl"),
-        )
+        kwargs = {
+            "episodic_store": JsonlEpisodicStore(base_dir / "episodic.jsonl"),
+            "semantic_store": JsonlSemanticStore(base_dir / "semantic_rules.jsonl"),
+            "graph_store": JsonlSemanticGraphStore(base_dir / "knowledge_graph.jsonl"),
+        }
+        if consolidator is not None:
+            kwargs["consolidator"] = consolidator
+        return cls(**kwargs)
 
 
 def _datetime(value: str) -> datetime:

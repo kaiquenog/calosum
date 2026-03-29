@@ -7,6 +7,7 @@ from calosum.shared.types import (
     AgentTurnResult,
     CognitiveBridgePacket,
     ConsolidationReport,
+    CritiqueVerdict,
     LeftHemisphereResult,
     MemoryContext,
     MemoryEpisode,
@@ -58,6 +59,7 @@ class LeftHemispherePort(Protocol):
         previous_result: LeftHemisphereResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
+        critique_feedback: list[str] | None = None,
     ) -> LeftHemisphereResult: ...
 
     async def arepair(
@@ -68,6 +70,7 @@ class LeftHemispherePort(Protocol):
         previous_result: LeftHemisphereResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
+        critique_feedback: list[str] | None = None,
     ) -> LeftHemisphereResult: ...
 
 
@@ -115,3 +118,31 @@ class ReflectionControllerPort(Protocol):
     ) -> "ReflectionOutcome": ...
 
     def apply_neuroplasticity(self, tokenizer: Any, outcome: "ReflectionOutcome") -> None: ...
+
+
+@runtime_checkable
+class DatasetExporterPort(Protocol):
+    def export(self, dataset: list[dict[str, Any]], filename: str) -> str: ...
+
+@runtime_checkable
+class BridgeStateStorePort(Protocol):
+    def load_weights(self, projection_layer: Any) -> bool: ...
+    def load_adaptation_state(self) -> dict[str, Any]: ...
+    def persist_adaptation_state(self, state: dict[str, Any]) -> None: ...
+    def record_reflection_event(self, payload: dict[str, Any]) -> None: ...
+
+@runtime_checkable
+class VerifierPort(Protocol):
+    def verify(
+        self,
+        user_turn: UserTurn,
+        left_result: LeftHemisphereResult,
+        execution_results: list[ActionExecutionResult],
+    ) -> "CritiqueVerdict": ...
+
+    async def averify(
+        self,
+        user_turn: UserTurn,
+        left_result: LeftHemisphereResult,
+        execution_results: list[ActionExecutionResult],
+    ) -> "CritiqueVerdict": ...

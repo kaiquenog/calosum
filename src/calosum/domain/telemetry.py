@@ -230,6 +230,7 @@ class CognitiveTelemetryBus:
                 metrics={
                     "latency_ms": result.latency_ms,
                     "runtime_retry_count": float(result.runtime_retry_count),
+                    "critique_revision_count": float(result.critique_revision_count),
                 },
             )
         )
@@ -245,6 +246,7 @@ class CognitiveTelemetryBus:
                 metrics={
                     "latency_ms": result.latency_ms,
                     "runtime_retry_count": float(result.runtime_retry_count),
+                    "tool_success_rate": float(result.telemetry.decision.get("tool_success_rate", 1.0)),
                 },
             )
         )
@@ -265,6 +267,7 @@ class CognitiveTelemetryBus:
                     "rejected_count": float(
                         sum(1 for item in result.execution_results if item.status == "rejected")
                     ),
+                    "tool_success_rate": float(result.telemetry.decision.get("tool_success_rate", 1.0)),
                 },
             )
         )
@@ -278,6 +281,7 @@ class CognitiveTelemetryBus:
         turn_id: str,
         payload: dict[str, Any],
     ) -> None:
+        cost_metrics = payload.get("cost_metrics", {})
         self.sink.emit(
             TelemetryEvent(
                 channel="reflection",
@@ -287,6 +291,10 @@ class CognitiveTelemetryBus:
                 payload=payload,
                 trace_id=hashlib.sha256(f"{session_id}:{turn_id}".encode("utf-8")).hexdigest()[:32],
                 span_id=self._span_id(turn_id, "reflection"),
+                metrics={
+                    "branch_count": float(cost_metrics.get("branch_count", 0.0)),
+                    "total_latency_ms": float(cost_metrics.get("total_latency_ms", 0.0)),
+                },
             )
         )
 

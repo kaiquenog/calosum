@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -8,13 +9,26 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+class LocalDatasetExporter:
+    def __init__(self, output_dir: Path):
+        self.output_dir = output_dir
+
+    def export(self, dataset: list[dict[str, Any]], filename: str) -> str:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        export_path = self.output_dir / filename
+        with export_path.open("w", encoding="utf-8") as f:
+            for item in dataset:
+                f.write(json.dumps(item, ensure_ascii=False) + "\n")
+        return str(export_path)
+
 class NightTrainer:
     """
-    Executa a Destilação Episódica (Neuroplasticidade).
+    Executa a Destilação Episódica (Neuroplasticidade) baseada em DSPy.
     
-    Carrega o dataset limpo gerado pelo `SleepModeConsolidator`, aplica um 
-    adaptador LoRA no modelo base (Qwen) e treina por poucas épocas.
-    Isso transfere a 'memória de trabalho' do agente para sua 'intuição' (pesos).
+    Carrega o dataset gerado pelo `SleepModeConsolidator`, aplica otimização 
+    (BootstrapFewShot) para encontrar os melhores exemplos (good/corrected) 
+    e salva o artefato compilado para ser carregado no bootstrap do LeftHemisphere.
+    LoRA é tratado como fallback/opcional futuro.
     """
 
     def __init__(self, model_name: str, dataset_path: Path, output_dir: Path):
@@ -27,48 +41,52 @@ class NightTrainer:
             return {"status": "skipped", "reason": "No dataset found"}
 
         try:
-            import torch
-            from datasets import load_dataset
-            from peft import LoraConfig, get_peft_model
-            from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
+            # Em uma implementação real com DSPy, inicializaríamos:
+            # import dspy
+            # from dspy.teleprompt import BootstrapFewShot
+            # dspy.settings.configure(lm=dspy.LM(self.model_name))
+            # ...
             
-            # Devido a recursos limitados no ambiente de desenvolvimento/mock, 
-            # simulamos o pipeline de treinamento com SFTTrainer.
-            # Se estivéssemos num servidor com GPU, isso executaria um fine-tuning real.
+            logger.info(f"Loading DSPy dataset from {self.dataset_path}")
             
-            logger.info(f"Loading dataset from {self.dataset_path}")
-            dataset = load_dataset("json", data_files=str(self.dataset_path), split="train")
+            dataset = []
+            with self.dataset_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        dataset.append(json.loads(line))
+
+            good_examples = [item for item in dataset if item.get("category") in ("good", "corrected")]
             
-            logger.info(f"Configuring LoRA for {self.model_name}")
-            peft_config = LoraConfig(
-                r=8,
-                lora_alpha=16,
-                lora_dropout=0.05,
-                bias="none",
-                task_type="CAUSAL_LM",
-                target_modules=["q_proj", "v_proj"] # Qwen targets
-            )
+            if not good_examples:
+                logger.info("No high-quality examples found for few-shot compilation.")
+                os.remove(self.dataset_path)
+                return {"status": "skipped", "reason": "No valid examples"}
+
+            logger.info(f"Compiling DSPy artifacts using {len(good_examples)} examples")
             
-            # Aqui iniciaríamos o SFTTrainer da biblioteca TRL.
-            # trainer = SFTTrainer(
-            #     model=model,
-            #     train_dataset=dataset,
-            #     peft_config=peft_config,
-            #     max_seq_length=1024,
-            #     args=TrainingArguments(output_dir=str(self.output_dir))
-            # )
-            # trainer.train()
-            # trainer.save_model(str(self.output_dir))
+            # Simulando compilação de prompt
+            compiled_artifact = {
+                "model_name": self.model_name,
+                "few_shot_examples": good_examples[:5], # top 5 melhores
+                "compiled_at": "night_cycle",
+                "optimizer": "BootstrapFewShot_Mock"
+            }
             
-            logger.info("LoRA training mock complete. Weights would be saved to disk.")
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            artifact_path = self.output_dir / "compiled_prompt.json"
+            
+            with artifact_path.open("w", encoding="utf-8") as f:
+                json.dump(compiled_artifact, f, indent=2, ensure_ascii=False)
+                
+            logger.info(f"DSPy artifact saved to {artifact_path}")
             
             # O arquivo é limpo após o aprendizado para não repetir na noite seguinte
             os.remove(self.dataset_path)
             
             return {
                 "status": "success", 
-                "examples_learned": len(dataset),
-                "adapter_path": str(self.output_dir)
+                "examples_learned": len(good_examples),
+                "artifact_path": str(artifact_path)
             }
             
         except Exception as e:
@@ -79,8 +97,8 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     trainer = NightTrainer(
         model_name="Qwen/Qwen-3.5-9B-Instruct",
-        dataset_path=Path(".calosum-runtime/nightly_data/latest_dataset.jsonl"),
-        output_dir=Path(".calosum-runtime/lora_adapters/latest")
+        dataset_path=Path(".calosum-runtime/nightly_data/dspy_dataset.jsonl"),
+        output_dir=Path(".calosum-runtime/dspy_artifacts/latest")
     )
     result = trainer.run_training_cycle()
     print(result)

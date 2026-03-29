@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from calosum.shared.types import BridgeControlSignal, CognitiveBridgePacket, RightHemisphereState, SoftPromptToken
+from calosum.shared.ports import BridgeStateStorePort
 
 
 @dataclass(slots=True)
@@ -18,9 +19,6 @@ class CognitiveTokenizerConfig:
     salience_gain: float = 1.0
     salience_bias: float = 0.0
     temperature_bias: float = 0.0
-    weights_path: Path = Path(".calosum-runtime/state/bridge_weights.pt")
-    adaptation_path: Path = Path(".calosum-runtime/state/bridge_config.json")
-    reflection_history_path: Path = Path(".calosum-runtime/state/bridge_reflections.jsonl")
 
 
 class CognitiveTokenizer:
@@ -33,8 +31,9 @@ class CognitiveTokenizer:
     - metadados suficientes para observabilidade e auditoria.
     """
 
-    def __init__(self, config: CognitiveTokenizerConfig | None = None) -> None:
+    def __init__(self, config: CognitiveTokenizerConfig | None = None, store: BridgeStateStorePort | None = None) -> None:
         self.config = config or CognitiveTokenizerConfig()
+        self.store = store
         self._load_adaptation_state()
         self._init_neural_bridge()
 
@@ -60,21 +59,19 @@ class CognitiveTokenizer:
             )
             
             # Carrega pesos se existirem (para o loop de evolução)
-            if self.config.weights_path.exists():
-                self.projection.load_state_dict(torch.load(self.config.weights_path, weights_only=True))
+            if self.store:
+                self.store.load_weights(self.projection)
                 
             self.use_neural = True
         except ImportError:
             self.use_neural = False
 
     def _load_adaptation_state(self) -> None:
-        path = Path(self.config.adaptation_path)
-        if not path.exists():
+        if not self.store:
             return
 
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        data = self.store.load_adaptation_state()
+        if not data:
             return
 
         for key in (
@@ -90,8 +87,9 @@ class CognitiveTokenizer:
                 setattr(self.config, key, data[key])
 
     def persist_adaptation_state(self) -> None:
-        path = Path(self.config.adaptation_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.store:
+            return
+            
         payload = {
             "bottleneck_tokens": self.config.bottleneck_tokens,
             "base_temperature": self.config.base_temperature,
@@ -101,13 +99,11 @@ class CognitiveTokenizer:
             "salience_bias": self.config.salience_bias,
             "temperature_bias": self.config.temperature_bias,
         }
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.store.persist_adaptation_state(payload)
 
     def record_reflection_event(self, payload: dict[str, Any]) -> None:
-        path = Path(self.config.reflection_history_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        if self.store:
+            self.store.record_reflection_event(payload)
 
     def translate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket:
         if self.use_neural and len(right_state.latent_vector) == self.latent_dim:

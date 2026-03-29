@@ -51,6 +51,7 @@ class FaultyLeftHemisphere:
         previous_result,
         rejected_results,
         attempt,
+        critique_feedback=None,
     ):
         return LeftHemisphereResult(
             response_text="repaired response",
@@ -67,7 +68,11 @@ class FaultyLeftHemisphere:
                     safety_invariants=["text only"],
                 )
             ],
-            reasoning_summary=[f"attempt={attempt}", f"rejected={len(rejected_results)}"],
+            reasoning_summary=[
+                f"attempt={attempt}",
+                f"rejected={len(rejected_results)}",
+                f"critique_feedback={len(critique_feedback or [])}",
+            ],
         )
 
     async def arepair(
@@ -78,6 +83,7 @@ class FaultyLeftHemisphere:
         previous_result,
         rejected_results,
         attempt,
+        critique_feedback=None,
     ):
         return self.repair(
             user_turn,
@@ -86,6 +92,7 @@ class FaultyLeftHemisphere:
             previous_result,
             rejected_results,
             attempt,
+            critique_feedback,
         )
 
 
@@ -119,8 +126,15 @@ class AsyncRetryAndPersistenceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.runtime_retry_count, 1)
+        self.assertEqual(result.critique_revision_count, 1)
         self.assertTrue(all(item.status == "executed" for item in result.execution_results))
         self.assertEqual(result.left_result.response_text, "repaired response")
+        self.assertTrue(
+            any(
+                item.startswith("critique_feedback=") and int(item.split("=", 1)[1]) > 0
+                for item in result.left_result.reasoning_summary
+            )
+        )
         dashboard = agent.cognitive_dashboard("async-session")
         self.assertEqual(dashboard["decision"][0]["runtime_retry_count"], 1)
 

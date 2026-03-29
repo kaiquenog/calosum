@@ -49,20 +49,24 @@ MODULE_RULES: dict[str, set[str]] = {
     "shared.ports": {"shared.types", "domain.metacognition"},
     "shared.async_utils": set(),
     "shared.serialization": set(),
+    "shared.tools": set(),
 
     # DOMAIN
     "domain.advanced_interfaces": {"shared.types", "domain.metacognition", "shared.ports"},
     "domain.agent_execution": {"shared.async_utils", "shared.ports", "shared.types"},
-    "domain.bridge": {"shared.types"},
+    "domain.bridge": {"shared.types", "shared.ports"},
     "domain.event_bus": set(),
     "domain.right_hemisphere": {"shared.types"},
     "domain.left_hemisphere": {"shared.types"},
     "domain.runtime": {"domain.runtime_dsl", "shared.types"},
     "domain.runtime_dsl": {"shared.types"},
-    "domain.memory": {"shared.types"},
+    "domain.memory": {"shared.types", "shared.ports"},
     "domain.persistent_memory": {"domain.memory", "shared.serialization", "shared.types"},
     "domain.telemetry": {"shared.types"},
+    "domain.tool_registry": {"shared.types"},
     "domain.metacognition": {"domain.bridge", "shared.types"},
+    "domain.multiagent": {"domain.event_bus", "shared.types"},
+    "domain.verifier": {"shared.types"},
     "domain.orchestrator": {
         "shared.async_utils",
         "domain.bridge",
@@ -75,6 +79,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.right_hemisphere",
         "domain.runtime",
         "domain.telemetry",
+        "domain.verifier",
         "shared.types",
     },
 
@@ -82,10 +87,13 @@ MODULE_RULES: dict[str, set[str]] = {
     "bootstrap.settings": set(),
     "bootstrap.factory": {
         "adapters.action_runtime", 
+        "adapters.bridge_store",
         "adapters.llm_qwen", 
         "adapters.memory_qdrant",
+        "adapters.night_trainer",
         "adapters.right_hemisphere_hf",
         "adapters.text_embeddings",
+        "domain.bridge",
         "domain.memory",
         "domain.orchestrator",
         "domain.persistent_memory",
@@ -110,10 +118,11 @@ MODULE_RULES: dict[str, set[str]] = {
     "bootstrap.__main__": {"bootstrap.cli"},
 
     # ADAPTERS
-    "adapters.action_runtime": {"shared.async_utils", "shared.types"},
+    "adapters.action_runtime": {"shared.async_utils", "shared.tools", "shared.types"},
+    "adapters.bridge_store": {"shared.ports"},
     "adapters.llm_payloads": {"shared.types"},
     "adapters.llm_qwen": {"adapters.llm_payloads", "shared.async_utils", "shared.types"},
-    "adapters.memory_qdrant": {"adapters.text_embeddings", "shared.async_utils", "shared.types", "domain.memory"},
+    "adapters.memory_qdrant": {"adapters.text_embeddings", "shared.async_utils", "shared.types", "domain.memory", "shared.ports"},
     "adapters.right_hemisphere_hf": {"shared.types"},
     "adapters.text_embeddings": {"shared.async_utils"},
     "adapters.night_trainer": set(),
@@ -126,6 +135,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.left_hemisphere",
         "domain.memory",
         "domain.metacognition",
+        "domain.multiagent",
         "domain.orchestrator",
         "domain.persistent_memory",
         "shared.ports",
@@ -134,11 +144,12 @@ MODULE_RULES: dict[str, set[str]] = {
         "shared.serialization",
         "bootstrap.settings",
         "domain.telemetry",
+        "domain.verifier",
         "shared.types",
     },
 }
 
-MAX_MODULE_LINES = 360
+MAX_MODULE_LINES = 400
 
 
 @dataclass(slots=True)

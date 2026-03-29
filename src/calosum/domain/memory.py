@@ -97,6 +97,8 @@ class InMemorySemanticGraphStore:
         return ranked[:limit]
 
 
+from calosum.shared.ports import DatasetExporterPort
+
 @dataclass(slots=True)
 class SleepModeConsolidator:
     """
@@ -107,6 +109,7 @@ class SleepModeConsolidator:
     para adaptacao incremental do SLM via LoRA.
     """
 
+    exporter: DatasetExporterPort | None = None
     minimum_frequency: int = 2
 
     def consolidate(self, episodes: list[MemoryEpisode]) -> ConsolidationReport:
@@ -119,9 +122,9 @@ class SleepModeConsolidator:
         support_map: dict[str, list[str]] = {}
         preference_support: dict[str, list[str]] = {}
         
-        # Para treinar o LoRA, precisamos gerar um arquivo .jsonl no formato "conversacional".
-        # Vamos acumular os episódios bem sucedidos.
-        fine_tuning_dataset: list[dict] = []
+        # Para treinar o LoRA ou DSPy, precisamos gerar um dataset.
+        # Vamos acumular os episódios categorizados.
+        dspy_dataset: list[dict] = []
 
         for episode in episodes:
             for label in episode.right_state.emotional_labels:
@@ -132,18 +135,25 @@ class SleepModeConsolidator:
             if preference:
                 preference_support.setdefault(preference, []).append(episode.episode_id)
                 
-            # Se o episódio não teve ações rejeitadas e o agente tomou uma decisão útil,
-            # ele serve como exemplo positivo para o fine-tuning.
             if episode.left_result and episode.left_result.response_text:
-                # Na ausência de status de execução no episódio, consideramos que o texto gerado é válido se não houve crash.
-                has_rejections = False
-                if not has_rejections:
-                    fine_tuning_dataset.append({
-                        "messages": [
-                            {"role": "user", "content": episode.user_turn.user_text},
-                            {"role": "assistant", "content": episode.left_result.response_text}
-                        ]
-                    })
+                rejected_count = sum(1 for r in episode.execution_results if r.status == "rejected")
+                is_corrected = episode.runtime_retry_count > 0 or episode.critique_revision_count > 0
+                is_bad = rejected_count > 0
+                
+                category = "good"
+                if is_bad:
+                    category = "bad"
+                elif is_corrected:
+                    category = "corrected"
+                
+                dspy_dataset.append({
+                    "category": category,
+                    "input_text": episode.user_turn.user_text,
+                    "response_text": episode.left_result.response_text,
+                    "runtime_retry_count": episode.runtime_retry_count,
+                    "critique_revision_count": episode.critique_revision_count,
+                    "actions": [a.action_type for a in episode.left_result.actions]
+                })
 
         for label, count in emotion_counter.items():
             if count >= self.minimum_frequency:
@@ -179,17 +189,9 @@ class SleepModeConsolidator:
                 lora_backlog.append(f"adapter_preference::{preference[:24]}")
                 graph_updates.extend(self._preference_to_triples(preference, rule.rule_id))
                 
-        # Grava os dados limpos no disco para o script noturno do PEFT
-        if fine_tuning_dataset:
-            import json
-            import os
-            from pathlib import Path
-            
-            os.makedirs(".calosum-runtime/nightly_data", exist_ok=True)
-            export_path = Path(".calosum-runtime/nightly_data/latest_dataset.jsonl")
-            with export_path.open("w", encoding="utf-8") as f:
-                for item in fine_tuning_dataset:
-                    f.write(json.dumps(item, ensure_ascii=False) + "\n")
+        # Grava os dados limpos no disco para o script noturno do DSPy / PEFT
+        if dspy_dataset and self.exporter:
+            export_path = self.exporter.export(dspy_dataset, "dspy_dataset.jsonl")
             lora_backlog.append(f"dataset_exported::{export_path}")
 
         return ConsolidationReport(

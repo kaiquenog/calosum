@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 from uuid import uuid4
 
@@ -24,10 +24,12 @@ from calosum.shared.ports import (
     ReflectionControllerPort,
     RightHemispherePort,
     TelemetryBusPort,
+    VerifierPort,
 )
 from calosum.domain.right_hemisphere import RightHemisphereJEPA
 from calosum.domain.runtime import StrictLambdaRuntime
 from calosum.domain.telemetry import CognitiveTelemetryBus
+from calosum.domain.verifier import HeuristicVerifier
 from calosum.shared.types import (
     AgentTurnResult,
     MemoryEpisode,
@@ -37,8 +39,15 @@ from calosum.shared.types import (
 
 
 @dataclass(slots=True)
+class BranchingBudget:
+    max_width: int = 3
+    max_depth: int = 1
+
+@dataclass(slots=True)
 class CalosumAgentConfig:
     max_runtime_retries: int = 2
+    surprise_threshold: float = 0.6
+    branching_budget: BranchingBudget = field(default_factory=BranchingBudget)
 
 
 class CalosumAgent:
@@ -59,6 +68,7 @@ class CalosumAgent:
         action_runtime: ActionRuntimePort | None = None,
         telemetry_bus: TelemetryBusPort | None = None,
         reflection_controller: ReflectionControllerPort | None = None,
+        verifier: VerifierPort | None = None,
         config: CalosumAgentConfig | None = None,
     ) -> None:
         self.right_hemisphere = right_hemisphere or RightHemisphereJEPA()
@@ -68,11 +78,13 @@ class CalosumAgent:
         self.action_runtime = action_runtime or StrictLambdaRuntime()
         self.telemetry_bus = telemetry_bus or CognitiveTelemetryBus()
         self.reflection_controller = reflection_controller or GEAReflectionController()
+        self.verifier = verifier or HeuristicVerifier()
         self.config = config or CalosumAgentConfig()
         self.event_bus = InternalEventBus()
         self.execution_engine = AgentExecutionEngine(
             action_runtime=self.action_runtime,
             max_runtime_retries=self.config.max_runtime_retries,
+            verifier=self.verifier,
         )
 
     def process_turn(self, user_turn: UserTurn) -> AgentTurnResult | GroupTurnResult:
@@ -100,13 +112,29 @@ class CalosumAgent:
         await self.event_bus.publish(CognitiveEvent("PerceptionEvent", right_state, user_turn.turn_id))
 
         # Active Inference: High surprise triggers Metacognition (Group Turn)
-        surprise_threshold = getattr(self.config, "surprise_threshold", 0.6)
-        if getattr(right_state, "surprise_score", 0.0) > surprise_threshold:
+        surprise_score = getattr(right_state, "surprise_score", 0.0)
+        ambiguity_score = right_state.world_hypotheses.get("interaction_complexity", 0.0)
+        
+        needs_branching = (
+            self.config.branching_budget.max_depth > 0
+            and (
+                surprise_score > self.config.surprise_threshold
+                or ambiguity_score > 0.8
+            )
+        )
+
+        if needs_branching:
             from calosum.domain.metacognition import CognitiveVariantSpec
+            
+            # Aplica o orçamento de branching
+            max_width = self.config.branching_budget.max_width
+            
             variants = [
                 CognitiveVariantSpec(variant_id="conservative", tokenizer_overrides={"base_temperature": 0.1}),
                 CognitiveVariantSpec(variant_id="exploratory", tokenizer_overrides={"base_temperature": 0.7, "empathy_priority": True}),
-            ]
+                CognitiveVariantSpec(variant_id="creative", tokenizer_overrides={"base_temperature": 0.9, "empathy_priority": True}),
+            ][:max_width]
+            
             return await self.aprocess_group_turn(user_turn, variants, _precomputed_memory=memory_context, _precomputed_right=right_state)
 
         result = await self.execution_engine.run_variant(
@@ -165,6 +193,7 @@ class CalosumAgent:
         candidates: list[CognitiveCandidate] = []
 
         for variant in variants:
+            variant_started_at = perf_counter()
             tokenizer = self._build_variant_tokenizer(variant)
             left_hemisphere = self._build_variant_left_hemisphere(variant)
             turn_result = await self.execution_engine.run_variant(
@@ -174,6 +203,7 @@ class CalosumAgent:
                 tokenizer=tokenizer,
                 left_hemisphere=left_hemisphere,
             )
+            turn_result.latency_ms = round((perf_counter() - variant_started_at) * 1000.0, 3)
             candidates.append(CognitiveCandidate(variant=variant, turn_result=turn_result))
 
         reflection = await maybe_await(
@@ -241,6 +271,9 @@ class CalosumAgent:
             right_state=result.right_state,
             bridge_packet=result.bridge_packet,
             left_result=result.left_result,
+            execution_results=result.execution_results,
+            runtime_retry_count=result.runtime_retry_count,
+            critique_revision_count=result.critique_revision_count,
         )
         await maybe_await(
             self.execution_engine.call_component(

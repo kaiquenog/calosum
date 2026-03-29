@@ -120,6 +120,15 @@ class ActionExecutionResult:
 
 
 @dataclass(slots=True)
+class CritiqueVerdict:
+    is_valid: bool
+    critique_reasoning: list[str]
+    identified_issues: list[str]
+    suggested_fixes: list[str]
+    confidence: float
+
+
+@dataclass(slots=True)
 class TypedLambdaProgram:
     """
     Representacao simbolica de uma solucao no estilo lambda-recursive.
@@ -179,6 +188,9 @@ class MemoryEpisode:
     right_state: RightHemisphereState
     bridge_packet: CognitiveBridgePacket
     left_result: LeftHemisphereResult
+    execution_results: list[ActionExecutionResult] = field(default_factory=list)
+    runtime_retry_count: int = 0
+    critique_revision_count: int = 0
 
 
 @dataclass(slots=True)
@@ -215,4 +227,5 @@ class AgentTurnResult:
     telemetry: CognitiveTelemetrySnapshot
     execution_results: list[ActionExecutionResult] = field(default_factory=list)
     runtime_retry_count: int = 0
+    critique_revision_count: int = 0
     latency_ms: float = 0.0

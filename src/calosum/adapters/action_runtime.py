@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from calosum.shared.async_utils import run_sync
+from calosum.shared.tools import ToolRegistry, ToolSchema
 from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult
 
 logger = logging.getLogger(__name__)
@@ -13,8 +14,41 @@ class ConcreteActionRuntime:
     Ele converte ações simbólicas ('propose_plan', 'respond_text', 'search_web')
     em execuções verdadeiras via ferramentas Python.
     """
-    def __init__(self, vault: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        vault: dict[str, str] | None = None,
+        registry: ToolRegistry | None = None,
+        granted_permissions: set[str] | None = None,
+    ) -> None:
         self.vault = vault or {}
+        self.registry = registry or self._build_default_registry()
+        self.granted_permissions = granted_permissions
+
+    def _build_default_registry(self) -> ToolRegistry:
+        registry = ToolRegistry()
+        
+        registry.register(
+            ToolSchema("respond_text", "Emit text to user", {"text": "string"}, []),
+            self._execute_respond_text
+        )
+        registry.register(
+            ToolSchema("propose_plan", "Save plan to DB", {"steps": "list"}, []),
+            self._execute_propose_plan
+        )
+        registry.register(
+            ToolSchema("load_semantic_rules", "Load semantic rules into runtime", {"rules": "list"}, []),
+            self._execute_load_semantic_rules
+        )
+        registry.register(
+            ToolSchema("search_web", "Search the web", {"query": "string"}, ["network"]),
+            self._execute_search_web
+        )
+        registry.register(
+            ToolSchema("write_file", "Write to sandbox", {"path": "string", "content": "string"}, ["fs_write"]),
+            self._execute_write_file
+        )
+        
+        return registry
 
     def run(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]:
         return run_sync(self.arun(left_result))
@@ -22,24 +56,83 @@ class ConcreteActionRuntime:
     async def arun(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]:
         results = []
         for action in left_result.actions:
-            try:
-                if action.action_type == "respond_text":
-                    res = await self._execute_respond_text(action.payload)
-                elif action.action_type == "propose_plan":
-                    res = await self._execute_propose_plan(action.payload)
-                elif action.action_type == "search_web":
-                    res = await self._execute_search_web(action.payload)
-                elif action.action_type == "write_file":
-                    res = await self._execute_write_file(action.payload)
-                else:
-                    raise ValueError(f"Action '{action.action_type}' not supported in concrete runtime.")
+            schema = self.registry.get_schema(action.action_type)
+            if not schema:
+                results.append(
+                    ActionExecutionResult(
+                        action_type=action.action_type,
+                        typed_signature=action.typed_signature,
+                        status="rejected",
+                        output={
+                            "error": f"Tool '{action.action_type}' not found in registry.",
+                            "error_type": "tool_not_found",
+                            "tool": action.action_type,
+                        },
+                        violations=[f"Unknown tool: {action.action_type}"],
+                    )
+                )
+                continue
 
+            validation_violations = self.registry.validate_payload(
+                action.action_type,
+                action.payload,
+            )
+            if validation_violations:
+                results.append(
+                    ActionExecutionResult(
+                        action_type=action.action_type,
+                        typed_signature=action.typed_signature,
+                        status="rejected",
+                        output={
+                            "error": "Tool payload validation failed",
+                            "error_type": "validation_failed",
+                            "tool": action.action_type,
+                        },
+                        violations=validation_violations,
+                    )
+                )
+                continue
+
+            missing_permissions = self._missing_permissions(schema)
+            if missing_permissions:
+                results.append(
+                    ActionExecutionResult(
+                        action_type=action.action_type,
+                        typed_signature=action.typed_signature,
+                        status="needs_approval",
+                        output={
+                            "message": "Action requires additional permissions",
+                            "missing_permissions": missing_permissions,
+                            "tool": action.action_type,
+                        },
+                        violations=[],
+                    )
+                )
+                continue
+
+            if schema.needs_approval and not action.payload.get("approved", False):
+                results.append(
+                    ActionExecutionResult(
+                        action_type=action.action_type,
+                        typed_signature=action.typed_signature,
+                        status="needs_approval",
+                        output={
+                            "message": "Action requires user approval",
+                            "tool": action.action_type,
+                        },
+                        violations=[],
+                    )
+                )
+                continue
+
+            try:
+                res = await self.registry.execute(action.action_type, action.payload)
                 results.append(
                     ActionExecutionResult(
                         action_type=action.action_type,
                         typed_signature=action.typed_signature,
                         status="executed",
-                        output={"result": str(res)},
+                        output={"result": str(res), "tool": action.action_type},
                         violations=[],
                     )
                 )
@@ -50,11 +143,24 @@ class ConcreteActionRuntime:
                         action_type=action.action_type,
                         typed_signature=action.typed_signature,
                         status="rejected",
-                        output={"error": str(e)},
+                        output={
+                            "error": str(e),
+                            "error_type": "runtime_crash",
+                            "tool": action.action_type,
+                        },
                         violations=[f"Runtime crash: {e}"],
                     )
                 )
         return results
+
+    def _missing_permissions(self, schema: ToolSchema) -> list[str]:
+        if self.granted_permissions is None:
+            return []
+        return [
+            permission
+            for permission in schema.required_permissions
+            if permission not in self.granted_permissions
+        ]
 
     async def _execute_respond_text(self, payload: dict) -> str:
         # Ponto de integração real para emitir no WebSocket/Socket.IO do usuário
@@ -65,6 +171,10 @@ class ConcreteActionRuntime:
         # Ponto de integração real salvando o plano em banco relacional
         steps = payload.get("steps", [])
         return f"Plan saved. Steps: {len(steps)}"
+
+    async def _execute_load_semantic_rules(self, payload: dict) -> str:
+        rules = payload.get("rules", [])
+        return f"Semantic rules loaded. Count: {len(rules)}"
 
     async def _execute_search_web(self, payload: dict) -> str:
         # Integração real usando duckduckgo-search livre
@@ -113,4 +223,3 @@ class ConcreteActionRuntime:
         except Exception as e:
             logger.error(f"File write failure: {e}")
             return f"File write failed: {e}"
-

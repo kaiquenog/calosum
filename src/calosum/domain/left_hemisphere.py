@@ -173,10 +173,13 @@ class LeftHemisphereLogicalSLM:
         previous_result: LeftHemisphereResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
+        critique_feedback: list[str] | None = None,
     ) -> LeftHemisphereResult:
         feedback = [
             f"{item.action_type}:{'; '.join(item.violations)}" for item in rejected_results
         ]
+        if critique_feedback:
+            feedback.extend(critique_feedback)
         return self.reason(
             user_turn=user_turn,
             bridge_packet=bridge_packet,
@@ -193,6 +196,7 @@ class LeftHemisphereLogicalSLM:
         previous_result: LeftHemisphereResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
+        critique_feedback: list[str] | None = None,
     ) -> LeftHemisphereResult:
         return self.repair(
             user_turn=user_turn,
@@ -201,6 +205,7 @@ class LeftHemisphereLogicalSLM:
             previous_result=previous_result,
             rejected_results=rejected_results,
             attempt=attempt,
+            critique_feedback=critique_feedback,
         )
 
     def _prefers_short_response(self, memory_context: MemoryContext) -> bool:

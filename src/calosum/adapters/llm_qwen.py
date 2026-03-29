@@ -3,16 +3,19 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
 from calosum.adapters.llm_payloads import (
+    augment_prompt_with_compiled_examples,
     build_left_hemisphere_prompt,
     extract_chat_content,
     extract_responses_content,
     left_hemisphere_result_schema,
+    load_compiled_examples,
 )
 from calosum.shared.async_utils import run_sync
 from calosum.shared.types import (
@@ -36,6 +39,7 @@ class QwenAdapterConfig:
     max_tokens: int = 4096
     provider: str = "auto"
     reasoning_effort: str | None = None
+    compiled_prompt_path: Path | None = Path(".calosum-runtime/dspy_artifacts/latest/compiled_prompt.json")
 
 
 class QwenLeftHemisphereAdapter:
@@ -57,6 +61,7 @@ class QwenLeftHemisphereAdapter:
         if self.config.api_key and self.config.api_key != "empty":
             headers["Authorization"] = f"Bearer {self.config.api_key}"
         self.client = client or httpx.AsyncClient(headers=headers, timeout=300.0)
+        self.compiled_examples = load_compiled_examples(self.config.compiled_prompt_path)
 
     def reason(
         self,
@@ -90,6 +95,7 @@ class QwenLeftHemisphereAdapter:
             memory_context,
             runtime_feedback,
         )
+        prompt = augment_prompt_with_compiled_examples(prompt, self.compiled_examples)
         request = self._build_request(prompt)
 
         try:
@@ -134,6 +140,7 @@ class QwenLeftHemisphereAdapter:
         previous_result: LeftHemisphereResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
+        critique_feedback: list[str] | None = None,
     ) -> LeftHemisphereResult:
         return run_sync(
             self.arepair(
@@ -143,6 +150,7 @@ class QwenLeftHemisphereAdapter:
                 previous_result=previous_result,
                 rejected_results=rejected_results,
                 attempt=attempt,
+                critique_feedback=critique_feedback,
             )
         )
 
@@ -154,11 +162,14 @@ class QwenLeftHemisphereAdapter:
         previous_result: LeftHemisphereResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
+        critique_feedback: list[str] | None = None,
     ) -> LeftHemisphereResult:
         feedback = [
             f"Ação {item.action_type} rejeitada: {', '.join(item.violations)}"
             for item in rejected_results
         ]
+        if critique_feedback:
+            feedback.extend(critique_feedback)
         return await self.areason(user_turn, bridge_packet, memory_context, feedback, attempt)
 
     def _build_request(self, prompt: str) -> dict[str, Any]:
@@ -336,6 +347,7 @@ class QwenLeftHemisphereAdapter:
                 "adapter": "QwenLeftHemisphereAdapter",
                 "api_mode": api_mode,
                 "model_name": resolved_model,
+                "compiled_few_shot_count": len(self.compiled_examples),
             },
         )
 

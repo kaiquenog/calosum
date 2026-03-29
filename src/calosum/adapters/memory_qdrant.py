@@ -26,6 +26,8 @@ from calosum.shared.types import (
 )
 
 
+from calosum.shared.ports import DatasetExporterPort
+
 @dataclass(slots=True)
 class QdrantAdapterConfig:
     url: str = "http://localhost:6333"
@@ -47,6 +49,7 @@ class QdrantDualMemoryAdapter:
         config: QdrantAdapterConfig | None = None,
         *,
         embedder: TextEmbeddingAdapter | None = None,
+        exporter: DatasetExporterPort | None = None,
     ) -> None:
         self.config = config or QdrantAdapterConfig()
         self.client = QdrantClient(url=self.config.url)
@@ -54,6 +57,7 @@ class QdrantDualMemoryAdapter:
         self.embedder = embedder or TextEmbeddingAdapter(
             TextEmbeddingAdapterConfig(vector_size=self.config.vector_size)
         )
+        self.exporter = exporter
         self._ensure_collections()
 
     def _ensure_collections(self) -> None:
@@ -134,7 +138,7 @@ class QdrantDualMemoryAdapter:
         )
         episodes = [self._episode_from_point(point) for point in points if getattr(point, "payload", None)]
 
-        consolidator = SleepModeConsolidator(minimum_frequency=1)
+        consolidator = SleepModeConsolidator(exporter=self.exporter, minimum_frequency=1)
         report = consolidator.consolidate(episodes)
 
         if report.promoted_rules:

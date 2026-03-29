@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
 from typing import Any
 
 from calosum.shared.types import CognitiveBridgePacket, MemoryContext, UserTurn
+
+logger = logging.getLogger(__name__)
 
 
 def build_left_hemisphere_prompt(
@@ -32,6 +37,53 @@ Available Action Types (Use exactly these action_type values):
 - "search_web": {{ "query": "search keywords" }}
 - "write_file": {{ "path": "file/path.txt", "content": "file content" }}
 """.strip()
+
+
+def load_compiled_examples(compiled_prompt_path: Path | None) -> list[dict[str, Any]]:
+    if compiled_prompt_path is None:
+        return []
+
+    path = Path(compiled_prompt_path)
+    if not path.exists():
+        return []
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to load compiled prompt artifact from %s: %s", path, exc)
+        return []
+
+    examples = payload.get("few_shot_examples", [])
+    if not isinstance(examples, list):
+        return []
+    return [item for item in examples if isinstance(item, dict)]
+
+
+def augment_prompt_with_compiled_examples(
+    prompt: str,
+    compiled_examples: list[dict[str, Any]],
+) -> str:
+    if not compiled_examples:
+        return prompt
+
+    rendered_examples: list[str] = []
+    for example in compiled_examples[:3]:
+        input_text = example.get("input_text")
+        response_text = example.get("response_text")
+        if not isinstance(input_text, str) or not isinstance(response_text, str):
+            continue
+        rendered_examples.append(
+            f"Example Input: {input_text}\nExample Response: {response_text}"
+        )
+
+    if not rendered_examples:
+        return prompt
+
+    return (
+        f"{prompt}\n\n"
+        "Few-shot Examples (optimized offline):\n"
+        + "\n\n".join(rendered_examples)
+    )
 
 
 def left_hemisphere_result_schema() -> dict[str, Any]:
