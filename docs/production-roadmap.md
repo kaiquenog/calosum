@@ -24,6 +24,6 @@ Este documento lista os próximos passos estratégicos para evoluir o Calosum.
 ## Fase 4: SOTA - Memória e Inferência Ativa (Prioridade Média)
 
 1. ~~**Destilação Episódica (Neuroplasticidade):**~~ Implementado no `QdrantDualMemoryAdapter` integrando o `SleepModeConsolidator`. O agente consolida experiências em `SemanticRule`s no Qdrant.
-2. **Auto-aprendizado e Otimização de Prompts (DSPy):** Usar o backlog gerado pelo `SleepModeConsolidator` para alimentar os otimizadores do DSPy (como MIPROv2 e BootstrapFewShot) durante o Sleep Mode. Isso automatizará a melhoria do *system prompt* e a extração de *few-shots* do Hemisfério Esquerdo sem os riscos do fine-tuning puro de pesos. (Veja [Design Doc do DSPy](design-docs/dspy-self-learning.md)).
-3. **Treinamento LoRA Contínuo:** Como alternativa ou complemento ao DSPy, usar o backlog para efetivamente fazer *fine-tuning* local nos pesos dos modelos (ex: via `dspy.BootstrapFinetune` ou rotinas nativas do PEFT) durante a noite.
-4. **Active Inference (Free Energy):** Modificar o Hemisfério Direito para calcular a *Loss* preditiva do input do usuário. Entradas muito "surpreendentes" abaixam a temperatura do LLM e disparam mais passos de reflexão antes de agir.
+2. ~~**Active Inference (Free Energy):**~~ Implementado o cálculo de Surpresa e modulação dinâmica da temperatura no `Orchestrator` e `Bridge`.
+3. **Auto-aprendizado e Otimização de Prompts (DSPy):** Usar o dataset gerado pelo `SleepModeConsolidator` (`dspy_dataset.jsonl`) para alimentar os otimizadores do DSPy (como MIPROv2) durante o Sleep Mode. Isso automatizará a melhoria do *system prompt* e a extração de *few-shots*.
+4. **Treinamento LoRA Contínuo:** Usar o dataset gerado (`lora_sharegpt.jsonl`) para fazer *fine-tuning* local nos pesos dos modelos durante a noite (via PEFT/Unsloth).

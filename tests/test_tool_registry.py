@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from calosum.adapters.action_runtime import ConcreteActionRuntime
 from calosum.shared.tools import ToolRegistry, ToolSchema
@@ -97,3 +100,84 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].status, "rejected")
         self.assertEqual(results[0].output.get("error_type"), "validation_failed")
+
+    async def test_code_execution_runs_constrained_python(self):
+        runtime = ConcreteActionRuntime()
+        left_result = LeftHemisphereResult(
+            response_text="Execute code",
+            lambda_program=TypedLambdaProgram("Code->Text", "lambda code: code_execution()", "effect"),
+            actions=[
+                PrimitiveAction(
+                    "code_execution",
+                    "Code->Text",
+                    {"code": "print(sum(i * i for i in range(4)))", "approved": True},
+                    [],
+                )
+            ],
+            reasoning_summary=[],
+        )
+
+        results = await runtime.arun(left_result)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].status, "executed")
+        self.assertIn("14", results[0].output.get("result", ""))
+
+    async def test_code_execution_blocks_unsafe_imports(self):
+        runtime = ConcreteActionRuntime()
+        left_result = LeftHemisphereResult(
+            response_text="Execute code",
+            lambda_program=TypedLambdaProgram("Code->Text", "lambda code: code_execution()", "effect"),
+            actions=[
+                PrimitiveAction(
+                    "code_execution",
+                    "Code->Text",
+                    {"code": "import os\nprint('nope')", "approved": True},
+                    [],
+                )
+            ],
+            reasoning_summary=[],
+        )
+
+        results = await runtime.arun(left_result)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].status, "executed")
+        self.assertIn("rejected", results[0].output.get("result", "").lower())
+        self.assertIn("imports are not allowed", results[0].output.get("result", ""))
+
+    async def test_http_request_returns_structured_payload(self):
+        runtime = ConcreteActionRuntime()
+        fake_response = SimpleNamespace(
+            status_code=200,
+            reason_phrase="OK",
+            url="https://example.com/api",
+            headers={"content-type": "application/json"},
+            text='{"status":"ok"}',
+            json=lambda: {"status": "ok"},
+        )
+        left_result = LeftHemisphereResult(
+            response_text="HTTP request",
+            lambda_program=TypedLambdaProgram("Request->Text", "lambda req: http_request()", "effect"),
+            actions=[
+                PrimitiveAction(
+                    "http_request",
+                    "Request->Text",
+                    {"method": "GET", "url": "https://example.com/api"},
+                    [],
+                )
+            ],
+            reasoning_summary=[],
+        )
+
+        with patch(
+            "calosum.adapters.tools.http_request.httpx.AsyncClient.request",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            results = await runtime.arun(left_result)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].status, "executed")
+        payload = json.loads(results[0].output.get("result", ""))
+        self.assertEqual(payload["status_code"], 200)
+        self.assertEqual(payload["body"]["status"], "ok")

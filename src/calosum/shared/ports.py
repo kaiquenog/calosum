@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, TYPE_CHECKING, runtime_checkable
+from typing import Any, Awaitable, Callable, Protocol, TYPE_CHECKING, runtime_checkable
 
 from calosum.shared.types import (
     ActionExecutionResult,
@@ -18,6 +18,10 @@ from calosum.shared.types import (
 if TYPE_CHECKING:
     from calosum.domain.metacognition import CognitiveCandidate, ReflectionOutcome
 
+@runtime_checkable
+class ChannelPort(Protocol):
+    async def listen(self, on_message: Callable[[UserTurn], Awaitable[None]]) -> None: ...
+    async def send(self, session_id: str, text: str) -> None: ...
 
 @runtime_checkable
 class RightHemispherePort(Protocol):

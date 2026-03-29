@@ -171,6 +171,10 @@ class CognitiveTokenizer:
             directives.insert(0, "lead with empathy before dense logic")
             directives.append("prefer safe clarification under emotional uncertainty")
 
+        # Modulação Dinâmica de Temperatura via Surpresa
+        # Entradas surpreendentes (alto surprise_score) baixam a temperatura para forçar foco e analítica
+        surprise_penalty = getattr(right_state, "surprise_score", 0.0) * 0.25
+
         control = BridgeControlSignal(
             target_temperature=round(
                 min(
@@ -179,6 +183,7 @@ class CognitiveTokenizer:
                         0.05,
                         self.config.base_temperature
                         + (0.1 if empathy_priority else 0.0)
+                        - surprise_penalty
                         + self.config.temperature_bias,
                     ),
                 ),
@@ -192,6 +197,7 @@ class CognitiveTokenizer:
                 "neural_active": getattr(self, "use_neural", False),
                 "raw_salience": salience,
                 "calibrated_salience": calibrated_salience,
+                "surprise_penalty": surprise_penalty,
                 "salience_gain": self.config.salience_gain,
                 "salience_bias": self.config.salience_bias,
                 "temperature_bias": self.config.temperature_bias,

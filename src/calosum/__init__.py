@@ -1,5 +1,7 @@
 """Public package surface for the Calosum cognitive architecture."""
 
+from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
+from calosum.adapters.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
 from calosum.bootstrap.factory import CalosumAgentBuilder
 from calosum.domain.bridge import CognitiveTokenizer, CognitiveTokenizerConfig
 from calosum.domain.left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
@@ -50,6 +52,7 @@ from calosum.shared.types import (
     AgentTurnResult,
     CognitiveBridgePacket,
     ConsolidationReport,
+    FailureType,
     KnowledgeTriple,
     LeftHemisphereResult,
     MemoryContext,
@@ -67,6 +70,7 @@ from calosum.shared.types import (
 __all__ = [
     "ActionExecutionResult",
     "ActionRuntimePort",
+    "ActiveInferenceRightHemisphereAdapter",
     "AgentTurnResult",
     "CalosumAgent",
     "CalosumAgentBuilder",
@@ -81,6 +85,7 @@ __all__ = [
     "ConsolidationReport",
     "DualMemorySystem",
     "dump_json",
+    "FailureType",
     "GEAReflectionController",
     "GroupTurnResult",
     "InMemoryEpisodicStore",
@@ -93,6 +98,7 @@ __all__ = [
     "JsonlSemanticGraphStore",
     "JsonlSemanticStore",
     "KnowledgeTriple",
+    "NanoGraphRAGKnowledgeGraphStore",
     "LeftHemispherePort",
     "LeftHemisphereLogicalSLM",
     "LeftHemisphereLogicalSLMConfig",

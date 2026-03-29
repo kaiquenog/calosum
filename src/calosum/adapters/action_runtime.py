@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+from calosum.adapters.tools.code_execution import CodeExecutionTool
+from calosum.adapters.tools.http_request import HttpRequestTool
 from calosum.shared.async_utils import run_sync
 from calosum.shared.tools import ToolRegistry, ToolSchema
 from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult
@@ -26,6 +28,8 @@ class ConcreteActionRuntime:
 
     def _build_default_registry(self) -> ToolRegistry:
         registry = ToolRegistry()
+        code_execution = CodeExecutionTool()
+        http_request = HttpRequestTool()
         
         registry.register(
             ToolSchema("respond_text", "Emit text to user", {"text": "string"}, []),
@@ -47,6 +51,16 @@ class ConcreteActionRuntime:
             ToolSchema("write_file", "Write to sandbox", {"path": "string", "content": "string"}, ["fs_write"]),
             self._execute_write_file
         )
+        registry.register(
+            ToolSchema("read_file", "Read from sandbox", {"path": "string"}, ["fs_read"]),
+            self._execute_read_file
+        )
+        registry.register(
+            ToolSchema("execute_bash", "Execute shell command in sandbox", {"command": "string"}, ["shell"]),
+            self._execute_bash
+        )
+        registry.register(code_execution.schema, code_execution.execute)
+        registry.register(http_request.schema, http_request.execute)
         
         return registry
 
@@ -223,3 +237,67 @@ class ConcreteActionRuntime:
         except Exception as e:
             logger.error(f"File write failure: {e}")
             return f"File write failed: {e}"
+
+    async def _execute_read_file(self, payload: dict) -> str:
+        import tempfile
+        from pathlib import Path
+        path_str = payload.get("path", "")
+        if not path_str:
+            return "No path provided for read_file."
+            
+        try:
+            sandbox_dir = Path(tempfile.gettempdir()) / "calosum_sandbox"
+            safe_name = Path(path_str).name
+            target = sandbox_dir / safe_name
+            
+            if not target.exists():
+                return f"File not found in sandbox: {target}"
+                
+            content = target.read_text(encoding="utf-8")
+            # Truncate se for muito grande
+            if len(content) > 4000:
+                content = content[:4000] + "\n...[truncated]"
+            return content
+        except Exception as e:
+            logger.error(f"File read failure: {e}")
+            return f"File read failed: {e}"
+
+    async def _execute_bash(self, payload: dict) -> str:
+        import asyncio
+        import tempfile
+        from pathlib import Path
+        
+        command = payload.get("command", "")
+        if not command:
+            return "No command provided."
+            
+        try:
+            sandbox_dir = Path(tempfile.gettempdir()) / "calosum_sandbox"
+            sandbox_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Roda o processo limitando o cwd ao sandbox
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(sandbox_dir)
+            )
+            
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10.0)
+            
+            out_str = stdout.decode('utf-8').strip()
+            err_str = stderr.decode('utf-8').strip()
+            
+            result = []
+            if out_str:
+                result.append(f"STDOUT:\n{out_str[:2000]}")
+            if err_str:
+                result.append(f"STDERR:\n{err_str[:2000]}")
+                
+            return "\n".join(result) if result else "Command executed silently (exit code 0)."
+            
+        except asyncio.TimeoutError:
+            return "Command execution timed out after 10 seconds."
+        except Exception as e:
+            logger.error(f"Bash execution failure: {e}")
+            return f"Bash execution failed: {e}"

@@ -43,9 +43,16 @@ class AgentExecutionEngine:
         right_state: RightHemisphereState,
         tokenizer: CognitiveTokenizerPort,
         left_hemisphere: LeftHemispherePort,
+        variant_label: str | None = None,
+        bridge_directives: list[str] | None = None,
     ) -> AgentTurnResult:
         bridge_packet = await maybe_await(
             self.call_component(tokenizer, "atranslate", "translate", right_state)
+        )
+        bridge_packet = self._apply_variant_bridge_overrides(
+            bridge_packet,
+            variant_label=variant_label,
+            bridge_directives=bridge_directives,
         )
         left_result = await maybe_await(
             self.call_component(
@@ -83,6 +90,31 @@ class AgentExecutionEngine:
             execution_results=execution_results,
             runtime_retry_count=retry_count,
             critique_revision_count=critique_revision_count,
+        )
+
+    def _apply_variant_bridge_overrides(
+        self,
+        bridge_packet: CognitiveBridgePacket,
+        *,
+        variant_label: str | None,
+        bridge_directives: list[str] | None,
+    ) -> CognitiveBridgePacket:
+        merged_directives = list(dict.fromkeys((bridge_directives or []) + bridge_packet.control.system_directives))
+        updated_control = replace(
+            bridge_packet.control,
+            system_directives=merged_directives[:6],
+            annotations={
+                **bridge_packet.control.annotations,
+                "variant_label": variant_label,
+            },
+        )
+        return replace(
+            bridge_packet,
+            control=updated_control,
+            bridge_metadata={
+                **bridge_packet.bridge_metadata,
+                "variant_label": variant_label,
+            },
         )
 
     async def _execute_with_retries(
@@ -249,6 +281,7 @@ class AgentExecutionEngine:
             f"{result.action_type}:{'; '.join(result.violations)}" for result in rejected_results
         ]
         if critique_verdict and not critique_verdict.is_valid:
+            feedback.extend([f"FAILURE_TYPE: {item.value}" for item in critique_verdict.failure_types])
             feedback.extend([f"CRITIQUE_ISSUE: {issue}" for issue in critique_verdict.identified_issues])
             feedback.extend([f"SUGGESTED_FIX: {fix}" for fix in critique_verdict.suggested_fixes])
         return feedback

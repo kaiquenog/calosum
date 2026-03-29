@@ -12,6 +12,7 @@ class CognitiveVariantSpec:
     variant_id: str
     tokenizer_overrides: dict[str, Any] = field(default_factory=dict)
     left_overrides: dict[str, Any] = field(default_factory=dict)
+    bridge_directives: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -49,6 +50,39 @@ class GroupTurnResult:
     candidates: list[CognitiveCandidate]
     selected_result: AgentTurnResult
     reflection: ReflectionOutcome
+
+
+def default_cognitive_personas(max_width: int = 3) -> list[CognitiveVariantSpec]:
+    personas = [
+        CognitiveVariantSpec(
+            variant_id="analitico",
+            tokenizer_overrides={"base_temperature": 0.18, "salience_threshold": 0.78},
+            bridge_directives=[
+                "priorize consistencia logica e verificabilidade",
+                "identifique contradicoes antes de agir",
+            ],
+            notes=["logic_first", "low_temperature"],
+        ),
+        CognitiveVariantSpec(
+            variant_id="empatico",
+            tokenizer_overrides={"base_temperature": 0.34, "salience_threshold": 0.45},
+            bridge_directives=[
+                "considere impacto emocional antes da solucao",
+                "valide o contexto afetivo com linguagem segura",
+            ],
+            notes=["emotion_first", "supportive"],
+        ),
+        CognitiveVariantSpec(
+            variant_id="pragmatico",
+            tokenizer_overrides={"base_temperature": 0.22, "max_directives": 3},
+            bridge_directives=[
+                "minimize a fronteira de acoes",
+                "entregue a menor resposta segura que resolva a solicitacao",
+            ],
+            notes=["minimal_actions", "concise"],
+        ),
+    ]
+    return personas[:max_width]
 
 
 class GEAReflectionController:

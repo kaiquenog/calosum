@@ -10,8 +10,12 @@ from calosum import (
     CognitiveTokenizerConfig,
     CognitiveVariantSpec,
     GEAReflectionController,
+    LeftHemisphereResult,
+    PrimitiveAction,
     ReflectionOutcome,
     ReflectionScore,
+    RightHemisphereState,
+    TypedLambdaProgram,
     UserTurn,
 )
 
@@ -95,6 +99,83 @@ class ReflectionTests(unittest.TestCase):
             self.assertEqual(reloaded.config.salience_bias, 0.03)
             self.assertEqual(reloaded.config.temperature_bias, -0.02)
             self.assertEqual(len(history), 1)
+
+    def test_process_turn_uses_default_personas_when_surprise_triggers_branching(self) -> None:
+        class HighSurpriseRightHemisphere:
+            def perceive(self, user_turn, memory_context=None):
+                return RightHemisphereState(
+                    context_id=user_turn.turn_id,
+                    latent_vector=[0.1] * 16,
+                    salience=0.88,
+                    emotional_labels=["ansioso"],
+                    world_hypotheses={"interaction_complexity": 0.92, "urgency": 0.88},
+                    confidence=0.9,
+                    surprise_score=0.91,
+                    telemetry={},
+                )
+
+            async def aperceive(self, user_turn, memory_context=None):
+                return self.perceive(user_turn, memory_context)
+
+        class DirectiveEchoLeftHemisphere:
+            def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+                variant = bridge_packet.bridge_metadata.get("variant_label", "none")
+                return LeftHemisphereResult(
+                    response_text=f"variant={variant}",
+                    lambda_program=TypedLambdaProgram(
+                        "Context -> Response",
+                        "lambda _: respond_text()",
+                        "respond",
+                    ),
+                    actions=[
+                        PrimitiveAction(
+                            "respond_text",
+                            "ResponsePlan -> SafeTextMessage",
+                            {"text": f"variant={variant}"},
+                            [],
+                        )
+                    ],
+                    reasoning_summary=[variant],
+                    telemetry={"system_directives": bridge_packet.control.system_directives},
+                )
+
+            async def areason(self, *args, **kwargs):
+                return self.reason(*args[:3], runtime_feedback=kwargs.get("runtime_feedback"), attempt=kwargs.get("attempt", 0))
+
+            def repair(self, *args, **kwargs):
+                return self.reason(*args[:3])
+
+            async def arepair(self, *args, **kwargs):
+                return self.repair(*args, **kwargs)
+
+        agent = CalosumAgent(
+            right_hemisphere=HighSurpriseRightHemisphere(),
+            left_hemisphere=DirectiveEchoLeftHemisphere(),
+        )
+
+        result = agent.process_turn(
+            UserTurn(
+                session_id="persona-session",
+                user_text="Estou muito ansioso e preciso reorganizar o projeto.",
+            )
+        )
+
+        variant_ids = [candidate.variant.variant_id for candidate in result.candidates]
+        self.assertEqual(variant_ids, ["analitico", "empatico", "pragmatico"])
+
+        directives_by_variant = {
+            candidate.variant.variant_id: candidate.turn_result.left_result.telemetry["system_directives"]
+            for candidate in result.candidates
+        }
+        self.assertTrue(
+            any("consistencia logica" in directive for directive in directives_by_variant["analitico"])
+        )
+        self.assertTrue(
+            any("impacto emocional" in directive for directive in directives_by_variant["empatico"])
+        )
+        self.assertTrue(
+            any("fronteira de acoes" in directive for directive in directives_by_variant["pragmatico"])
+        )
 
 
 if __name__ == "__main__":

@@ -19,6 +19,13 @@ class Modality(StrEnum):
     SENSOR = "sensor"
 
 
+class FailureType(StrEnum):
+    SCHEMA_VIOLATION = "schema"
+    UNSAFE_CONTENT = "safety"
+    RUNTIME_REJECTION = "runtime"
+    INCOMPLETE_RESULT = "incomplete"
+
+
 @dataclass(slots=True)
 class MultimodalSignal:
     modality: Modality
@@ -138,6 +145,7 @@ class CritiqueVerdict:
     identified_issues: list[str]
     suggested_fixes: list[str]
     confidence: float
+    failure_types: list[FailureType] = field(default_factory=list)
 
     def __post_init__(self):
         if not (0.0 <= self.confidence <= 1.0):

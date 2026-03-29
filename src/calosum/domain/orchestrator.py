@@ -15,6 +15,7 @@ from calosum.domain.metacognition import (
     CognitiveVariantSpec,
     GEAReflectionController,
     GroupTurnResult,
+    default_cognitive_personas,
 )
 from calosum.shared.ports import (
     ActionRuntimePort,
@@ -124,16 +125,8 @@ class CalosumAgent:
         )
 
         if needs_branching:
-            from calosum.domain.metacognition import CognitiveVariantSpec
-            
-            # Aplica o orçamento de branching
             max_width = self.config.branching_budget.max_width
-            
-            variants = [
-                CognitiveVariantSpec(variant_id="conservative", tokenizer_overrides={"base_temperature": 0.1}),
-                CognitiveVariantSpec(variant_id="exploratory", tokenizer_overrides={"base_temperature": 0.7, "empathy_priority": True}),
-                CognitiveVariantSpec(variant_id="creative", tokenizer_overrides={"base_temperature": 0.9, "empathy_priority": True}),
-            ][:max_width]
+            variants = default_cognitive_personas(max_width)
             
             return await self.aprocess_group_turn(user_turn, variants, _precomputed_memory=memory_context, _precomputed_right=right_state)
 
@@ -202,6 +195,8 @@ class CalosumAgent:
                 right_state=right_state,
                 tokenizer=tokenizer,
                 left_hemisphere=left_hemisphere,
+                variant_label=variant.variant_id,
+                bridge_directives=variant.bridge_directives,
             )
             turn_result.latency_ms = round((perf_counter() - variant_started_at) * 1000.0, 3)
             candidates.append(CognitiveCandidate(variant=variant, turn_result=turn_result))

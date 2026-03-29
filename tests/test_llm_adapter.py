@@ -92,6 +92,7 @@ class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.response_text, "Resposta estruturada")
         self.assertEqual(result.telemetry["api_mode"], "openai_responses")
         self.assertEqual(result.telemetry["model_name"], "gpt-4o-mini")
+        self.assertEqual(result.telemetry["system_directives"], ["be precise"])
 
     async def test_openai_compatible_endpoint_keeps_chat_completions_contract(self) -> None:
         captured: dict[str, object] = {}
@@ -128,6 +129,7 @@ class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertEqual(result.response_text, "Resposta estruturada")
         self.assertEqual(result.telemetry["api_mode"], "openai_compatible_chat")
+        self.assertEqual(result.telemetry["system_directives"], ["be precise"])
 
     async def test_compiled_prompt_artifact_is_loaded_and_injected_into_prompt(self) -> None:
         captured: dict[str, object] = {}
@@ -147,6 +149,8 @@ class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
             artifact_path.write_text(
                 json.dumps(
                     {
+                        "selected_prompt": "Always return valid JSON and keep actions minimal.",
+                        "optimization_notes": ["Prefer propose_plan when the user asks for steps."],
                         "few_shot_examples": [
                             {
                                 "input_text": "Pergunta de exemplo",
@@ -177,9 +181,12 @@ class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
         payload = captured["payload"]
         assert isinstance(payload, dict)
         user_prompt = payload["messages"][1]["content"]
+        self.assertIn("Optimized Prompt Directives (offline)", user_prompt)
+        self.assertIn("Always return valid JSON", user_prompt)
         self.assertIn("Few-shot Examples (optimized offline)", user_prompt)
         self.assertIn("Pergunta de exemplo", user_prompt)
         self.assertEqual(result.telemetry["compiled_few_shot_count"], 1)
+        self.assertTrue(result.telemetry["compiled_prompt_selected"])
 
 
 if __name__ == "__main__":

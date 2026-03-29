@@ -34,38 +34,87 @@ Runtime Feedback: {feedback or []}
 Available Action Types (Use exactly these action_type values):
 - "respond_text": {{ "text": "your response here" }}
 - "propose_plan": {{ "steps": ["step1", "step2"] }}
+- "load_semantic_rules": {{ "rules": ["grounding rule 1", "grounding rule 2"] }}
 - "search_web": {{ "query": "search keywords" }}
 - "write_file": {{ "path": "file/path.txt", "content": "file content" }}
+- "code_execution": {{ "code": "print(sum(range(5)))", "approved": true }}
+- "http_request": {{ "method": "GET", "url": "https://example.com/api" }}
 """.strip()
 
 
-def load_compiled_examples(compiled_prompt_path: Path | None) -> list[dict[str, Any]]:
+def load_compiled_prompt_artifact(compiled_prompt_path: Path | None) -> dict[str, Any]:
     if compiled_prompt_path is None:
-        return []
+        return {}
 
     path = Path(compiled_prompt_path)
     if not path.exists():
-        return []
+        return {}
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         logger.warning("Failed to load compiled prompt artifact from %s: %s", path, exc)
-        return []
+        return {}
 
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def load_compiled_examples(compiled_prompt_path: Path | None) -> list[dict[str, Any]]:
+    payload = load_compiled_prompt_artifact(compiled_prompt_path)
     examples = payload.get("few_shot_examples", [])
     if not isinstance(examples, list):
         return []
     return [item for item in examples if isinstance(item, dict)]
 
 
+def augment_prompt_with_compiled_artifact(
+    prompt: str,
+    compiled_prompt_artifact: dict[str, Any],
+) -> str:
+    if not compiled_prompt_artifact:
+        return prompt
+
+    sections: list[str] = []
+    selected_prompt = compiled_prompt_artifact.get("selected_prompt")
+    if isinstance(selected_prompt, str) and selected_prompt.strip():
+        sections.append(
+            "Optimized Prompt Directives (offline):\n"
+            f"{selected_prompt.strip()}"
+        )
+
+    notes = compiled_prompt_artifact.get("optimization_notes", [])
+    if isinstance(notes, list):
+        rendered_notes = [f"- {note}" for note in notes if isinstance(note, str) and note.strip()]
+        if rendered_notes:
+            sections.append("Optimization Notes:\n" + "\n".join(rendered_notes))
+
+    compiled_examples = compiled_prompt_artifact.get("few_shot_examples", [])
+    if isinstance(compiled_examples, list):
+        rendered_examples = _render_compiled_examples(compiled_examples)
+        if rendered_examples:
+            sections.append(
+                "Few-shot Examples (optimized offline):\n"
+                + "\n\n".join(rendered_examples)
+            )
+
+    if not sections:
+        return prompt
+    return f"{prompt}\n\n" + "\n\n".join(sections)
+
+
 def augment_prompt_with_compiled_examples(
     prompt: str,
     compiled_examples: list[dict[str, Any]],
 ) -> str:
-    if not compiled_examples:
-        return prompt
+    return augment_prompt_with_compiled_artifact(
+        prompt,
+        {"few_shot_examples": compiled_examples},
+    )
 
+
+def _render_compiled_examples(compiled_examples: list[dict[str, Any]]) -> list[str]:
     rendered_examples: list[str] = []
     for example in compiled_examples[:3]:
         input_text = example.get("input_text")
@@ -75,15 +124,7 @@ def augment_prompt_with_compiled_examples(
         rendered_examples.append(
             f"Example Input: {input_text}\nExample Response: {response_text}"
         )
-
-    if not rendered_examples:
-        return prompt
-
-    return (
-        f"{prompt}\n\n"
-        "Few-shot Examples (optimized offline):\n"
-        + "\n\n".join(rendered_examples)
-    )
+    return rendered_examples
 
 
 def left_hemisphere_result_schema() -> dict[str, Any]:

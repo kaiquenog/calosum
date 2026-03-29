@@ -12,6 +12,12 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - `CALOSUM_LEFT_MODEL`: Nome do modelo (ex: `Qwen/Qwen-3.5-9B-Instruct`).
 - `CALOSUM_LEFT_PROVIDER`: Opcional. Forca o modo `openai_responses`, `openai_chat` ou `openai_compatible_chat`.
 - `CALOSUM_LEFT_REASONING_EFFORT`: Opcional. Quando o provider e OpenAI Responses, envia `reasoning.effort` para modelos compatíveis.
+- `CALOSUM_LEFT_FALLBACK_ENDPOINT`: Opcional. Segundo endpoint do hemisferio esquerdo para failover automatico.
+- `CALOSUM_LEFT_FALLBACK_MODEL`: Opcional. Modelo do endpoint de fallback. Se omitido, reutiliza o modelo primario.
+- `CALOSUM_LEFT_FALLBACK_PROVIDER`: Opcional. Provider do endpoint de fallback.
+- `CALOSUM_LEFT_FALLBACK_REASONING_EFFORT`: Opcional. `reasoning.effort` do endpoint de fallback.
+- `CALOSUM_LEFT_FALLBACK_API_KEY`: Opcional. Chave especifica do endpoint de fallback.
+- `CALOSUM_NIGHT_TRAINER_BACKEND`: Opcional. Seleciona o backend do ciclo noturno (`auto`, `dspy`, `opro_lite`).
 - `CALOSUM_EMBEDDING_ENDPOINT`: Opcional. Endpoint para embeddings usados pelo adapter Qdrant.
 - `CALOSUM_EMBEDDING_MODEL`: Opcional. Modelo de embedding. Em OpenAI oficial, o default e `text-embedding-3-small`.
 - `CALOSUM_EMBEDDING_PROVIDER`: Opcional. Forca `openai`, `openai_compatible`, `huggingface` ou `lexical`.
@@ -45,7 +51,9 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 
 ## Rotinas Assíncronas (Sleep Mode)
 
-A infraestrutura prevê a execução de consolidação noturna e neuroplasticidade. O arquivo `adapters/night_trainer.py` pode ser executado isoladamente (como um CronJob no container ou na máquina host) para ler o `.jsonl` extraído do Qdrant e aplicar um fine-tuning via **PEFT/LoRA**.
+A infraestrutura prevê a execução de consolidação noturna e neuroplasticidade. O arquivo `adapters/night_trainer.py` pode ser executado isoladamente (como um CronJob no container ou na máquina host) para ler o `.jsonl` extraído do Qdrant e compilar um artefato offline de prompt reutilizado pelo hemisfério esquerdo no dia seguinte. O backend padrão tenta `DSPy` quando a dependência está presente e cai para `OPRO-lite` quando o ambiente local não possui o otimizador.
+
+O bootstrap também injeta um store de conhecimento em grafo persistido em `knowledge_graph.jsonl`. Quando `nano-graphrag` não está instalado, a recuperação semântica cai para um backend local `NetworkX` com expansão de subgrafo, mantendo o contrato de `knowledge_triples` consumido pelo hemisfério esquerdo.
 
 ## Observabilidade (OTEL)
 
@@ -67,6 +75,7 @@ Nesse fluxo, a CLI grava a telemetria em `.calosum-runtime/telemetry/events.json
 ## OpenAI
 
 - Se `CALOSUM_LEFT_ENDPOINT` apontar para `https://api.openai.com/v1`, o adapter autodetecta OpenAI oficial e usa `Responses API` com Structured Outputs.
+- Se `CALOSUM_LEFT_FALLBACK_ENDPOINT` estiver definido, o bootstrap monta um adapter resiliente e tenta automaticamente o endpoint secundario quando o primario devolve erro estrutural ou falha operacional.
 - Se `CALOSUM_VECTORDB_URL` estiver configurado e nenhum backend de embedding separado for informado, o builder reutiliza o endpoint OpenAI oficial para embeddings e deriva `text-embedding-3-small`.
 - Se voce apontar para um endpoint local no formato OpenAI-compatible, como Ollama ou vLLM, o adapter mantem `chat/completions`.
 - Para workloads mais inteligentes e pesados, prefira `gpt-5.4`. Para menor custo e latencia, prefira `gpt-5-mini`.

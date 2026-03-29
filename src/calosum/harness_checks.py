@@ -47,6 +47,7 @@ MODULE_RULES: dict[str, set[str]] = {
     # SHARED
     "shared.types": set(),
     "shared.ports": {"shared.types", "domain.metacognition"},
+    "shared.schemas": set(),
     "shared.async_utils": set(),
     "shared.serialization": set(),
     "shared.tools": set(),
@@ -65,7 +66,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.tool_registry": {"shared.types"},
     "domain.metacognition": {"domain.bridge", "shared.types"},
     "domain.multiagent": {"domain.event_bus", "shared.types"},
-    "domain.verifier": {"shared.types"},
+    "domain.verifier": {"shared.schemas", "shared.types"},
     "domain.orchestrator": {
         "shared.async_utils",
         "domain.bridge",
@@ -85,8 +86,11 @@ MODULE_RULES: dict[str, set[str]] = {
     # BOOTSTRAP
     "bootstrap.settings": set(),
     "bootstrap.factory": {
+        "adapters.active_inference",
         "adapters.action_runtime", 
         "adapters.bridge_store",
+        "adapters.knowledge_graph_nanorag",
+        "adapters.llm_failover",
         "adapters.llm_qwen", 
         "adapters.memory_qdrant",
         "adapters.night_trainer",
@@ -109,6 +113,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "shared.types",
     },
     "bootstrap.api": {
+        "adapters.channel_telegram",
         "bootstrap.factory",
         "bootstrap.settings",
         "shared.serialization",
@@ -117,18 +122,27 @@ MODULE_RULES: dict[str, set[str]] = {
     "bootstrap.__main__": {"bootstrap.cli"},
 
     # ADAPTERS
-    "adapters.action_runtime": {"shared.async_utils", "shared.tools", "shared.types"},
+    "adapters.active_inference": {"shared.types"},
+    "adapters.action_runtime": {"adapters.tools", "shared.async_utils", "shared.tools", "shared.types"},
     "adapters.bridge_store": {"shared.ports"},
+    "adapters.channel_telegram": {"shared.types"},
+    "adapters.knowledge_graph_nanorag": {"shared.types"},
+    "adapters.llm_failover": {"shared.async_utils", "shared.ports", "shared.types"},
     "adapters.llm_payloads": {"shared.types"},
     "adapters.llm_qwen": {"adapters.llm_payloads", "shared.async_utils", "shared.types"},
     "adapters.memory_qdrant": {"adapters.text_embeddings", "shared.async_utils", "shared.types", "domain.memory", "shared.ports"},
     "adapters.right_hemisphere_hf": {"shared.types"},
     "adapters.text_embeddings": {"shared.async_utils"},
-    "adapters.night_trainer": set(),
+    "adapters.night_trainer": {"adapters.night_trainer_dspy"},
+    "adapters.night_trainer_dspy": set(),
+    "adapters.tools.code_execution": {"shared.tools"},
+    "adapters.tools.http_request": {"shared.tools"},
 
     # ROOT
     "harness_checks": set(),
     "__init__": {
+        "adapters.active_inference",
+        "adapters.knowledge_graph_nanorag",
         "bootstrap.factory",
         "domain.bridge",
         "domain.left_hemisphere",

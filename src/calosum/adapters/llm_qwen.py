@@ -11,12 +11,13 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from calosum.adapters.llm_payloads import (
-    augment_prompt_with_compiled_examples,
+    augment_prompt_with_compiled_artifact,
     build_left_hemisphere_prompt,
     extract_chat_content,
     extract_responses_content,
     left_hemisphere_result_schema,
     load_compiled_examples,
+    load_compiled_prompt_artifact,
 )
 from calosum.shared.async_utils import run_sync
 from calosum.shared.types import (
@@ -62,6 +63,7 @@ class QwenLeftHemisphereAdapter:
         if self.config.api_key and self.config.api_key != "empty":
             headers["Authorization"] = f"Bearer {self.config.api_key}"
         self.client = client or httpx.AsyncClient(headers=headers, timeout=300.0)
+        self.compiled_prompt_artifact = load_compiled_prompt_artifact(self.config.compiled_prompt_path)
         self.compiled_examples = load_compiled_examples(self.config.compiled_prompt_path)
 
     def reason(
@@ -107,7 +109,7 @@ class QwenLeftHemisphereAdapter:
             memory_context,
             runtime_feedback,
         )
-        prompt = augment_prompt_with_compiled_examples(prompt, self.compiled_examples)
+        prompt = augment_prompt_with_compiled_artifact(prompt, self.compiled_prompt_artifact)
         request = self._build_request(prompt)
 
         try:
@@ -127,6 +129,7 @@ class QwenLeftHemisphereAdapter:
                 parsed,
                 api_mode=request["api_mode"],
                 resolved_model=request["resolved_model"],
+                system_directives=bridge_packet.control.system_directives,
             )
         except json.JSONDecodeError as exc:
             return LeftHemisphereResult(
@@ -141,7 +144,12 @@ class QwenLeftHemisphereAdapter:
                 },
             )
         except Exception as exc:
-            return self._fallback_result(repr(exc), request["api_mode"], request["resolved_model"])
+            return self._fallback_result(
+                repr(exc),
+                request["api_mode"],
+                request["resolved_model"],
+                bridge_packet.control.system_directives,
+            )
 
     def repair(
         self,
@@ -331,6 +339,7 @@ class QwenLeftHemisphereAdapter:
         *,
         api_mode: str,
         resolved_model: str,
+        system_directives: list[str] | None = None,
     ) -> LeftHemisphereResult:
         lambda_prog = parsed.get("lambda_program", {})
         program = TypedLambdaProgram(
@@ -359,6 +368,8 @@ class QwenLeftHemisphereAdapter:
                 "api_mode": api_mode,
                 "model_name": resolved_model,
                 "compiled_few_shot_count": len(self.compiled_examples),
+                "compiled_prompt_selected": bool(self.compiled_prompt_artifact.get("selected_prompt")),
+                "system_directives": system_directives or [],
             },
         )
 
@@ -367,6 +378,7 @@ class QwenLeftHemisphereAdapter:
         error: str,
         api_mode: str,
         resolved_model: str,
+        system_directives: list[str] | None = None,
     ) -> LeftHemisphereResult:
         return LeftHemisphereResult(
             response_text="Desculpe, meu subsistema de raciocínio falhou temporariamente.",
@@ -378,5 +390,6 @@ class QwenLeftHemisphereAdapter:
                 "api_mode": api_mode,
                 "model_name": resolved_model,
                 "error": error,
+                "system_directives": system_directives or [],
             },
         )

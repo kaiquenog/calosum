@@ -29,10 +29,16 @@ class InfrastructureSettings:
     left_hemisphere_model: str | None = None
     left_hemisphere_provider: str | None = None
     left_hemisphere_reasoning_effort: str | None = None
+    left_hemisphere_fallback_endpoint: str | None = None
+    left_hemisphere_fallback_api_key: str | None = None
+    left_hemisphere_fallback_model: str | None = None
+    left_hemisphere_fallback_provider: str | None = None
+    left_hemisphere_fallback_reasoning_effort: str | None = None
     embedding_endpoint: str | None = None
     embedding_api_key: str | None = None
     embedding_model: str | None = None
     embedding_provider: str | None = None
+    telegram_bot_token: str | None = None
     vault: dict[str, str] | None = None
 
     @classmethod
@@ -91,10 +97,16 @@ class InfrastructureSettings:
             left_hemisphere_model=env.get("CALOSUM_LEFT_MODEL"),
             left_hemisphere_provider=env.get("CALOSUM_LEFT_PROVIDER"),
             left_hemisphere_reasoning_effort=env.get("CALOSUM_LEFT_REASONING_EFFORT"),
+            left_hemisphere_fallback_endpoint=env.get("CALOSUM_LEFT_FALLBACK_ENDPOINT"),
+            left_hemisphere_fallback_api_key=env.get("CALOSUM_LEFT_FALLBACK_API_KEY"),
+            left_hemisphere_fallback_model=env.get("CALOSUM_LEFT_FALLBACK_MODEL"),
+            left_hemisphere_fallback_provider=env.get("CALOSUM_LEFT_FALLBACK_PROVIDER"),
+            left_hemisphere_fallback_reasoning_effort=env.get("CALOSUM_LEFT_FALLBACK_REASONING_EFFORT"),
             embedding_endpoint=env.get("CALOSUM_EMBEDDING_ENDPOINT"),
             embedding_api_key=env.get("CALOSUM_EMBEDDING_API_KEY"),
             embedding_model=env.get("CALOSUM_EMBEDDING_MODEL"),
             embedding_provider=env.get("CALOSUM_EMBEDDING_PROVIDER"),
+            telegram_bot_token=env.get("TELEGRAM_BOT_TOKEN"),
             vault=vault if vault else None,
         )
         return settings.with_profile_defaults()
@@ -116,10 +128,16 @@ class InfrastructureSettings:
                 left_hemisphere_model=self.left_hemisphere_model,
                 left_hemisphere_provider=self.left_hemisphere_provider,
                 left_hemisphere_reasoning_effort=self.left_hemisphere_reasoning_effort,
+                left_hemisphere_fallback_endpoint=self.left_hemisphere_fallback_endpoint,
+                left_hemisphere_fallback_api_key=self.left_hemisphere_fallback_api_key,
+                left_hemisphere_fallback_model=self.left_hemisphere_fallback_model,
+                left_hemisphere_fallback_provider=self.left_hemisphere_fallback_provider,
+                left_hemisphere_fallback_reasoning_effort=self.left_hemisphere_fallback_reasoning_effort,
                 embedding_endpoint=self.embedding_endpoint,
                 embedding_api_key=self.embedding_api_key,
                 embedding_model=self.embedding_model,
                 embedding_provider=self.embedding_provider,
+                telegram_bot_token=self.telegram_bot_token,
                 vault=self.vault,
             )
 
@@ -141,10 +159,16 @@ class InfrastructureSettings:
                 left_hemisphere_model=self.left_hemisphere_model,
                 left_hemisphere_provider=self.left_hemisphere_provider,
                 left_hemisphere_reasoning_effort=self.left_hemisphere_reasoning_effort,
+                left_hemisphere_fallback_endpoint=self.left_hemisphere_fallback_endpoint,
+                left_hemisphere_fallback_api_key=self.left_hemisphere_fallback_api_key,
+                left_hemisphere_fallback_model=self.left_hemisphere_fallback_model,
+                left_hemisphere_fallback_provider=self.left_hemisphere_fallback_provider,
+                left_hemisphere_fallback_reasoning_effort=self.left_hemisphere_fallback_reasoning_effort,
                 embedding_endpoint=self.embedding_endpoint,
                 embedding_api_key=self.embedding_api_key,
                 embedding_model=self.embedding_model,
                 embedding_provider=self.embedding_provider,
+                telegram_bot_token=self.telegram_bot_token,
                 vault=self.vault,
             )
 

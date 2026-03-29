@@ -10,6 +10,7 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
+from calosum.domain.memory import InMemorySemanticGraphStore
 from calosum.shared.async_utils import run_sync
 from calosum.shared.types import (
     BridgeControlSignal,
@@ -54,6 +55,7 @@ class QdrantDualMemoryAdapter:
         *,
         embedder: TextEmbeddingAdapter | None = None,
         exporter: DatasetExporterPort | None = None,
+        graph_store=None,
     ) -> None:
         self.config = config or QdrantAdapterConfig()
         self.client = QdrantClient(url=self.config.url)
@@ -62,6 +64,7 @@ class QdrantDualMemoryAdapter:
             TextEmbeddingAdapterConfig(vector_size=self.config.vector_size)
         )
         self.exporter = exporter
+        self.graph_store = graph_store or InMemorySemanticGraphStore()
         self._ensure_collections()
 
     def _ensure_collections(self) -> None:
@@ -107,7 +110,9 @@ class QdrantDualMemoryAdapter:
         return MemoryContext(
             recent_episodes=episodes,
             semantic_rules=rules,
-            knowledge_triples=[KnowledgeTriple(subject="user", predicate="is", object="human")],
+            knowledge_triples=self.graph_store.query(user_turn) or [
+                KnowledgeTriple(subject="user", predicate="is", object="human")
+            ],
         )
 
     def store_episode(self, episode: MemoryEpisode) -> None:
@@ -169,6 +174,9 @@ class QdrantDualMemoryAdapter:
                 collection_name=self.config.rules_collection,
                 points=points_to_upsert,
             )
+
+        for triple in report.graph_updates:
+            self.graph_store.upsert(triple)
 
         return report
 
@@ -241,6 +249,11 @@ class QdrantDualMemoryAdapter:
             "observed_at": episode.user_turn.observed_at.isoformat(),
             "recorded_at": episode.recorded_at.isoformat(),
             "emotional_labels": episode.right_state.emotional_labels if episode.right_state else [],
+            "latent_vector": episode.right_state.latent_vector if episode.right_state else [],
+            "salience": episode.right_state.salience if episode.right_state else 0.15,
+            "confidence": episode.right_state.confidence if episode.right_state else 0.0,
+            "surprise_score": episode.right_state.surprise_score if episode.right_state else 0.0,
+            "world_hypotheses": episode.right_state.world_hypotheses if episode.right_state else {},
             "response_text": episode.left_result.response_text if episode.left_result else "",
             "action_types": [action.action_type for action in episode.left_result.actions] if episode.left_result else [],
             "reasoning_summary": episode.left_result.reasoning_summary if episode.left_result else [],
@@ -256,8 +269,12 @@ class QdrantDualMemoryAdapter:
         )
         right_state = _placeholder_right_state(
             user_turn,
+            latent_vector=list(payload.get("latent_vector", [])),
             emotional_labels=list(payload.get("emotional_labels", [])),
-            salience=0.5 if payload.get("emotional_labels") else 0.15,
+            salience=float(payload.get("salience", 0.5 if payload.get("emotional_labels") else 0.15)),
+            confidence=float(payload.get("confidence", 0.0)),
+            surprise_score=float(payload.get("surprise_score", 0.0)),
+            world_hypotheses=dict(payload.get("world_hypotheses", {})),
         )
         return MemoryEpisode(
             episode_id=str(point.id),
@@ -295,16 +312,21 @@ def _parse_datetime(value: str | None) -> datetime:
 def _placeholder_right_state(
     user_turn: UserTurn,
     *,
+    latent_vector: list[float] | None = None,
     emotional_labels: list[str] | None = None,
     salience: float = 0.15,
+    confidence: float = 0.0,
+    surprise_score: float = 0.0,
+    world_hypotheses: dict | None = None,
 ) -> RightHemisphereState:
     return RightHemisphereState(
         context_id=user_turn.turn_id,
-        latent_vector=[],
+        latent_vector=latent_vector or [],
         salience=salience,
         emotional_labels=emotional_labels or ["neutral"],
-        world_hypotheses={},
-        confidence=0.0,
+        world_hypotheses=world_hypotheses or {},
+        confidence=confidence,
+        surprise_score=surprise_score,
         telemetry={"source": "qdrant_placeholder"},
     )
 

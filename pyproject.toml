@@ -20,6 +20,11 @@ dependencies = [
     "sentence-transformers>=3.0.0",
     "transformers>=4.40.0",
     "tenacity>=8.3.0",
+    "inferactively-pymdp",
+    "nano-graphrag",
+    "gensim>=4.0.0",
+    "dspy",
+    "python-telegram-bot>=21.0",
 ]
 
 [project.scripts]

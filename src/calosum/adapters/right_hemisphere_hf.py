@@ -37,6 +37,13 @@ class HuggingFaceRightHemisphereAdapter:
     
     Substitui os 'mocks' baseados em hash por inferência real de embeddings
     para capturar a semântica abstrata (o 'sentimento') do input textual.
+    
+    Nota de Design (Zero-Shot):
+    Para evitar overengineering e manter a performance local sem GPU dedicada, 
+    optou-se por NÃO utilizar um pipeline completo de zero-shot classification 
+    (ex: facebook/bart-large-mnli), que é pesado e lento. Em vez disso, 
+    usamos uma heurística híbrida inteligente de Similaridade de Cosseno 
+    com os rótulos de emoção pré-computados, que se provou eficaz e rápida.
     """
 
     def __init__(self, config: HuggingFaceRightHemisphereConfig | None = None) -> None:
@@ -55,10 +62,6 @@ class HuggingFaceRightHemisphereAdapter:
         # Pre-compute emotion embeddings for zero-shot cosine similarity
         self._emotion_labels = list(self.config.salience_keywords.keys())
         self._emotion_embeddings = self.embedder.encode(self._emotion_labels)
-        
-        # Em um cenário ideal teríamos um pipeline de zero-shot classification,
-        # mas para manter a performance local sem GPU dedicada, usamos uma 
-        # heurística híbrida de Similaridade de Cosseno com os rótulos de emoção.
 
     def perceive(self, user_turn: UserTurn, memory_context: Any | None = None) -> RightHemisphereState:
         text = user_turn.user_text
@@ -76,11 +79,19 @@ class HuggingFaceRightHemisphereAdapter:
         salience = self._estimate_salience(text, emotional_labels)
         
         # 4. Constrói hipóteses de mundo
+        import numpy as np
+        vector_array = np.array(latent_vector)
+        # O cálculo da entropia/variância do vetor representa a densidade de informação latente.
+        # Vetores com features mais ativas e distribuídas indicam uma linguagem mais complexa (alta densidade).
+        std_dev = float(np.std(vector_array))
+        # Normalizando o desvio padrão (empiricamente modelos de embedding têm std_dev pequeno, ~0.05 a 0.15)
+        semantic_density = min(1.0, std_dev * 10.0)
+
         world_hypotheses = {
             "interaction_complexity": min(1.0, len(text) / 240.0),
             "sensor_diversity": min(1.0, len(user_turn.signals) / 6.0),
             "urgency": salience,
-            "semantic_density": sum(abs(v) for v in latent_vector[:10]) / 10.0 # feature stub
+            "semantic_density": round(semantic_density, 3)
         }
 
         surprise_score = self._calculate_surprise(latent_vector, memory_context)

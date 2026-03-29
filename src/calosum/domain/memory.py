@@ -125,6 +125,7 @@ class SleepModeConsolidator:
         # Para treinar o LoRA ou DSPy, precisamos gerar um dataset.
         # Vamos acumular os episódios categorizados.
         dspy_dataset: list[dict] = []
+        sharegpt_dataset: list[dict] = []
 
         for episode in episodes:
             for label in episode.right_state.emotional_labels:
@@ -154,6 +155,15 @@ class SleepModeConsolidator:
                     "critique_revision_count": episode.critique_revision_count,
                     "actions": [a.action_type for a in episode.left_result.actions]
                 })
+
+                # Exporta apenas os sucessos absolutos para o dataset do LoRA no padrão ShareGPT
+                if category == "good":
+                    sharegpt_dataset.append({
+                        "conversations": [
+                            {"from": "human", "value": episode.user_turn.user_text},
+                            {"from": "gpt", "value": episode.left_result.response_text}
+                        ]
+                    })
 
         for label, count in emotion_counter.items():
             if count >= self.minimum_frequency:
@@ -193,6 +203,10 @@ class SleepModeConsolidator:
         if dspy_dataset and self.exporter:
             export_path = self.exporter.export(dspy_dataset, "dspy_dataset.jsonl")
             lora_backlog.append(f"dataset_exported::{export_path}")
+            
+        if sharegpt_dataset and self.exporter:
+            sharegpt_path = self.exporter.export(sharegpt_dataset, "lora_sharegpt.jsonl")
+            lora_backlog.append(f"sharegpt_exported::{sharegpt_path}")
 
         return ConsolidationReport(
             started_at=started_at,

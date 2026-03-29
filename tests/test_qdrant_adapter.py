@@ -60,11 +60,32 @@ class FakeAsyncQdrantClient:
         return _FakeQdrantState.collections.get(collection_name, [])[:limit], None
 
 
+class FakeEmbedder:
+    async def aembed_texts(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for text in texts:
+            lowered = text.lower()
+            vectors.append(
+                [
+                    1.0 if "projeto" in lowered else 0.0,
+                    1.0 if "urgente" in lowered else 0.0,
+                    1.0 if "bolo" in lowered else 0.0,
+                    float(len(lowered.split())) / 10.0,
+                ]
+            )
+        return vectors
+
+
 def _episode(session_id: str, text: str, labels: list[str]) -> MemoryEpisode:
     turn = UserTurn(session_id=session_id, user_text=text)
     right_state = RightHemisphereState(
         context_id=turn.turn_id,
-        latent_vector=[],
+        latent_vector=[
+            1.0 if "projeto" in text.lower() else 0.0,
+            1.0 if "urgente" in text.lower() else 0.0,
+            1.0 if "bolo" in text.lower() else 0.0,
+            float(len(text.split())) / 10.0,
+        ],
         salience=0.8 if "urgente" in text.lower() else 0.2,
         emotional_labels=labels,
         world_hypotheses={},
@@ -103,7 +124,10 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
             "calosum.adapters.memory_qdrant.AsyncQdrantClient",
             FakeAsyncQdrantClient,
         ):
-            adapter = QdrantDualMemoryAdapter(QdrantAdapterConfig(url="http://fake-qdrant"))
+            adapter = QdrantDualMemoryAdapter(
+                QdrantAdapterConfig(url="http://fake-qdrant"),
+                embedder=FakeEmbedder(),
+            )
             await adapter.astore_episode(
                 _episode("qdrant-session", "Preciso de um plano urgente para reorganizar o projeto.", ["urgente"])
             )
@@ -117,13 +141,17 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertGreaterEqual(len(context.recent_episodes), 1)
         self.assertIn("projeto", context.recent_episodes[0].user_turn.user_text.lower())
+        self.assertTrue(context.recent_episodes[0].right_state.latent_vector)
 
     async def test_sleep_mode_promotes_rules_that_are_retrieved_by_vector_search(self) -> None:
         with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
             "calosum.adapters.memory_qdrant.AsyncQdrantClient",
             FakeAsyncQdrantClient,
         ):
-            adapter = QdrantDualMemoryAdapter(QdrantAdapterConfig(url="http://fake-qdrant"))
+            adapter = QdrantDualMemoryAdapter(
+                QdrantAdapterConfig(url="http://fake-qdrant"),
+                embedder=FakeEmbedder(),
+            )
             await adapter.astore_episode(
                 _episode("qdrant-session", "Estou urgente e preciso de ajuda.", ["urgente"])
             )
@@ -137,6 +165,7 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(any(rule.rule_id == "emotion::urgente" for rule in context.semantic_rules))
+        self.assertTrue(any(triple.predicate == "biases_response_toward" for triple in context.knowledge_triples))
 
 
 if __name__ == "__main__":

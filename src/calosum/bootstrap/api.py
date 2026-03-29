@@ -49,6 +49,35 @@ def get_builder() -> CalosumAgentBuilder:
 def get_agent():
     return get_builder().build()
 
+# Inicialização global dos adaptadores de canais
+_active_channels = []
+
+@app.on_event("startup")
+async def startup_event():
+    settings = get_settings()
+    if settings.telegram_bot_token:
+        from calosum.adapters.channel_telegram import TelegramChannelAdapter
+        import asyncio
+        
+        logger.info("Inicializando Telegram Channel Adapter...")
+        telegram_adapter = TelegramChannelAdapter(settings.telegram_bot_token)
+        
+        async def on_telegram_message(user_turn: UserTurn):
+            agent = get_agent()
+            try:
+                result = await agent.aprocess_turn(user_turn)
+                if hasattr(result, "selected_result"):
+                    response_text = result.selected_result.left_result.response_text
+                else:
+                    response_text = result.left_result.response_text
+                await telegram_adapter.send(user_turn.session_id, response_text)
+            except Exception as e:
+                logger.error(f"Erro processando mensagem do Telegram: {e}")
+                await telegram_adapter.send(user_turn.session_id, "Ocorreu um erro ao processar sua mensagem.")
+
+        _active_channels.append(telegram_adapter)
+        asyncio.create_task(telegram_adapter.listen(on_telegram_message))
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,

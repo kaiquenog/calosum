@@ -2,16 +2,25 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+import importlib.util
+from pathlib import Path
 from typing import Any
 
+from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
 from calosum.adapters.action_runtime import ConcreteActionRuntime
+from calosum.adapters.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
+from calosum.adapters.llm_failover import ResilientLeftHemisphereAdapter
 from calosum.adapters.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.adapters.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
 from calosum.adapters.right_hemisphere_hf import HuggingFaceRightHemisphereAdapter
 from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 from calosum.domain.memory import DualMemorySystem
 from calosum.domain.orchestrator import CalosumAgent
-from calosum.domain.persistent_memory import PersistentDualMemorySystem
+from calosum.domain.persistent_memory import (
+    JsonlEpisodicStore,
+    JsonlSemanticStore,
+    PersistentDualMemorySystem,
+)
 from calosum.domain.right_hemisphere import RightHemisphereJEPA
 from calosum.bootstrap.settings import InfrastructureProfile, InfrastructureSettings
 from calosum.domain.telemetry import CognitiveTelemetryBus, InMemoryTelemetrySink, OTLPJsonlTelemetrySink
@@ -25,22 +34,10 @@ class CalosumAgentBuilder:
     _last_right_hemisphere_backend: str | None = field(default=None, init=False, repr=False)
     _last_left_hemisphere_backend: str | None = field(default=None, init=False, repr=False)
     _last_embedding_backend: str | None = field(default=None, init=False, repr=False)
+    _last_knowledge_graph_backend: str | None = field(default=None, init=False, repr=False)
 
     def build(self) -> CalosumAgent:
-        if self.settings.left_hemisphere_endpoint:
-            left_hemisphere = QwenLeftHemisphereAdapter(
-                QwenAdapterConfig(
-                    api_url=self.settings.left_hemisphere_endpoint,
-                    api_key=self.settings.left_hemisphere_api_key or "empty",
-                    model_name=self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct",
-                    provider=self.settings.left_hemisphere_provider or "auto",
-                    reasoning_effort=self.settings.left_hemisphere_reasoning_effort,
-                )
-            )
-            self._last_left_hemisphere_backend = self._left_hemisphere_backend_name_from_settings()
-        else:
-            left_hemisphere = QwenLeftHemisphereAdapter()
-            self._last_left_hemisphere_backend = "openai_compatible_chat_adapter_default"
+        left_hemisphere = self.build_left_hemisphere()
 
         right_hemisphere = self.build_right_hemisphere()
 
@@ -57,27 +54,53 @@ class CalosumAgentBuilder:
             telemetry_bus=self.build_telemetry_bus(),
         )
 
+    def build_left_hemisphere(self):
+        primary = self._build_single_left_hemisphere(
+            endpoint=self.settings.left_hemisphere_endpoint,
+            api_key=self.settings.left_hemisphere_api_key,
+            model=self.settings.left_hemisphere_model,
+            provider=self.settings.left_hemisphere_provider,
+            reasoning_effort=self.settings.left_hemisphere_reasoning_effort,
+        )
+
+        if self.settings.left_hemisphere_fallback_endpoint:
+            fallback = self._build_single_left_hemisphere(
+                endpoint=self.settings.left_hemisphere_fallback_endpoint,
+                api_key=self.settings.left_hemisphere_fallback_api_key,
+                model=self.settings.left_hemisphere_fallback_model or self.settings.left_hemisphere_model,
+                provider=self.settings.left_hemisphere_fallback_provider,
+                reasoning_effort=(
+                    self.settings.left_hemisphere_fallback_reasoning_effort
+                    or self.settings.left_hemisphere_reasoning_effort
+                ),
+            )
+            self._last_left_hemisphere_backend = "resilient_failover_adapter"
+            return ResilientLeftHemisphereAdapter([primary, fallback])
+
+        self._last_left_hemisphere_backend = self._left_hemisphere_backend_name_from_settings()
+        return primary
+
     def build_right_hemisphere(self):
         try:
-            right_hemisphere = HuggingFaceRightHemisphereAdapter()
+            base_adapter = HuggingFaceRightHemisphereAdapter()
         except Exception as exc:
             logger.warning(
                 "Falling back to heuristic right hemisphere adapter because the optional "
                 "HuggingFace stack is unavailable: %s",
                 exc,
             )
-            self._last_right_hemisphere_backend = "heuristic_jepa_fallback"
-            return RightHemisphereJEPA()
+            self._last_right_hemisphere_backend = "active_inference_heuristic_fallback"
+            return ActiveInferenceRightHemisphereAdapter(RightHemisphereJEPA())
 
-        self._last_right_hemisphere_backend = "huggingface_embeddings"
-        return right_hemisphere
+        self._last_right_hemisphere_backend = "active_inference_huggingface"
+        return ActiveInferenceRightHemisphereAdapter(base_adapter)
 
     def build_memory_system(self):
-        from pathlib import Path
         from calosum.adapters.night_trainer import LocalDatasetExporter
         from calosum.domain.memory import SleepModeConsolidator
         
         exporter = LocalDatasetExporter(Path(".calosum-runtime/nightly_data"))
+        graph_store = self.build_graph_store()
 
         if self.settings.vector_db_url:
             embedder = self.build_text_embedder()
@@ -85,6 +108,7 @@ class CalosumAgentBuilder:
                 QdrantAdapterConfig(url=self.settings.vector_db_url),
                 embedder=embedder,
                 exporter=exporter,
+                graph_store=graph_store,
             )
         
         if self.settings.profile in {
@@ -93,11 +117,27 @@ class CalosumAgentBuilder:
         }:
             if self.settings.memory_dir is None:
                 raise ValueError("persistent profiles require a resolved memory_dir")
-            return PersistentDualMemorySystem.from_directory(
-                self.settings.memory_dir,
+            return PersistentDualMemorySystem(
+                episodic_store=JsonlEpisodicStore(self.settings.memory_dir / "episodic.jsonl"),
+                semantic_store=JsonlSemanticStore(self.settings.memory_dir / "semantic_rules.jsonl"),
+                graph_store=graph_store,
                 consolidator=SleepModeConsolidator(exporter=exporter)
             )
-        return DualMemorySystem(consolidator=SleepModeConsolidator(exporter=exporter))
+        return DualMemorySystem(
+            graph_store=graph_store,
+            consolidator=SleepModeConsolidator(exporter=exporter),
+        )
+
+    def build_graph_store(self) -> NanoGraphRAGKnowledgeGraphStore:
+        storage_path: Path | None = None
+        if self.settings.memory_dir is not None:
+            storage_path = self.settings.memory_dir / "knowledge_graph.jsonl"
+        elif self.settings.duckdb_path is not None:
+            storage_path = self.settings.duckdb_path.parent / "knowledge_graph.jsonl"
+
+        store = NanoGraphRAGKnowledgeGraphStore(storage_path=storage_path)
+        self._last_knowledge_graph_backend = store.backend_name
+        return store
 
     def build_telemetry_bus(self) -> CognitiveTelemetryBus:
         if self.settings.otlp_jsonl is not None:
@@ -127,6 +167,27 @@ class CalosumAgentBuilder:
         self._last_embedding_backend = embedder.backend_name()
         return embedder
 
+    def _build_single_left_hemisphere(
+        self,
+        *,
+        endpoint: str | None,
+        api_key: str | None,
+        model: str | None,
+        provider: str | None,
+        reasoning_effort: str | None,
+    ) -> QwenLeftHemisphereAdapter:
+        if endpoint:
+            return QwenLeftHemisphereAdapter(
+                QwenAdapterConfig(
+                    api_url=endpoint,
+                    api_key=api_key or "empty",
+                    model_name=model or "Qwen/Qwen-3.5-9B-Instruct",
+                    provider=provider or "auto",
+                    reasoning_effort=reasoning_effort,
+                )
+            )
+        return QwenLeftHemisphereAdapter()
+
     def describe(self) -> dict[str, Any]:
         return {
             "pattern": "ports_and_adapters_with_builder_factory",
@@ -147,6 +208,11 @@ class CalosumAgentBuilder:
             "left_hemisphere_model": self.settings.left_hemisphere_model,
             "left_hemisphere_provider": self.settings.left_hemisphere_provider,
             "left_hemisphere_reasoning_effort": self.settings.left_hemisphere_reasoning_effort,
+            "left_hemisphere_failover_enabled": bool(self.settings.left_hemisphere_fallback_endpoint),
+            "left_hemisphere_fallback_endpoint": self.settings.left_hemisphere_fallback_endpoint,
+            "left_hemisphere_fallback_model": self.settings.left_hemisphere_fallback_model,
+            "left_hemisphere_fallback_provider": self.settings.left_hemisphere_fallback_provider,
+            "knowledge_graph_backend": self._knowledge_graph_backend_name(),
             "embedding_backend": self._embedding_backend_name(),
             "embedding_endpoint": self.settings.embedding_endpoint or self._derived_embedding_endpoint(),
             "embedding_model": self.settings.embedding_model or self._derived_embedding_model(),
@@ -169,7 +235,7 @@ class CalosumAgentBuilder:
         return "in_memory"
 
     def _right_hemisphere_backend_name(self) -> str:
-        return self._last_right_hemisphere_backend or "optional_huggingface_with_fallback"
+        return self._last_right_hemisphere_backend or "active_inference_with_optional_huggingface"
 
     def _left_hemisphere_backend_name(self) -> str:
         return self._last_left_hemisphere_backend or self._left_hemisphere_backend_name_from_settings()
@@ -179,7 +245,16 @@ class CalosumAgentBuilder:
             return None
         return self._last_embedding_backend or self._derived_embedding_provider() or "auto"
 
+    def _knowledge_graph_backend_name(self) -> str:
+        if self._last_knowledge_graph_backend:
+            return self._last_knowledge_graph_backend
+        if importlib.util.find_spec("nano_graphrag"):
+            return "nanorag_compatible_networkx"
+        return "networkx_graph_rag_fallback"
+
     def _left_hemisphere_backend_name_from_settings(self) -> str:
+        if self.settings.left_hemisphere_fallback_endpoint:
+            return "resilient_failover_adapter"
         endpoint = (self.settings.left_hemisphere_endpoint or "").lower()
         provider = (self.settings.left_hemisphere_provider or "auto").lower()
 
