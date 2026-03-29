@@ -89,17 +89,27 @@ class ConcreteActionRuntime:
             return f"Search failed: {e}"
 
     async def _execute_write_file(self, payload: dict) -> str:
+        import tempfile
         from pathlib import Path
-        path = payload.get("path", "")
+        path_str = payload.get("path", "")
         content = payload.get("content", "")
-        if not path:
+        if not path_str:
             return "No path provided for write_file."
             
         try:
-            target = Path(path)
+            # Sandbox: force write inside a temporary directory to avoid host modifications
+            sandbox_dir = Path(tempfile.gettempdir()) / "calosum_sandbox"
+            sandbox_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Resolve the path to ensure it stays within the sandbox
+            safe_name = Path(path_str).name
+            if not safe_name:
+                safe_name = "default_output.txt"
+                
+            target = sandbox_dir / safe_name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
-            return f"Successfully wrote {len(content)} bytes to {path}."
+            return f"Successfully wrote {len(content)} bytes to sandboxed path: {target} (requested: {path_str})."
         except Exception as e:
             logger.error(f"File write failure: {e}")
             return f"File write failed: {e}"

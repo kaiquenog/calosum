@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, useMemo } from 'react';
-import { Activity, Brain, CheckCircle, Clock, Zap, History, MessageSquare, ChevronDown, ChevronRight, Terminal } from 'lucide-react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import { Activity, Brain, CheckCircle, Clock, Zap, History, MessageSquare, ChevronDown, ChevronRight, Terminal, Send, Bot, User } from 'lucide-react';
 import './App.css';
 
 interface DashboardEvent {
@@ -62,12 +62,33 @@ interface TimelineEvent {
   data: any;
 }
 
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+  status?: 'sending' | 'processing' | 'done' | 'error';
+}
+
 function App() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<string>('all');
   const [availableSessions, setAvailableSessions] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<'chat' | 'history'>('chat');
+  
+  // Chat state
+  const [chatInput, setChatInput] = useState('');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  
+  // Use a fixed active session for the chat
+  const activeSessionId = useMemo(() => {
+    return `chat-session-${new Date().toISOString().split('T')[0]}`;
+  }, []);
+
   const apiBase = import.meta.env.VITE_CALOSUM_API_BASE ?? 'http://localhost:8000';
 
   const extractSessions = useCallback((data: Dashboard) => {
@@ -118,18 +139,19 @@ function App() {
   }, [fetchDashboard]);
 
   // Helper to filter events by selected session
-  const filterEvents = useCallback(<T extends { _session_id?: string }>(events: T[]): T[] => {
-    if (selectedSession === 'all') return events;
-    return events.filter(e => e._session_id === selectedSession);
+  const filterEvents = useCallback(<T extends { _session_id?: string }>(events: T[], forceSession?: string): T[] => {
+    const targetSession = forceSession || selectedSession;
+    if (targetSession === 'all') return events;
+    return events.filter(e => e._session_id === targetSession);
   }, [selectedSession]);
 
-  const timelineEvents = useMemo(() => {
+  const getTimelineEvents = useCallback((forceSession?: string) => {
     if (!dashboard) return [];
     
     const events: TimelineEvent[] = [];
     
     const processChannel = (channel: keyof Dashboard, dataArray: any[]) => {
-      filterEvents(dataArray).forEach((item, index) => {
+      filterEvents(dataArray, forceSession).forEach((item, index) => {
         events.push({
           id: `${channel}-${index}-${item._recorded_at || Date.now()}`,
           type: channel as any,
@@ -149,6 +171,10 @@ function App() {
     // Sort by timestamp descending (newest first)
     return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [dashboard, filterEvents]);
+
+  const timelineEvents = useMemo(() => getTimelineEvents(), [getTimelineEvents]);
+  
+  const liveTimelineEvents = useMemo(() => getTimelineEvents(activeSessionId), [getTimelineEvents, activeSessionId]);
 
   // Group events by session for a clearer view
   const groupedEvents = useMemo(() => {
@@ -187,6 +213,117 @@ function App() {
       });
     }
   }, [groupedEvents]);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || isProcessing) return;
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: chatInput.trim(),
+      timestamp: new Date(),
+    };
+
+    setChatMessages(prev => [...prev, userMessage]);
+    setChatInput('');
+    setIsProcessing(true);
+
+    const botMessageId = `bot-${Date.now()}`;
+    setChatMessages(prev => [...prev, {
+      id: botMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      status: 'processing'
+    }]);
+
+    try {
+      // Connect to SSE endpoint
+      const response = await fetch(`${apiBase}/v1/chat/sse?text=${encodeURIComponent(userMessage.content)}&session_id=${activeSessionId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to connect to chat API');
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      let botContent = '';
+
+      if (reader) {
+        while (!done) {
+          const { value, done: readerDone } = await reader.read();
+          done = readerDone;
+          
+          if (value) {
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            
+            let currentEvent = '';
+            
+            for (const line of lines) {
+              if (line.startsWith('event: ')) {
+                currentEvent = line.replace('event: ', '').trim();
+              } else if (line.startsWith('data: ')) {
+                const data = line.replace('data: ', '');
+                
+                if (currentEvent === 'reasoning') {
+                  botContent += data + '\n';
+                  setChatMessages(prev => prev.map(msg => 
+                    msg.id === botMessageId 
+                      ? { ...msg, content: botContent } 
+                      : msg
+                  ));
+                } else if (currentEvent === 'action') {
+                  // Only append if we haven't received reasoning yet
+                  if (!botContent) {
+                    setChatMessages(prev => prev.map(msg => 
+                      msg.id === botMessageId 
+                        ? { ...msg, content: `*[Executando Ação: ${data}]*` } 
+                        : msg
+                    ));
+                  }
+                } else if (currentEvent === 'error') {
+                  setChatMessages(prev => prev.map(msg => 
+                    msg.id === botMessageId 
+                      ? { ...msg, content: `Erro: ${data}`, status: 'error' } 
+                      : msg
+                  ));
+                }
+              }
+            }
+          }
+        }
+      }
+
+      setChatMessages(prev => prev.map(msg => 
+        msg.id === botMessageId 
+          ? { ...msg, status: 'done', content: botContent || msg.content } 
+          : msg
+      ));
+      
+      // Force dashboard refresh to get the latest telemetry
+      void fetchDashboard(true);
+
+    } catch (err) {
+      console.error('Chat error:', err);
+      setChatMessages(prev => prev.map(msg => 
+        msg.id === botMessageId 
+          ? { ...msg, status: 'error', content: 'Erro de conexão com o agente.' } 
+          : msg
+      ));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const renderEventIcon = (type: TimelineEvent['type']) => {
     switch (type) {
@@ -424,81 +561,165 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 p-8 font-sans">
-      <header className="mb-8 flex items-center justify-between border-b border-gray-800 pb-6">
-        <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent flex items-center gap-3">
-            <Brain className="w-8 h-8 text-blue-400" />
-            Calosum Telemetry
-          </h1>
-          <p className="text-gray-400 mt-2">Monitoramento de Dualidade Cognitiva (Global)</p>
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col font-sans">
+      <header className="flex-none bg-gray-900 border-b border-gray-800 p-4 px-6 flex items-center justify-between shadow-sm z-10">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-500/10 p-2 rounded-lg border border-blue-500/20">
+              <Brain className="w-6 h-6 text-blue-400" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                Calosum
+              </h1>
+              <p className="text-xs text-gray-400 font-medium tracking-wide">COGNITIVE AGENT INTERFACE</p>
+            </div>
+          </div>
+          
+          <div className="h-8 w-px bg-gray-800 mx-2"></div>
+          
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setActiveTab('chat')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+                activeTab === 'chat' 
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                  : 'bg-gray-800/50 text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              Live Chat & Telemetry
+            </button>
+            <button 
+              onClick={() => setActiveTab('history')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+                activeTab === 'history' 
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                  : 'bg-gray-800/50 text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              Session History
+            </button>
+          </div>
         </div>
         
         <div className="flex gap-4 items-center">
-          <div className="flex items-center gap-2">
-            <label htmlFor="session-select" className="text-sm text-gray-400">Sessão:</label>
-            <select 
-              id="session-select"
-              value={selectedSession} 
-              onChange={(e) => setSelectedSession(e.target.value)}
-              className="bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
-            >
-              <option value="all">Todas as sessões</option>
-              {availableSessions.map(session => (
-                <option key={session} value={session}>{session}</option>
-              ))}
-            </select>
+          <div className="flex items-center gap-2 text-xs font-mono text-gray-500 bg-gray-950 px-3 py-1.5 rounded-md border border-gray-800">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            API: {apiBase}
           </div>
-
           <button 
             onClick={() => void fetchDashboard(false)}
             disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
+            className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 border border-gray-700"
+            title="Atualizar Telemetria"
           >
-            <Activity className="w-4 h-4" />
-            {loading ? 'Atualizando...' : 'Atualizar'}
+            <Activity className={`w-4 h-4 ${loading ? 'animate-spin text-blue-400' : ''}`} />
           </button>
         </div>
       </header>
 
       {error && (
-        <div className="bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-md mb-8">
-          {error}
+        <div className="bg-red-950/50 border-b border-red-900 text-red-200 p-3 text-sm text-center flex items-center justify-center gap-2">
+          <Zap className="w-4 h-4" /> {error}
         </div>
       )}
 
-      {!dashboard || Object.keys(groupedEvents).length === 0 ? (
-        <div className="text-center text-gray-500 py-20 bg-gray-900/30 rounded-xl border border-gray-800 border-dashed">
-          <Activity className="w-12 h-12 text-gray-700 mx-auto mb-4" />
-          Nenhum dado de telemetria encontrado. Execute interações no terminal ou API.
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {Object.entries(groupedEvents).map(([sessionId, events]) => (
-            <div key={sessionId} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-xl transition-all">
-              {/* Session Header */}
-              <button 
-                onClick={() => toggleSession(sessionId)}
-                className="w-full bg-gradient-to-r from-slate-900 to-gray-900 p-4 border-b border-gray-800 flex items-center justify-between hover:bg-slate-800/50 transition-colors"
+      <main className="flex-1 flex overflow-hidden">
+        {activeTab === 'chat' ? (
+          <>
+            {/* CHAT PANEL (LEFT) */}
+            <div className="w-1/3 min-w-[400px] border-r border-gray-800 bg-gray-950 flex flex-col z-0">
+              <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex justify-between items-center">
+                <h2 className="font-semibold text-gray-200 flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-blue-400" />
+                  Interaction
+                </h2>
+                <span className="text-[10px] font-mono text-gray-500 bg-gray-800 px-2 py-0.5 rounded border border-gray-700 truncate max-w-[150px]">
+                  {activeSessionId}
+                </span>
+              </div>
+              
+              <div 
+                ref={chatScrollRef}
+                className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth"
               >
-                <div className="flex items-center gap-3">
-                  <div className={`p-1 rounded-md ${expandedSessions[sessionId] ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-800 text-gray-500'}`}>
-                    {expandedSessions[sessionId] ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                {chatMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
+                    <Bot className="w-12 h-12 text-gray-800" />
+                    <p className="text-sm">Envie uma mensagem para iniciar o ciclo cognitivo.</p>
                   </div>
-                  <div>
-                    <h2 className="font-semibold text-lg text-gray-200 flex items-center gap-2">
-                      Sessão: <span className="font-mono text-blue-400">{sessionId}</span>
-                    </h2>
-                    <span className="text-xs text-gray-500">{events.length} eventos registrados</span>
-                  </div>
-                </div>
-              </button>
+                ) : (
+                  chatMessages.map((msg) => (
+                    <div 
+                      key={msg.id} 
+                      className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+                    >
+                      <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center border ${
+                        msg.role === 'user' 
+                          ? 'bg-blue-900/50 border-blue-500/30 text-blue-400' 
+                          : 'bg-purple-900/50 border-purple-500/30 text-purple-400'
+                      }`}>
+                        {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                      </div>
+                      
+                      <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                        <div className={`p-3 rounded-2xl text-sm whitespace-pre-wrap ${
+                          msg.role === 'user'
+                            ? 'bg-blue-600 text-white rounded-tr-sm'
+                            : 'bg-gray-800 text-gray-200 rounded-tl-sm border border-gray-700'
+                        }`}>
+                          {msg.content || (msg.status === 'processing' && <span className="flex gap-1 items-center h-5"><span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span><span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span><span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span></span>)}
+                        </div>
+                        <span className="text-[10px] text-gray-500 mt-1 px-1">
+                          {formatTime(msg.timestamp.toISOString())}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <div className="p-4 bg-gray-900 border-t border-gray-800">
+                <form onSubmit={handleSendMessage} className="relative">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Digite sua mensagem..."
+                    disabled={isProcessing}
+                    className="w-full bg-gray-950 border border-gray-700 rounded-xl pl-4 pr-12 py-3 text-sm text-gray-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all disabled:opacity-50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!chatInput.trim() || isProcessing}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors"
+                  >
+                    {isProcessing ? <Activity className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </button>
+                </form>
+              </div>
+            </div>
 
-              {/* Timeline Container */}
-              {expandedSessions[sessionId] && (
-                <div className="p-6">
-                  <div className="relative pl-8 border-l border-gray-800 space-y-8 before:absolute before:inset-0 before:ml-[31px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0">
-                    {events.map((event, index) => (
+            {/* LIVE TELEMETRY PANEL (RIGHT) */}
+            <div className="flex-1 bg-[#0a0a0c] overflow-y-auto relative">
+              <div className="sticky top-0 z-10 bg-[#0a0a0c]/80 backdrop-blur-md border-b border-gray-800/50 p-4 px-6">
+                <h2 className="font-semibold text-gray-200 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                  Live Cognitive Trace
+                </h2>
+              </div>
+              
+              <div className="p-6">
+                {liveTimelineEvents.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-gray-600">
+                    <Activity className="w-12 h-12 mb-4 opacity-20" />
+                    <p>Aguardando atividade cognitiva...</p>
+                  </div>
+                ) : (
+                  <div className="relative pl-8 border-l border-gray-800/50 space-y-8 before:absolute before:inset-0 before:ml-[31px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0">
+                    {liveTimelineEvents.map((event) => (
                       <div key={event.id} className="relative group">
                         {/* Timeline dot */}
                         <div className={`absolute -left-[41px] mt-1.5 w-6 h-6 rounded-full border-2 bg-gray-950 flex items-center justify-center ${renderEventColor(event.type).split(' ')[0]}`}>
@@ -508,7 +729,7 @@ function App() {
                         </div>
 
                         {/* Event Card */}
-                        <div className={`bg-gray-800/30 rounded-xl border p-5 transition-colors hover:bg-gray-800/50 ${renderEventColor(event.type)}`}>
+                        <div className={`bg-gray-900/40 backdrop-blur-sm rounded-xl border p-5 transition-colors hover:bg-gray-800/60 shadow-lg ${renderEventColor(event.type)}`}>
                           <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-700/50">
                             <div className="flex items-center gap-2">
                               <span className="font-semibold uppercase tracking-widest text-sm text-gray-200">
@@ -531,12 +752,116 @@ function App() {
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          /* HISTORY TAB */
+          <div className="flex-1 overflow-y-auto bg-[#0a0a0c] p-8">
+            <div className="max-w-5xl mx-auto space-y-6">
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-100 flex items-center gap-2">
+                    <History className="w-6 h-6 text-blue-400" />
+                    Histórico de Sessões
+                  </h2>
+                  <p className="text-gray-400 text-sm mt-1">Navegue pelas execuções passadas do agente cognitivo</p>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <label htmlFor="session-select" className="text-sm text-gray-400">Filtrar:</label>
+                  <select 
+                    id="session-select"
+                    value={selectedSession} 
+                    onChange={(e) => setSelectedSession(e.target.value)}
+                    className="bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="all">Todas as sessões</option>
+                    {availableSessions.map(session => (
+                      <option key={session} value={session}>{session}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {!dashboard || Object.keys(groupedEvents).length === 0 ? (
+                <div className="text-center text-gray-500 py-20 bg-gray-900/30 rounded-xl border border-gray-800 border-dashed">
+                  <Activity className="w-12 h-12 text-gray-700 mx-auto mb-4" />
+                  Nenhum dado de telemetria encontrado no histórico.
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {Object.entries(groupedEvents).map(([sessionId, events]) => (
+                    <div key={sessionId} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-xl transition-all">
+                      {/* Session Header */}
+                      <button 
+                        onClick={() => toggleSession(sessionId)}
+                        className="w-full bg-gradient-to-r from-slate-900 to-gray-900 p-4 border-b border-gray-800 flex items-center justify-between hover:bg-slate-800/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`p-1 rounded-md ${expandedSessions[sessionId] ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-800 text-gray-500'}`}>
+                            {expandedSessions[sessionId] ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                          </div>
+                          <div className="text-left">
+                            <h2 className="font-semibold text-lg text-gray-200 flex items-center gap-2">
+                              {sessionId}
+                              {sessionId === activeSessionId && (
+                                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded uppercase tracking-wider">Ativa</span>
+                              )}
+                            </h2>
+                            <span className="text-xs text-gray-500">{events.length} eventos registrados • Último evento: {formatTime(events[0].timestamp)}</span>
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* Timeline Container */}
+                      {expandedSessions[sessionId] && (
+                        <div className="p-6 bg-[#0a0a0c]">
+                          <div className="relative pl-8 border-l border-gray-800 space-y-8 before:absolute before:inset-0 before:ml-[31px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0">
+                            {events.map((event) => (
+                              <div key={event.id} className="relative group">
+                                {/* Timeline dot */}
+                                <div className={`absolute -left-[41px] mt-1.5 w-6 h-6 rounded-full border-2 bg-gray-950 flex items-center justify-center ${renderEventColor(event.type).split(' ')[0]}`}>
+                          <div className="scale-75">
+                                    {renderEventIcon(event.type)}
+                                  </div>
+                                </div>
+
+                                {/* Event Card */}
+                                <div className={`bg-gray-800/30 rounded-xl border p-5 transition-colors hover:bg-gray-800/50 ${renderEventColor(event.type)}`}>
+                                  <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-700/50">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold uppercase tracking-widest text-sm text-gray-200">
+                                        {event.type}
+                                      </span>
+                                      {event.data.turn_id && (
+                                        <span className="text-[10px] font-mono text-gray-500 bg-gray-950 px-2 py-0.5 rounded border border-gray-800">
+                                          {event.data.turn_id.split('-')[0]}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-xs font-mono text-gray-500 flex items-center gap-1">
+                                      <Clock className="w-3 h-3" />
+                                      {formatTime(event.timestamp)}
+                                    </span>
+                                  </div>
+                                  
+                                  {renderEventContent(event)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+      </main>
     </div>
   );
 }

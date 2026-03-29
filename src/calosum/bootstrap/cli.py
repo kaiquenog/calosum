@@ -178,13 +178,18 @@ def _handle_chat(agent, args: argparse.Namespace) -> int:
             )
             result = agent.process_turn(user_turn)
             
+            if hasattr(result, "selected_result"):
+                turn_result = result.selected_result
+            else:
+                turn_result = result
+            
             # Feedback from logical processing and actions
-            if result.left_result.response_text:
-                print(f"Calosum (Reasoning): {result.left_result.response_text}")
-                if "falhou" in result.left_result.response_text.lower():
-                    print(f"-> Diagnostic Trace: {result.left_result.reasoning_summary}")
+            if turn_result.left_result.response_text:
+                print(f"Calosum (Reasoning): {turn_result.left_result.response_text}")
+                if "falhou" in turn_result.left_result.response_text.lower():
+                    print(f"-> Diagnostic Trace: {turn_result.left_result.reasoning_summary}")
                 
-            for action in result.left_result.actions:
+            for action in turn_result.left_result.actions:
                 if action.action_type == "respond_text":
                     print(f"Calosum (Action): {action.payload.get('text', '')}")
                 else:

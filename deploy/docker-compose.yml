@@ -8,7 +8,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      CALOSUM_LEFT_ENDPOINT: "http://host.docker.internal:11434/v1/chat/completions"
       CALOSUM_INFRA_PROFILE: docker
       CALOSUM_MEMORY_DIR: /data/memory
       CALOSUM_OTLP_JSONL: /data/telemetry/events.jsonl
@@ -16,8 +15,7 @@ services:
       CALOSUM_DUCKDB_PATH: /data/state/semantic.duckdb
       CALOSUM_OTEL_COLLECTOR_ENDPOINT: http://otel-collector:4318
       CALOSUM_JAEGER_UI_URL: http://jaeger:16686
-      # APIs de Modelos de Linguagem são consumidas nativamente do pacote httpx para web e HuggingFace endpoints
-      # Logo, os containers fake de "left-hemisphere" foram aposentados.
+      # Deixa o .env ditar as configs do LLM para evitar hardcode do host.docker.internal quebrando a API da OpenAI
     volumes:
       - ../.calosum-runtime:/data
       - ../src:/app/src

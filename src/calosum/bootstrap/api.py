@@ -74,11 +74,7 @@ async def chat_completions(request: Request) -> JSONResponse:
     agent = get_agent()
     
     try:
-        # Offload logic execution to prevent blocking the async loop
-        def run() -> Any:
-            return agent.process_turn(user_turn)
-            
-        result = await asyncio.to_thread(run)
+        result = await agent.aprocess_turn(user_turn)
         return JSONResponse({"status": "ok", "result": to_primitive(result)})
     except Exception as e:
         logger.error("Error processing turn", exc_info=True)
@@ -137,14 +133,19 @@ async def chat_sse(request: Request, text: str, session_id: str = "api-session")
             # Processa o turno de forma assíncrona
             result = await agent.aprocess_turn(user_turn)
             
+            if hasattr(result, "selected_result"):
+                turn_result = result.selected_result
+            else:
+                turn_result = result
+            
             # Envia o resultado principal (raciocínio/resposta)
             yield {
                 "event": "reasoning",
-                "data": result.left_result.response_text or "..."
+                "data": turn_result.left_result.response_text or "..."
             }
             
             # Envia as ações executadas
-            for exec_res in result.execution_results:
+            for exec_res in turn_result.execution_results:
                 yield {
                     "event": "action",
                     "data": f"[{exec_res.action_type}] {exec_res.status}"

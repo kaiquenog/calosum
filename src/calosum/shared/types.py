@@ -59,6 +59,7 @@ class RightHemisphereState:
     emotional_labels: list[str]
     world_hypotheses: dict[str, float]
     confidence: float
+    surprise_score: float = 0.0
     telemetry: dict[str, Any] = field(default_factory=dict)
 
 

@@ -7,6 +7,7 @@ from uuid import uuid4
 from calosum.shared.async_utils import maybe_await, run_sync
 from calosum.domain.agent_execution import AgentExecutionEngine
 from calosum.domain.bridge import CognitiveTokenizer
+from calosum.domain.event_bus import CognitiveEvent, InternalEventBus
 from calosum.domain.left_hemisphere import LeftHemisphereLogicalSLM
 from calosum.domain.memory import DualMemorySystem
 from calosum.domain.metacognition import (
@@ -68,26 +69,46 @@ class CalosumAgent:
         self.telemetry_bus = telemetry_bus or CognitiveTelemetryBus()
         self.reflection_controller = reflection_controller or GEAReflectionController()
         self.config = config or CalosumAgentConfig()
+        self.event_bus = InternalEventBus()
         self.execution_engine = AgentExecutionEngine(
             action_runtime=self.action_runtime,
             max_runtime_retries=self.config.max_runtime_retries,
         )
 
-    def process_turn(self, user_turn: UserTurn) -> AgentTurnResult:
+    def process_turn(self, user_turn: UserTurn) -> AgentTurnResult | GroupTurnResult:
         return run_sync(self.aprocess_turn(user_turn))
 
-    async def aprocess_turn(self, user_turn: UserTurn) -> AgentTurnResult:
+    async def aprocess_turn(self, user_turn: UserTurn) -> AgentTurnResult | GroupTurnResult:
         started_at = perf_counter()
+        
+        await self.event_bus.publish(CognitiveEvent("UserTurnEvent", user_turn, user_turn.turn_id))
+
         memory_context = await maybe_await(
             self.execution_engine.call_component(
                 self.memory_system, "abuild_context", "build_context", user_turn
             )
         )
+        
+        await self.event_bus.publish(CognitiveEvent("MemoryContextEvent", memory_context, user_turn.turn_id))
+
         right_state = await maybe_await(
             self.execution_engine.call_component(
-                self.right_hemisphere, "aperceive", "perceive", user_turn
+                self.right_hemisphere, "aperceive", "perceive", user_turn, memory_context
             )
         )
+        
+        await self.event_bus.publish(CognitiveEvent("PerceptionEvent", right_state, user_turn.turn_id))
+
+        # Active Inference: High surprise triggers Metacognition (Group Turn)
+        surprise_threshold = getattr(self.config, "surprise_threshold", 0.6)
+        if getattr(right_state, "surprise_score", 0.0) > surprise_threshold:
+            from calosum.domain.metacognition import CognitiveVariantSpec
+            variants = [
+                CognitiveVariantSpec(variant_id="conservative", tokenizer_overrides={"base_temperature": 0.1}),
+                CognitiveVariantSpec(variant_id="exploratory", tokenizer_overrides={"base_temperature": 0.7, "empathy_priority": True}),
+            ]
+            return await self.aprocess_group_turn(user_turn, variants, _precomputed_memory=memory_context, _precomputed_right=right_state)
+
         result = await self.execution_engine.run_variant(
             user_turn=user_turn,
             memory_context=memory_context,
@@ -96,6 +117,9 @@ class CalosumAgent:
             left_hemisphere=self.left_hemisphere,
         )
         result.latency_ms = round((perf_counter() - started_at) * 1000.0, 3)
+        
+        await self.event_bus.publish(CognitiveEvent("ExecutionEvent", result, user_turn.turn_id))
+        
         await self._store_selected_episode(result)
         await maybe_await(
             self.execution_engine.call_component(
@@ -115,21 +139,29 @@ class CalosumAgent:
         self,
         user_turn: UserTurn,
         variants: list[CognitiveVariantSpec],
+        _precomputed_memory: Any | None = None,
+        _precomputed_right: Any | None = None,
     ) -> GroupTurnResult:
         if not variants:
             raise ValueError("process_group_turn requires at least one variant")
 
         started_at = perf_counter()
-        memory_context = await maybe_await(
-            self.execution_engine.call_component(
-                self.memory_system, "abuild_context", "build_context", user_turn
+        
+        memory_context = _precomputed_memory
+        if memory_context is None:
+            memory_context = await maybe_await(
+                self.execution_engine.call_component(
+                    self.memory_system, "abuild_context", "build_context", user_turn
+                )
             )
-        )
-        right_state = await maybe_await(
-            self.execution_engine.call_component(
-                self.right_hemisphere, "aperceive", "perceive", user_turn
+            
+        right_state = _precomputed_right
+        if right_state is None:
+            right_state = await maybe_await(
+                self.execution_engine.call_component(
+                    self.right_hemisphere, "aperceive", "perceive", user_turn, memory_context
+                )
             )
-        )
         candidates: list[CognitiveCandidate] = []
 
         for variant in variants:

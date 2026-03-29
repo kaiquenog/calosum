@@ -54,6 +54,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.advanced_interfaces": {"shared.types", "domain.metacognition", "shared.ports"},
     "domain.agent_execution": {"shared.async_utils", "shared.ports", "shared.types"},
     "domain.bridge": {"shared.types"},
+    "domain.event_bus": set(),
     "domain.right_hemisphere": {"shared.types"},
     "domain.left_hemisphere": {"shared.types"},
     "domain.runtime": {"domain.runtime_dsl", "shared.types"},
@@ -65,6 +66,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.orchestrator": {
         "shared.async_utils",
         "domain.bridge",
+        "domain.event_bus",
         "domain.agent_execution",
         "domain.left_hemisphere",
         "domain.memory",
