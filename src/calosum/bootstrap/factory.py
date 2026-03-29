@@ -1,21 +1,20 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 import importlib.util
 from pathlib import Path
 from typing import Any
 
 from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
 from calosum.adapters.action_runtime import ConcreteActionRuntime
-from calosum.adapters.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
 from calosum.adapters.llm_failover import ResilientLeftHemisphereAdapter
 from calosum.adapters.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
-from calosum.adapters.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
-from calosum.adapters.right_hemisphere_hf import HuggingFaceRightHemisphereAdapter
+from calosum.adapters.telemetry_otlp import OTLPHTTPTraceSink
 from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
-from calosum.domain.memory import DualMemorySystem
-from calosum.domain.orchestrator import CalosumAgent
+from calosum.domain.evolution import JsonlEvolutionArchive
+from calosum.domain.memory import DualMemorySystem, InMemorySemanticGraphStore
+from calosum.domain.orchestrator import CalosumAgent, CalosumAgentConfig
 from calosum.domain.persistent_memory import (
     JsonlEpisodicStore,
     JsonlSemanticStore,
@@ -23,8 +22,8 @@ from calosum.domain.persistent_memory import (
 )
 from calosum.domain.right_hemisphere import RightHemisphereJEPA
 from calosum.bootstrap.settings import InfrastructureProfile, InfrastructureSettings
-from calosum.domain.telemetry import CognitiveTelemetryBus, InMemoryTelemetrySink, OTLPJsonlTelemetrySink
-from calosum.shared.types import CapabilityDescriptor, ComponentHealth, ModelDescriptor, ToolDescriptor
+from calosum.domain.telemetry import CognitiveTelemetryBus, CompositeTelemetrySink, InMemoryTelemetrySink, OTLPJsonlTelemetrySink
+from calosum.shared.types import CapabilityDescriptor, ComponentHealth, ModelDescriptor
 
 logger = logging.getLogger(__name__)
 
@@ -36,22 +35,21 @@ class CalosumAgentBuilder:
     _last_left_hemisphere_backend: str | None = field(default=None, init=False, repr=False)
     _last_embedding_backend: str | None = field(default=None, init=False, repr=False)
     _last_knowledge_graph_backend: str | None = field(default=None, init=False, repr=False)
+    _last_right_hemisphere_model_name: str | None = field(default=None, init=False, repr=False)
 
     def build(self) -> CalosumAgent:
         left_hemisphere = self.build_left_hemisphere()
-
         right_hemisphere = self.build_right_hemisphere()
-
         from calosum.domain.bridge import CognitiveTokenizer
         from calosum.adapters.bridge_store import LocalBridgeStateStore
-        tokenizer = CognitiveTokenizer(store=LocalBridgeStateStore())
-        
+        bridge_store = None
+        if self.settings.bridge_state_dir is not None:
+            bridge_store = LocalBridgeStateStore(base_dir=self.settings.bridge_state_dir)
+        tokenizer = CognitiveTokenizer(store=bridge_store)
         action_runtime = ConcreteActionRuntime(vault=self.settings.vault)
         memory_system = self.build_memory_system()
         telemetry_bus = self.build_telemetry_bus()
-
         capability_snapshot = self.build_capability_snapshot(action_runtime)
-
         return CalosumAgent(
             right_hemisphere=right_hemisphere,
             tokenizer=tokenizer,
@@ -59,23 +57,24 @@ class CalosumAgentBuilder:
             action_runtime=action_runtime,
             memory_system=memory_system,
             telemetry_bus=telemetry_bus,
+            config=self._build_agent_config(),
             capability_snapshot=capability_snapshot,
+            evolution_archive=JsonlEvolutionArchive(self.settings.evolution_archive_path),
         )
 
     def build_left_hemisphere(self):
         primary = self._build_single_left_hemisphere(
             endpoint=self.settings.left_hemisphere_endpoint,
             api_key=self.settings.left_hemisphere_api_key,
-            model=self.settings.left_hemisphere_model,
+            model=self._reason_model_name(),
             provider=self.settings.left_hemisphere_provider,
             reasoning_effort=self.settings.left_hemisphere_reasoning_effort,
         )
-
         if self.settings.left_hemisphere_fallback_endpoint:
             fallback = self._build_single_left_hemisphere(
                 endpoint=self.settings.left_hemisphere_fallback_endpoint,
                 api_key=self.settings.left_hemisphere_fallback_api_key,
-                model=self.settings.left_hemisphere_fallback_model or self.settings.left_hemisphere_model,
+                model=self.settings.left_hemisphere_fallback_model or self._reason_model_name(),
                 provider=self.settings.left_hemisphere_fallback_provider,
                 reasoning_effort=(
                     self.settings.left_hemisphere_fallback_reasoning_effort
@@ -84,13 +83,26 @@ class CalosumAgentBuilder:
             )
             self._last_left_hemisphere_backend = "resilient_failover_adapter"
             return ResilientLeftHemisphereAdapter([primary, fallback])
-
         self._last_left_hemisphere_backend = self._left_hemisphere_backend_name_from_settings()
         return primary
 
     def build_right_hemisphere(self):
+        requested_model = self.settings.perception_model
+        if requested_model and requested_model.lower() == "jepa":
+            self._last_right_hemisphere_backend = "active_inference_jepa_policy"
+            self._last_right_hemisphere_model_name = "jepa"
+            return ActiveInferenceRightHemisphereAdapter(RightHemisphereJEPA())
+
         try:
-            base_adapter = HuggingFaceRightHemisphereAdapter()
+            from calosum.adapters.right_hemisphere_hf import (
+                HuggingFaceRightHemisphereAdapter,
+                HuggingFaceRightHemisphereConfig,
+            )
+            config = None
+            if requested_model and requested_model.lower() != "jepa":
+                config = HuggingFaceRightHemisphereConfig(embedding_model_name=requested_model)
+                self._last_right_hemisphere_model_name = requested_model
+            base_adapter = HuggingFaceRightHemisphereAdapter(config)
         except Exception as exc:
             logger.warning(
                 "Falling back to heuristic right hemisphere adapter because the optional "
@@ -98,27 +110,38 @@ class CalosumAgentBuilder:
                 exc,
             )
             self._last_right_hemisphere_backend = "active_inference_heuristic_fallback"
+            self._last_right_hemisphere_model_name = "jepa"
             return ActiveInferenceRightHemisphereAdapter(RightHemisphereJEPA())
 
         self._last_right_hemisphere_backend = "active_inference_huggingface"
+        if self._last_right_hemisphere_model_name is None:
+            self._last_right_hemisphere_model_name = getattr(
+                getattr(base_adapter, "config", None),
+                "embedding_model_name",
+                requested_model or "paraphrase-multilingual-MiniLM-L12-v2",
+            )
         return ActiveInferenceRightHemisphereAdapter(base_adapter)
 
     def build_memory_system(self):
         from calosum.adapters.night_trainer import LocalDatasetExporter
         from calosum.domain.memory import SleepModeConsolidator
-        
-        exporter = LocalDatasetExporter(Path(".calosum-runtime/nightly_data"))
+        exporter = LocalDatasetExporter(self._runtime_root() / "nightly_data")
         graph_store = self.build_graph_store()
-
         if self.settings.vector_db_url:
-            embedder = self.build_text_embedder()
-            return QdrantDualMemoryAdapter(
-                QdrantAdapterConfig(url=self.settings.vector_db_url),
-                embedder=embedder,
-                exporter=exporter,
-                graph_store=graph_store,
-            )
-        
+            try:
+                from calosum.adapters.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
+                embedder = self.build_text_embedder()
+                return QdrantDualMemoryAdapter(
+                    QdrantAdapterConfig(url=self.settings.vector_db_url),
+                    embedder=embedder,
+                    exporter=exporter,
+                    graph_store=graph_store,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Falling back from Qdrant memory adapter because the optional stack is unavailable: %s",
+                    exc,
+                )
         if self.settings.profile in {
             InfrastructureProfile.PERSISTENT,
             InfrastructureProfile.DOCKER,
@@ -136,21 +159,32 @@ class CalosumAgentBuilder:
             consolidator=SleepModeConsolidator(exporter=exporter),
         )
 
-    def build_graph_store(self) -> NanoGraphRAGKnowledgeGraphStore:
+    def build_graph_store(self):
         storage_path: Path | None = None
         if self.settings.memory_dir is not None:
             storage_path = self.settings.memory_dir / "knowledge_graph.jsonl"
         elif self.settings.duckdb_path is not None:
             storage_path = self.settings.duckdb_path.parent / "knowledge_graph.jsonl"
-
-        store = NanoGraphRAGKnowledgeGraphStore(storage_path=storage_path)
-        self._last_knowledge_graph_backend = store.backend_name
-        return store
+        try:
+            from calosum.adapters.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
+            store = NanoGraphRAGKnowledgeGraphStore(storage_path=storage_path)
+            self._last_knowledge_graph_backend = store.backend_name
+            return store
+        except Exception as exc:
+            logger.warning(
+                "Falling back to in-memory knowledge graph store because the optional stack is unavailable: %s",
+                exc,
+            )
+            self._last_knowledge_graph_backend = "in_memory_graph_fallback"
+            return InMemorySemanticGraphStore()
 
     def build_telemetry_bus(self) -> CognitiveTelemetryBus:
-        if self.settings.otlp_jsonl is not None:
-            return CognitiveTelemetryBus(OTLPJsonlTelemetrySink(self.settings.otlp_jsonl))
-        return CognitiveTelemetryBus(InMemoryTelemetrySink())
+        query_sink = OTLPJsonlTelemetrySink(self.settings.otlp_jsonl) if self.settings.otlp_jsonl else InMemoryTelemetrySink()
+        sinks = [query_sink]
+        if self.settings.otel_collector_endpoint is not None:
+            sinks.append(OTLPHTTPTraceSink(self.settings.otel_collector_endpoint))
+        sink = query_sink if len(sinks) == 1 else CompositeTelemetrySink(sinks=sinks, query_sink=query_sink)
+        return CognitiveTelemetryBus(sink)
 
     def build_text_embedder(self) -> TextEmbeddingAdapter:
         endpoint = self.settings.embedding_endpoint
@@ -175,6 +209,9 @@ class CalosumAgentBuilder:
         self._last_embedding_backend = embedder.backend_name()
         return embedder
 
+    def _build_agent_config(self) -> CalosumAgentConfig:
+        return CalosumAgentConfig(awareness_interval_turns=self.settings.awareness_interval_turns)
+
     def _build_single_left_hemisphere(
         self,
         *,
@@ -196,21 +233,21 @@ class CalosumAgentBuilder:
             )
         return QwenLeftHemisphereAdapter()
 
-    def build_capability_snapshot(self, action_runtime: ConcreteActionRuntime | None = None) -> CapabilityDescriptor:
+    def build_capability_snapshot(self, action_runtime: Any | None = None) -> CapabilityDescriptor:
+        from calosum.shared.types import RoutingPolicy
+        right_health = self._right_hemisphere_health()
         right_model = ModelDescriptor(
-            provider="local",
-            model_name="jepa",
+            provider="huggingface_local" if "huggingface" in self._right_hemisphere_backend_name() else "local",
+            model_name=self._right_hemisphere_model_name(),
             backend=self._right_hemisphere_backend_name(),
-            health=ComponentHealth.HEALTHY,
+            health=right_health,
         )
-
         left_model = ModelDescriptor(
             provider=self.settings.left_hemisphere_provider or "auto",
-            model_name=self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct",
+            model_name=self._reason_model_name(),
             backend=self._left_hemisphere_backend_name(),
             health=ComponentHealth.HEALTHY,
         )
-
         embedding_model = None
         if self._embedding_backend_name():
             embedding_model = ModelDescriptor(
@@ -219,17 +256,27 @@ class CalosumAgentBuilder:
                 backend=self._embedding_backend_name() or "auto",
                 health=ComponentHealth.HEALTHY,
             )
-
         kg_model = ModelDescriptor(
             provider="local",
             model_name="nanorag",
             backend=self._knowledge_graph_backend_name(),
-            health=ComponentHealth.HEALTHY,
+            health=self._knowledge_graph_health(),
         )
-
         tools = []
         if action_runtime:
             tools = action_runtime.get_registered_tools()
+        routing_policy = RoutingPolicy(
+            perception_model=self.settings.perception_model or right_model.model_name,
+            reason_model=self.settings.reason_model or left_model.model_name,
+            reflection_model=self.settings.reflection_model or left_model.model_name,
+            verifier_model=self.settings.verifier_model,
+        )
+        healths = {right_health, left_model.health, kg_model.health}
+        overall_health = ComponentHealth.HEALTHY
+        if ComponentHealth.UNAVAILABLE in healths:
+            overall_health = ComponentHealth.UNAVAILABLE
+        elif ComponentHealth.DEGRADED in healths:
+            overall_health = ComponentHealth.DEGRADED
 
         return CapabilityDescriptor(
             right_hemisphere=right_model,
@@ -237,12 +284,15 @@ class CalosumAgentBuilder:
             embeddings=embedding_model,
             knowledge_graph=kg_model,
             tools=tools,
-            health=ComponentHealth.HEALTHY,
+            routing_policy=routing_policy,
+            health=overall_health,
         )
 
-    def describe(self) -> dict[str, Any]:
-        from dataclasses import asdict
-        snapshot = self.build_capability_snapshot()
+    def describe(self, agent: CalosumAgent | None = None) -> dict[str, Any]:
+        action_runtime = getattr(agent, "action_runtime", None) if agent is not None else None
+        snapshot = agent.capability_snapshot if agent is not None else None
+        if snapshot is None:
+            snapshot = self.build_capability_snapshot(action_runtime)
         return {
             "pattern": "ports_and_adapters_with_builder_factory",
             "profile": self.settings.profile.value,
@@ -256,11 +306,18 @@ class CalosumAgentBuilder:
             "otlp_jsonl": str(self.settings.otlp_jsonl) if self.settings.otlp_jsonl else None,
             "vector_db_url": self.settings.vector_db_url,
             "duckdb_path": str(self.settings.duckdb_path) if self.settings.duckdb_path else None,
+            "bridge_state_dir": str(self.settings.bridge_state_dir) if self.settings.bridge_state_dir else None,
+            "evolution_archive_path": (
+                str(self.settings.evolution_archive_path)
+                if self.settings.evolution_archive_path
+                else None
+            ),
+            "awareness_interval_turns": self.settings.awareness_interval_turns,
             "otel_collector_endpoint": self.settings.otel_collector_endpoint,
             "jaeger_ui_url": self.settings.jaeger_ui_url,
             "right_hemisphere_endpoint": self.settings.right_hemisphere_endpoint,
             "left_hemisphere_endpoint": self.settings.left_hemisphere_endpoint,
-            "left_hemisphere_model": self.settings.left_hemisphere_model,
+            "left_hemisphere_model": self._reason_model_name(),
             "left_hemisphere_provider": self.settings.left_hemisphere_provider,
             "left_hemisphere_reasoning_effort": self.settings.left_hemisphere_reasoning_effort,
             "left_hemisphere_failover_enabled": bool(self.settings.left_hemisphere_fallback_endpoint),
@@ -272,6 +329,7 @@ class CalosumAgentBuilder:
             "embedding_endpoint": self.settings.embedding_endpoint or self._derived_embedding_endpoint(),
             "embedding_model": self.settings.embedding_model or self._derived_embedding_model(),
             "embedding_provider": self.settings.embedding_provider or self._derived_embedding_provider(),
+            "routing_resolution": self._routing_resolution(snapshot),
         }
 
     def _memory_backend_name(self) -> str:
@@ -289,16 +347,32 @@ class CalosumAgentBuilder:
             return "otlp_jsonl"
         return "in_memory"
 
+    def _right_hemisphere_health(self) -> ComponentHealth:
+        if self._last_right_hemisphere_backend == "active_inference_heuristic_fallback":
+            return ComponentHealth.DEGRADED
+        return ComponentHealth.HEALTHY
+
     def _right_hemisphere_backend_name(self) -> str:
         return self._last_right_hemisphere_backend or "active_inference_with_optional_huggingface"
 
+    def _right_hemisphere_model_name(self) -> str:
+        return self._last_right_hemisphere_model_name or self.settings.perception_model or "jepa"
+
     def _left_hemisphere_backend_name(self) -> str:
         return self._last_left_hemisphere_backend or self._left_hemisphere_backend_name_from_settings()
+
+    def _reason_model_name(self) -> str:
+        return self.settings.reason_model or self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct"
 
     def _embedding_backend_name(self) -> str | None:
         if not self.settings.vector_db_url:
             return None
         return self._last_embedding_backend or self._derived_embedding_provider() or "auto"
+
+    def _knowledge_graph_health(self) -> ComponentHealth:
+        if self._knowledge_graph_backend_name() == "in_memory_graph_fallback":
+            return ComponentHealth.DEGRADED
+        return ComponentHealth.HEALTHY
 
     def _knowledge_graph_backend_name(self) -> str:
         if self._last_knowledge_graph_backend:
@@ -306,6 +380,68 @@ class CalosumAgentBuilder:
         if importlib.util.find_spec("nano_graphrag"):
             return "nanorag_compatible_networkx"
         return "networkx_graph_rag_fallback"
+
+    def _runtime_root(self) -> Path:
+        if self.settings.memory_dir is not None:
+            return self.settings.memory_dir.parent
+        if self.settings.bridge_state_dir is not None:
+            return self.settings.bridge_state_dir.parent
+        if self.settings.evolution_archive_path is not None:
+            evolution_parent = self.settings.evolution_archive_path.parent
+            if evolution_parent.name == "evolution":
+                return evolution_parent.parent
+            return evolution_parent
+        if self.settings.otlp_jsonl is not None:
+            telemetry_parent = self.settings.otlp_jsonl.parent
+            if telemetry_parent.name == "telemetry":
+                return telemetry_parent.parent
+            return telemetry_parent
+        return Path(".calosum-runtime")
+
+    def _routing_resolution(self, snapshot: CapabilityDescriptor) -> dict[str, dict[str, Any]]:
+        right_model = snapshot.right_hemisphere
+        left_model = snapshot.left_hemisphere
+        reflection_requested = self.settings.reflection_model or left_model.model_name if left_model else None
+        reflection_shared = left_model is not None and reflection_requested == left_model.model_name
+        verifier_requested = self.settings.verifier_model
+        return {
+            "perception": {
+                "requested_model": self.settings.perception_model or right_model.model_name if right_model else None,
+                "active_model": right_model.model_name if right_model else None,
+                "backend": right_model.backend if right_model else None,
+                "available": right_model.health != ComponentHealth.UNAVAILABLE if right_model else False,
+            },
+            "reason": {
+                "requested_model": self.settings.reason_model or left_model.model_name if left_model else None,
+                "active_model": left_model.model_name if left_model else None,
+                "backend": left_model.backend if left_model else None,
+                "available": left_model.health != ComponentHealth.UNAVAILABLE if left_model else False,
+            },
+            "reflection": {
+                "requested_model": reflection_requested,
+                "active_model": left_model.model_name if reflection_shared and left_model else None,
+                "backend": left_model.backend if reflection_shared and left_model else None,
+                "available": reflection_shared and left_model is not None and left_model.health != ComponentHealth.UNAVAILABLE,
+                "shared_with_reasoning": reflection_shared,
+                "note": (
+                    "shared reasoning backend"
+                    if reflection_shared
+                    else "dedicated reflection route not implemented"
+                ),
+            },
+            "verifier": {
+                "requested_model": verifier_requested,
+                "active_model": "heuristic_verifier" if verifier_requested is None else None,
+                "backend": "heuristic_verifier",
+                "available": verifier_requested is None,
+                "shared_with_reasoning": False,
+                "note": (
+                    "heuristic verifier active"
+                    if verifier_requested is None
+                    else "dedicated verifier model route not implemented"
+                ),
+            },
+        }
 
     def _left_hemisphere_backend_name_from_settings(self) -> str:
         if self.settings.left_hemisphere_fallback_endpoint:

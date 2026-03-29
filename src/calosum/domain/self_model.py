@@ -3,6 +3,7 @@ from __future__ import annotations
 from calosum.shared.types import (
     AdaptationSurface,
     ArchitectureComponent,
+    CapabilityDescriptor,
     CognitiveArchitectureMap,
     ComponentConnection,
     ComponentHealth,
@@ -11,6 +12,32 @@ from calosum.shared.types import (
 def build_self_model(agent: "CalosumAgent") -> CognitiveArchitectureMap:
     from calosum.domain.orchestrator import CalosumAgent
     
+    capabilities = agent.capability_snapshot or CapabilityDescriptor(
+        right_hemisphere=None,
+        left_hemisphere=None,
+        embeddings=None,
+        knowledge_graph=None,
+        tools=[],
+        health=ComponentHealth.UNAVAILABLE,
+    )
+
+    right_health = (
+        capabilities.right_hemisphere.health
+        if capabilities.right_hemisphere is not None
+        else ComponentHealth.UNAVAILABLE
+    )
+    left_health = (
+        capabilities.left_hemisphere.health
+        if capabilities.left_hemisphere is not None
+        else ComponentHealth.UNAVAILABLE
+    )
+    memory_health = (
+        capabilities.knowledge_graph.health
+        if capabilities.knowledge_graph is not None
+        else capabilities.health
+    )
+    runtime_health = _tool_runtime_health(capabilities)
+
     # Safely extract class names
     right_hemisphere_class = agent.right_hemisphere.__class__.__name__
     left_hemisphere_class = agent.left_hemisphere.__class__.__name__
@@ -25,7 +52,7 @@ def build_self_model(agent: "CalosumAgent") -> CognitiveArchitectureMap:
             component_id="right_hemisphere",
             role="perception",
             adapter_class=right_hemisphere_class,
-            health=ComponentHealth.HEALTHY,
+            health=right_health,
         ),
         ArchitectureComponent(
             component_id="tokenizer",
@@ -37,19 +64,19 @@ def build_self_model(agent: "CalosumAgent") -> CognitiveArchitectureMap:
             component_id="left_hemisphere",
             role="reasoning",
             adapter_class=left_hemisphere_class,
-            health=ComponentHealth.HEALTHY,
+            health=left_health,
         ),
         ArchitectureComponent(
             component_id="memory_system",
             role="memory",
             adapter_class=memory_system_class,
-            health=ComponentHealth.HEALTHY,
+            health=memory_health,
         ),
         ArchitectureComponent(
             component_id="action_runtime",
             role="execution",
             adapter_class=action_runtime_class,
-            health=ComponentHealth.HEALTHY,
+            health=runtime_health,
         ),
         ArchitectureComponent(
             component_id="reflection_controller",
@@ -61,7 +88,7 @@ def build_self_model(agent: "CalosumAgent") -> CognitiveArchitectureMap:
             component_id="verifier",
             role="verification",
             adapter_class=verifier_class,
-            health=ComponentHealth.HEALTHY,
+            health=ComponentHealth.HEALTHY if agent.verifier else ComponentHealth.UNAVAILABLE,
         ),
     ]
 
@@ -85,21 +112,10 @@ def build_self_model(agent: "CalosumAgent") -> CognitiveArchitectureMap:
             "agent.max_runtime_retries",
             "agent.branching_budget.max_width",
             "agent.branching_budget.max_depth",
+            "agent.awareness_interval_turns",
         ],
-        supported_directives=["PARAMETER", "PROMPT"],
+        supported_directives=["PARAMETER", "PROMPT", "TOPOLOGY", "ARCHITECTURE"],
     )
-
-    capabilities = agent.capability_snapshot
-    if not capabilities:
-        from calosum.shared.types import CapabilityDescriptor
-        capabilities = CapabilityDescriptor(
-            right_hemisphere=None,
-            left_hemisphere=None,
-            embeddings=None,
-            knowledge_graph=None,
-            tools=[],
-            health=ComponentHealth.UNAVAILABLE,
-        )
 
     return CognitiveArchitectureMap(
         components=components,
@@ -107,3 +123,15 @@ def build_self_model(agent: "CalosumAgent") -> CognitiveArchitectureMap:
         adaptation_surface=adaptation_surface,
         capabilities=capabilities,
     )
+
+
+def _tool_runtime_health(capabilities: CapabilityDescriptor) -> ComponentHealth:
+    if not capabilities.tools:
+        return ComponentHealth.HEALTHY
+
+    statuses = {tool.health for tool in capabilities.tools}
+    if ComponentHealth.UNAVAILABLE in statuses:
+        return ComponentHealth.UNAVAILABLE
+    if ComponentHealth.DEGRADED in statuses:
+        return ComponentHealth.DEGRADED
+    return ComponentHealth.HEALTHY

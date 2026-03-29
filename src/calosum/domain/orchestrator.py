@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from time import perf_counter
 from uuid import uuid4
@@ -36,7 +37,10 @@ from calosum.shared.types import (
     CapabilityDescriptor,
     CognitiveArchitectureMap,
     CognitiveWorkspace,
+    DirectiveType,
+    EvolutionDirective,
     MemoryEpisode,
+    SessionDiagnostic,
     UserTurn,
     utc_now,
 )
@@ -51,6 +55,7 @@ class BranchingBudget:
 class CalosumAgentConfig:
     max_runtime_retries: int = 2
     surprise_threshold: float = 0.6
+    awareness_interval_turns: int = 1
     branching_budget: BranchingBudget = field(default_factory=BranchingBudget)
 
 
@@ -75,6 +80,7 @@ class CalosumAgent:
         verifier: VerifierPort | None = None,
         config: CalosumAgentConfig | None = None,
         capability_snapshot: CapabilityDescriptor | None = None,
+        evolution_archive: "JsonlEvolutionArchive | None" = None,
     ) -> None:
         self.right_hemisphere = right_hemisphere or RightHemisphereJEPA()
         self.tokenizer = tokenizer or CognitiveTokenizer()
@@ -86,18 +92,32 @@ class CalosumAgent:
         self.verifier = verifier or HeuristicVerifier()
         self.config = config or CalosumAgentConfig()
         self.capability_snapshot = capability_snapshot
+        self.evolution_archive = evolution_archive
         self.event_bus = InternalEventBus()
         self.execution_engine = AgentExecutionEngine(
             action_runtime=self.action_runtime,
             max_runtime_retries=self.config.max_runtime_retries,
             verifier=self.verifier,
         )
-
-        from calosum.domain.self_model import build_self_model
-        self.self_model: CognitiveArchitectureMap = build_self_model(self)
         
         # Último workspace por sessão
         self.last_workspace_by_session: dict[str, CognitiveWorkspace] = {}
+        self.latest_awareness_by_session: dict[str, SessionDiagnostic] = {}
+        self._awareness_turn_counts: dict[str, int] = {}
+        self.approved_prompt_directives: list[str] = (
+            self.evolution_archive.load_applied_prompt_directives()
+            if self.evolution_archive is not None
+            else []
+        )
+        
+        self.pending_directives: list[EvolutionDirective] = (
+            self.evolution_archive.load_pending_directives()
+            if self.evolution_archive is not None
+            else []
+        )
+
+        from calosum.domain.self_model import build_self_model
+        self.self_model: CognitiveArchitectureMap = build_self_model(self)
 
     def process_turn(self, user_turn: UserTurn) -> AgentTurnResult | GroupTurnResult:
         return run_sync(self.aprocess_turn(user_turn))
@@ -156,6 +176,7 @@ class CalosumAgent:
             right_state=right_state,
             tokenizer=self.tokenizer,
             left_hemisphere=self.left_hemisphere,
+            bridge_directives=self.approved_prompt_directives,
             capabilities=capabilities_dict,
             workspace=workspace,
         )
@@ -169,6 +190,10 @@ class CalosumAgent:
                 self.telemetry_bus, "arecord_turn", "record_turn", result
             )
         )
+        
+        # Awareness loop for single turn (can be probabilistic or periodic)
+        await self._awareness_loop(user_turn.session_id)
+        
         return result
 
     def process_group_turn(
@@ -230,7 +255,7 @@ class CalosumAgent:
                 tokenizer=tokenizer,
                 left_hemisphere=left_hemisphere,
                 variant_label=variant.variant_id,
-                bridge_directives=variant.bridge_directives,
+                bridge_directives=self.approved_prompt_directives + list(variant.bridge_directives),
                 capabilities=capabilities_dict,
                 workspace=workspace,
             )
@@ -272,6 +297,9 @@ class CalosumAgent:
                 reflection.as_dict(),
             )
         )
+        
+        # Awareness loop for group turn
+        await self._awareness_loop(user_turn.session_id)
 
         return GroupTurnResult(
             user_turn=user_turn,
@@ -279,6 +307,150 @@ class CalosumAgent:
             candidates=candidates,
             selected_result=selected_candidate.turn_result,
             reflection=reflection,
+        )
+
+    async def _awareness_loop(self, session_id: str) -> None:
+        """
+        Gera diagnósticos persistidos e aplica apenas diretivas paramétricas.
+        """
+        self._awareness_turn_counts[session_id] = self._awareness_turn_counts.get(session_id, 0) + 1
+        if self._awareness_turn_counts[session_id] % max(1, self.config.awareness_interval_turns) != 0:
+            return
+
+        from calosum.domain.evolution import EvolutionProposer
+
+        diagnostic = self.analyze_session(session_id, persist=True)
+        if not diagnostic.bottlenecks:
+            return
+
+        proposer = EvolutionProposer()
+        directives = proposer.propose(diagnostic)
+
+        for directive in directives:
+            if directive.directive_type == DirectiveType.PARAMETER:
+                self._apply_directive(directive)
+                self._record_directive_event(directive, event="auto_applied")
+                continue
+            self._queue_directive(directive)
+
+    def analyze_session(self, session_id: str, *, persist: bool = False) -> SessionDiagnostic:
+        dashboard = self.cognitive_dashboard(session_id)
+        if not dashboard.get("decision"):
+            diagnostic = SessionDiagnostic(
+                session_id=session_id,
+                analyzed_turns=0,
+                tool_success_rate=1.0,
+                average_retries=0.0,
+                average_surprise=0.0,
+                bottlenecks=[],
+                pending_approval_backlog=0,
+                pending_directive_count=len(self.pending_directives),
+            )
+        else:
+            from calosum.domain.introspection import IntrospectionEngine
+
+            engine = IntrospectionEngine()
+            diagnostic = engine.analyze(
+                session_id,
+                dashboard,
+                pending_directive_count=len(self.pending_directives),
+            )
+
+        self.latest_awareness_by_session[session_id] = diagnostic
+        if persist:
+            if hasattr(self.telemetry_bus, "record_awareness"):
+                self.telemetry_bus.record_awareness(session_id, diagnostic)
+            if self.evolution_archive is not None:
+                self.evolution_archive.record_diagnostic(diagnostic)
+        return diagnostic
+
+    def latest_awareness_for_session(self, session_id: str | None = None) -> SessionDiagnostic | None:
+        if session_id is not None:
+            return self.latest_awareness_by_session.get(session_id)
+        if self.latest_awareness_by_session:
+            last_key = list(self.latest_awareness_by_session.keys())[-1]
+            return self.latest_awareness_by_session[last_key]
+        return None
+
+    def workspace_for_session(self, session_id: str | None = None) -> CognitiveWorkspace | None:
+        if session_id is not None:
+            return self.last_workspace_by_session.get(session_id)
+        if self.last_workspace_by_session:
+            last_key = list(self.last_workspace_by_session.keys())[-1]
+            return self.last_workspace_by_session[last_key]
+        return None
+
+    def apply_pending_directive(self, directive_id: str) -> EvolutionDirective | None:
+        directive = next((item for item in self.pending_directives if item.directive_id == directive_id), None)
+        if directive is None:
+            return None
+
+        self.pending_directives = [
+            item for item in self.pending_directives if item.directive_id != directive_id
+        ]
+        self._apply_directive(directive)
+        self._record_directive_event(directive, event="manual_apply")
+        return directive
+
+    def _apply_directive(self, directive: EvolutionDirective) -> None:
+        target = directive.target_component
+        changes = directive.proposed_change
+        
+        try:
+            if target == "orchestrator":
+                for k, v in changes.items():
+                    if hasattr(self.config, k):
+                        setattr(self.config, k, v)
+                directive.status = "applied"
+            elif target == "orchestrator.branching_budget":
+                for k, v in changes.items():
+                    if hasattr(self.config.branching_budget, k):
+                        setattr(self.config.branching_budget, k, v)
+                directive.status = "applied"
+            elif target == "bridge":
+                if hasattr(self.tokenizer, "config"):
+                    for k, v in changes.items():
+                        if hasattr(self.tokenizer.config, k):
+                            setattr(self.tokenizer.config, k, v)
+                    directive.status = "applied"
+            elif directive.directive_type == DirectiveType.PROMPT and target in {
+                "left_hemisphere",
+                "reflection_controller",
+            }:
+                instruction = str(changes.get("instruction", "")).strip()
+                if instruction and instruction not in self.approved_prompt_directives:
+                    self.approved_prompt_directives.append(instruction)
+                directive.status = "applied"
+            else:
+                directive.status = "rejected_target_unknown"
+        except Exception:
+            directive.status = "failed"
+
+    def _queue_directive(self, directive: EvolutionDirective) -> None:
+        fingerprint = self._directive_fingerprint(directive)
+        existing = {
+            self._directive_fingerprint(item)
+            for item in self.pending_directives
+            if item.status == "pending"
+        }
+        if fingerprint in existing:
+            return
+        directive.status = "pending"
+        self.pending_directives.append(directive)
+        self._record_directive_event(directive, event="queued")
+
+    def _record_directive_event(self, directive: EvolutionDirective, *, event: str) -> None:
+        if self.evolution_archive is not None:
+            self.evolution_archive.record_directive(directive, event=event)
+
+    def _directive_fingerprint(self, directive: EvolutionDirective) -> str:
+        return json.dumps(
+            {
+                "directive_type": directive.directive_type.value,
+                "target_component": directive.target_component,
+                "proposed_change": directive.proposed_change,
+            },
+            sort_keys=True,
         )
 
     def sleep_mode(self):

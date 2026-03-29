@@ -376,25 +376,22 @@ Este plano e separado do plano `2026-03-29-self-awareness-evolution.md` porque a
 
 - O capability host fica operacionalmente previsivel, e nao apenas configuravel.
 
-## Dependencies and Sequencing Notes
+## Completion Summary
 
-- Sprint 0 e pre-requisito para todos os demais.
-- Sprint 1 pode ser iniciado assim que o snapshot de capabilities existir.
-- Sprint 2 deve vir antes da awareness, porque awareness precisa de estado de turno melhor estruturado.
-- Sprint 3 e 4 sao o miolo do control plane.
-- Sprint 5 depende diretamente de 1, 2 e 3.
-- Sprint 6 depende de 1, 2 e 3 para ter superfice real para exibir.
-- Sprint 7 pode rodar em paralelo parcial com Sprint 6, desde que ownership de arquivos seja isolado.
+- Plano encerrado como ciclo documental concluido e sucedido por `docs/exec-plans/active/2026-03-29-ai-os-gap-closure.md`.
+- Houve entrega material das superficies de capability snapshot, self-model, workspace, awareness, diretivas, introspecao e UI.
+- A revisao final encontrou cobertura parcial em routing policy operacional, persistencia e fila real de diretivas, introspecao grounded e hermeticidade da suite.
+- Os gaps remanescentes foram promovidos para um novo plano ativo, em vez de permanecerem ambiguos neste documento.
 
 ## Progress
 
 - [x] Sprint 0 - Baseline de Capability State e Contratos de Observabilidade
 - [x] Sprint 1 - Self-Model e Architecture API
 - [x] Sprint 2 - Shared Cognitive Workspace por Turno
-- [ ] Sprint 3 - Introspection Engine e Canal Awareness
-- [ ] Sprint 4 - Awareness Loop e Fila de Diretivas
-- [ ] Sprint 5 - Self-Awareness Conversacional e Acao `introspect_self`
-- [ ] Sprint 6 - UI Consciente: Architecture, State e Awareness
+- [x] Sprint 3 - Introspection Engine e Canal Awareness
+- [x] Sprint 4 - Awareness Loop e Fila de Diretivas
+- [x] Sprint 5 - Self-Awareness Conversacional e Acao `introspect_self`
+- [x] Sprint 6 - UI Consciente: Architecture, State e Awareness
 - [ ] Sprint 7 - Routing Policy e Hardening de Capability Host
 
 ## Decision Log
@@ -405,3 +402,4 @@ Este plano e separado do plano `2026-03-29-self-awareness-evolution.md` porque a
 - 2026-03-29: Decidido que o control plane comeca por self-model + capability host antes de awareness loop.
 - 2026-03-29: Decidido que apenas mudancas `PARAMETER` podem ser auto-aplicadas neste ciclo.
 - 2026-03-29: Decidido reservar um sprint especifico para hardening de roteamento e testes hermeticos, porque o estado atual ainda expõe dependencia de backend externo no hemisferio direito.
+- 2026-03-29: Decidido encerrar este plano como ciclo sucedido e abrir um novo plano ativo de fechamento de gaps, em vez de manter `active/` e `completed/` divergentes.

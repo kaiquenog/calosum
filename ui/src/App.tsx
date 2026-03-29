@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
-import { Activity, Brain, CheckCircle, Clock, Zap, History, MessageSquare, ChevronDown, ChevronRight, Terminal, Send, Bot, User } from 'lucide-react';
+import { Activity, Brain, CheckCircle, Clock, Zap, History, MessageSquare, ChevronDown, ChevronRight, Terminal, Send, Bot, User, Cpu, FileText, AlertTriangle } from 'lucide-react';
 import './App.css';
 
 interface DashboardEvent {
@@ -53,6 +53,45 @@ interface Dashboard {
   reflection: ReflectionEvent[];
 }
 
+interface SystemInfo {
+  profile: string;
+  capabilities: {
+    health: string;
+    right_hemisphere: any;
+    left_hemisphere: any;
+    embeddings: any;
+    knowledge_graph: any;
+    routing_policy?: {
+      perception_model: string;
+      reason_model: string;
+      reflection_model: string;
+      verifier_model?: string | null;
+    };
+    tools: Array<{
+      name: string;
+      description: string;
+      requires_approval: boolean;
+      required_permissions: string[];
+      health: string;
+    }>;
+  };
+  routing_resolution?: Record<string, {
+    requested_model?: string | null;
+    active_model?: string | null;
+    backend?: string | null;
+    available?: boolean;
+    note?: string;
+    shared_with_reasoning?: boolean;
+  }>;
+  memory_backend: string;
+  telemetry_backend: string;
+  right_hemisphere_backend: string;
+  left_hemisphere_backend: string;
+  bridge_state_dir?: string | null;
+  evolution_archive_path?: string | null;
+  awareness_interval_turns: number;
+}
+
 // Normalized event for timeline display
 interface TimelineEvent {
   id: string;
@@ -70,13 +109,87 @@ interface ChatMessage {
   status?: 'sending' | 'processing' | 'done' | 'error';
 }
 
+interface ArchitectureData {
+  components: Array<{
+    component_id: string;
+    role: string;
+    adapter_class: string;
+    health: string;
+  }>;
+  connections: Array<{
+    source: string;
+    target: string;
+    protocol: string;
+  }>;
+  adaptation_surface: {
+    tunable_parameters: string[];
+    supported_directives: string[];
+  };
+  capabilities: {
+    right_hemisphere: any;
+    left_hemisphere: any;
+    embeddings: any;
+    knowledge_graph: any;
+    routing_policy?: any;
+    tools: any[];
+  };
+}
+
+interface WorkspaceState {
+  task_frame: any;
+  self_model_ref: any;
+  capability_snapshot: any;
+  right_notes: any;
+  bridge_state: any;
+  left_notes: any;
+  verifier_feedback: any[];
+  runtime_feedback: any[];
+  pending_questions: string[];
+}
+
+interface AwarenessDiagnostic {
+  session_id: string;
+  analyzed_turns: number;
+  tool_success_rate: number;
+  average_retries: number;
+  average_surprise: number;
+  failure_types: Record<string, number>;
+  pending_approval_backlog: number;
+  surprise_trend: number;
+  dominant_variant?: string | null;
+  dominant_variant_ratio: number;
+  bottlenecks: Array<{
+    bottleneck_id: string;
+    description: string;
+    severity: number;
+    evidence: string[];
+    affected_components: string[];
+  }>;
+}
+
+interface EvolutionDirective {
+  directive_id: string;
+  directive_type: string;
+  target_component: string;
+  proposed_change: any;
+  reasoning: string;
+  status: string;
+}
+
 function App() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<string>('all');
   const [availableSessions, setAvailableSessions] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'chat' | 'history'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'architecture' | 'state' | 'awareness'>('chat');
+  
+  // Extra state
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [architecture, setArchitecture] = useState<ArchitectureData | null>(null);
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState | null>(null);
+  const [awareness, setAwareness] = useState<AwarenessDiagnostic | null>(null);
+  const [directives, setDirectives] = useState<EvolutionDirective[]>([]);
   
   // Chat state
   const [chatInput, setChatInput] = useState('');
@@ -121,6 +234,35 @@ function App() {
       } else {
         setError(data.error || 'Erro ao carregar dashboard');
       }
+      
+      if (activeTab === 'architecture' || activeTab === 'state' || activeTab === 'awareness') {
+        const infoRes = await fetch(`${apiBase}/v1/system/info`);
+        const infoData = await infoRes.json();
+        if (infoData.status === 'ok') setSystemInfo(infoData.info);
+      }
+
+      if (activeTab === 'architecture') {
+        const archRes = await fetch(`${apiBase}/v1/system/architecture`);
+        const archData = await archRes.json();
+        if (archData.status === 'ok') setArchitecture(archData.architecture);
+      } else if (activeTab === 'state') {
+        const stateRes = await fetch(`${apiBase}/v1/system/state?session_id=${activeSessionId}`);
+        const stateData = await stateRes.json();
+        if (stateData.status === 'ok') {
+          setWorkspaceState(stateData.state);
+        } else {
+          setWorkspaceState(null);
+        }
+      } else if (activeTab === 'awareness') {
+        const awareRes = await fetch(`${apiBase}/v1/system/awareness?session_id=${activeSessionId}`);
+        const awareData = await awareRes.json();
+        if (awareData.status === 'ok') setAwareness(awareData.diagnostic);
+        
+        const dirRes = await fetch(`${apiBase}/v1/system/directives`);
+        const dirData = await dirRes.json();
+        if (dirData.status === 'ok') setDirectives(dirData.directives);
+      }
+      
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erro de conexão');
     } finally {
@@ -128,16 +270,22 @@ function App() {
         setLoading(false);
       }
     }
-  }, [apiBase, extractSessions]);
+  }, [apiBase, extractSessions, activeTab, activeSessionId]);
 
   useEffect(() => {
     void fetchDashboard(false);
+  }, [fetchDashboard]);
+
+  useEffect(() => {
+    if (activeTab !== 'chat' && activeTab !== 'history') {
+      return;
+    }
     const intervalId = window.setInterval(() => {
       void fetchDashboard(true);
     }, 2500);
 
     return () => window.clearInterval(intervalId);
-  }, [fetchDashboard]);
+  }, [fetchDashboard, activeTab]);
 
   // Helper to filter events by selected session
   const filterEvents = useCallback(<T extends { _session_id?: string }>(events: T[], forceSession?: string): T[] => {
@@ -621,6 +769,39 @@ function App() {
               <History className="w-4 h-4" />
               Session History
             </button>
+            <button 
+              onClick={() => setActiveTab('architecture')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+                activeTab === 'architecture' 
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                  : 'bg-gray-800/50 text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+              }`}
+            >
+              <Cpu className="w-4 h-4" />
+              Architecture
+            </button>
+            <button 
+              onClick={() => setActiveTab('state')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+                activeTab === 'state' 
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                  : 'bg-gray-800/50 text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              State
+            </button>
+            <button 
+              onClick={() => setActiveTab('awareness')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+                activeTab === 'awareness' 
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                  : 'bg-gray-800/50 text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+              }`}
+            >
+              <AlertTriangle className="w-4 h-4" />
+              Awareness
+            </button>
           </div>
         </div>
         
@@ -781,6 +962,450 @@ function App() {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        ) : activeTab === 'architecture' ? (
+          <div className="flex-1 overflow-y-auto bg-[#0a0a0c] p-8">
+            <div className="max-w-6xl mx-auto space-y-6">
+              <div className="flex items-center gap-3 mb-8">
+                <Cpu className="w-8 h-8 text-blue-400" />
+                <h2 className="text-2xl font-bold text-gray-100">Cognitive Architecture Map</h2>
+              </div>
+              
+              {!architecture ? (
+                <div className="text-center text-gray-500 py-20">Carregando arquitetura...</div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {systemInfo && (
+                    <div className="lg:col-span-2 grid grid-cols-1 xl:grid-cols-2 gap-6">
+                      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                        <div className="p-4 border-b border-gray-800 bg-gray-900/50">
+                          <h3 className="font-semibold text-gray-200">Modelos e Backends Ativos</h3>
+                        </div>
+                        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {[
+                            ['Perception', systemInfo.capabilities.right_hemisphere],
+                            ['Reason', systemInfo.capabilities.left_hemisphere],
+                            ['Embeddings', systemInfo.capabilities.embeddings],
+                            ['Knowledge Graph', systemInfo.capabilities.knowledge_graph],
+                          ].map(([label, model]) => (
+                            <div key={label} className="bg-gray-950 p-3 rounded-lg border border-gray-800 space-y-1">
+                              <div className="text-xs uppercase tracking-wider text-gray-500">{label}</div>
+                              <div className="text-sm text-gray-100 font-medium">{model?.model_name ?? 'N/A'}</div>
+                              <div className="text-xs text-gray-400 font-mono">{model?.backend ?? 'N/A'}</div>
+                              <div className="text-xs text-gray-500">{model?.provider ?? 'N/A'}</div>
+                              <span className={`inline-flex text-[10px] px-2 py-0.5 rounded border ${
+                                model?.health === 'healthy'
+                                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                                  : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                              }`}>
+                                {model?.health ?? 'unknown'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                        <div className="p-4 border-b border-gray-800 bg-gray-900/50">
+                          <h3 className="font-semibold text-gray-200">Routing Policy e Permissões</h3>
+                        </div>
+                        <div className="p-4 space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {Object.entries(systemInfo.routing_resolution ?? {}).map(([route, payload]) => (
+                              <div key={route} className="bg-gray-950 p-3 rounded-lg border border-gray-800 space-y-1">
+                                <div className="text-xs uppercase tracking-wider text-gray-500">{route}</div>
+                                <div className="text-sm text-gray-100">requested: {payload.requested_model ?? 'auto'}</div>
+                                <div className="text-sm text-gray-300">active: {payload.active_model ?? 'N/A'}</div>
+                                <div className="text-xs text-gray-500 font-mono">{payload.backend ?? 'N/A'}</div>
+                                {payload.note && <div className="text-xs text-gray-400">{payload.note}</div>}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {systemInfo.capabilities.tools.map((tool) => (
+                              <div key={tool.name} className="bg-gray-950 p-3 rounded-lg border border-gray-800">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="text-sm text-cyan-300 font-medium">{tool.name}</div>
+                                  <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                                    {tool.requires_approval ? 'approval' : 'direct'}
+                                  </span>
+                                </div>
+                                <div className="mt-2 text-xs text-gray-400">{tool.description}</div>
+                                <div className="mt-2 text-[11px] text-gray-500">
+                                  perms: {tool.required_permissions.length > 0 ? tool.required_permissions.join(', ') : 'none'}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Components */}
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <div className="p-4 border-b border-gray-800 bg-gray-900/50">
+                      <h3 className="font-semibold text-gray-200">Componentes Ativos</h3>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      {architecture.components.map(comp => (
+                        <div key={comp.component_id} className="bg-gray-950 p-3 rounded-lg border border-gray-800 flex justify-between items-center">
+                          <div>
+                            <div className="text-sm font-medium text-gray-200">{comp.component_id}</div>
+                            <div className="text-xs text-gray-500 font-mono">{comp.adapter_class}</div>
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded uppercase tracking-wider ${
+                            comp.health === 'healthy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                          }`}>
+                            {comp.health}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    {/* Connections */}
+                    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                      <div className="p-4 border-b border-gray-800 bg-gray-900/50">
+                        <h3 className="font-semibold text-gray-200">Topologia</h3>
+                      </div>
+                      <div className="p-4">
+                        <ul className="space-y-2">
+                          {architecture.connections.map((conn, i) => (
+                            <li key={i} className="flex items-center gap-2 text-sm text-gray-300 bg-gray-950 p-2 rounded border border-gray-800">
+                              <span className="text-blue-400">{conn.source}</span>
+                              <ChevronRight className="w-4 h-4 text-gray-600" />
+                              <span className="text-purple-400">{conn.target}</span>
+                              <span className="text-xs text-gray-500 ml-auto bg-gray-900 px-2 py-0.5 rounded">{conn.protocol}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    {/* Capabilities */}
+                    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                      <div className="p-4 border-b border-gray-800 bg-gray-900/50">
+                        <h3 className="font-semibold text-gray-200">Capacidades e Tools</h3>
+                      </div>
+                      <div className="p-4">
+                        <div className="flex flex-wrap gap-2">
+                          {architecture.capabilities.tools.map((t, i) => (
+                            <span key={i} className="text-xs bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-1 rounded" title={t.description}>
+                              {t.name} {t.requires_approval && '⚠️'}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeTab === 'state' ? (
+          <div className="flex-1 overflow-y-auto bg-[#0a0a0c] p-8">
+            <div className="max-w-5xl mx-auto space-y-6">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <FileText className="w-8 h-8 text-purple-400" />
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-100">Cognitive Workspace</h2>
+                    <p className="text-sm text-gray-400">Estado compartilhado do turno atual ou mais recente</p>
+                  </div>
+                </div>
+                <div className="text-xs font-mono text-gray-500 bg-gray-900 px-3 py-1.5 rounded border border-gray-800">
+                  {workspaceState ? workspaceState.task_frame?.session_id : 'N/A'}
+                </div>
+              </div>
+
+              {!workspaceState ? (
+                <div className="text-center text-gray-500 py-20 bg-gray-900/30 rounded-xl border border-gray-800 border-dashed">
+                  Nenhum workspace encontrado na sessão ativa.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {systemInfo && (
+                    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden md:col-span-2">
+                      <div className="p-3 border-b border-gray-800 bg-indigo-500/10 flex items-center gap-2">
+                        <Cpu className="w-4 h-4 text-indigo-400" />
+                        <h3 className="font-semibold text-indigo-300 text-sm uppercase tracking-wider">Runtime Envelope</h3>
+                      </div>
+                      <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div className="bg-gray-950 border border-gray-800 rounded p-3">
+                          <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Profile</div>
+                          <div className="text-gray-100">{systemInfo.profile}</div>
+                        </div>
+                        <div className="bg-gray-950 border border-gray-800 rounded p-3">
+                          <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Bridge State Dir</div>
+                          <div className="text-gray-300 text-xs break-all">{systemInfo.bridge_state_dir ?? 'N/A'}</div>
+                        </div>
+                        <div className="bg-gray-950 border border-gray-800 rounded p-3">
+                          <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Evolution Archive</div>
+                          <div className="text-gray-300 text-xs break-all">{systemInfo.evolution_archive_path ?? 'N/A'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Right Notes */}
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <div className="p-3 border-b border-gray-800 bg-yellow-500/10 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-yellow-500" />
+                      <h3 className="font-semibold text-yellow-500 text-sm uppercase tracking-wider">Perception (Right)</h3>
+                    </div>
+                    <pre className="p-4 text-xs text-gray-300 font-mono whitespace-pre-wrap overflow-auto">
+                      {JSON.stringify(workspaceState.right_notes, null, 2)}
+                    </pre>
+                  </div>
+
+                  {/* Bridge State */}
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <div className="p-3 border-b border-gray-800 bg-blue-500/10 flex items-center gap-2">
+                      <Brain className="w-4 h-4 text-blue-500" />
+                      <h3 className="font-semibold text-blue-500 text-sm uppercase tracking-wider">Bridge Control</h3>
+                    </div>
+                    <pre className="p-4 text-xs text-gray-300 font-mono whitespace-pre-wrap overflow-auto">
+                      {JSON.stringify(workspaceState.bridge_state, null, 2)}
+                    </pre>
+                  </div>
+
+                  {/* Left Notes */}
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden md:col-span-2">
+                    <div className="p-3 border-b border-gray-800 bg-emerald-500/10 flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-emerald-500" />
+                      <h3 className="font-semibold text-emerald-500 text-sm uppercase tracking-wider">Reasoning (Left)</h3>
+                    </div>
+                    <pre className="p-4 text-xs text-gray-300 font-mono whitespace-pre-wrap overflow-auto">
+                      {JSON.stringify(workspaceState.left_notes, null, 2)}
+                    </pre>
+                  </div>
+
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <div className="p-3 border-b border-gray-800 bg-cyan-500/10 flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-cyan-400" />
+                      <h3 className="font-semibold text-cyan-300 text-sm uppercase tracking-wider">Self Model Ref</h3>
+                    </div>
+                    <pre className="p-4 text-xs text-gray-300 font-mono whitespace-pre-wrap overflow-auto max-h-80">
+                      {JSON.stringify(workspaceState.self_model_ref, null, 2)}
+                    </pre>
+                  </div>
+
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <div className="p-3 border-b border-gray-800 bg-sky-500/10 flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-sky-400" />
+                      <h3 className="font-semibold text-sky-300 text-sm uppercase tracking-wider">Capability Snapshot</h3>
+                    </div>
+                    <pre className="p-4 text-xs text-gray-300 font-mono whitespace-pre-wrap overflow-auto max-h-80">
+                      {JSON.stringify(workspaceState.capability_snapshot, null, 2)}
+                    </pre>
+                  </div>
+
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden md:col-span-2">
+                    <div className="p-3 border-b border-gray-800 bg-orange-500/10 flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-orange-400" />
+                      <h3 className="font-semibold text-orange-300 text-sm uppercase tracking-wider">Pending Questions</h3>
+                    </div>
+                    <div className="p-4">
+                      {workspaceState.pending_questions.length === 0 ? (
+                        <div className="text-sm text-gray-500">Nenhuma pergunta pendente registrada no workspace.</div>
+                      ) : (
+                        <ul className="space-y-2">
+                          {workspaceState.pending_questions.map((question, i) => (
+                            <li key={i} className="text-sm text-gray-200 bg-gray-950 border border-gray-800 rounded p-3">
+                              {question}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Feedback */}
+                  {(workspaceState.verifier_feedback.length > 0 || workspaceState.runtime_feedback.length > 0) && (
+                    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden md:col-span-2">
+                      <div className="p-3 border-b border-gray-800 bg-red-500/10 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-500" />
+                        <h3 className="font-semibold text-red-500 text-sm uppercase tracking-wider">Feedback Loop</h3>
+                      </div>
+                      <div className="p-4 space-y-4">
+                        {workspaceState.runtime_feedback.map((f, i) => (
+                          <div key={i} className="text-xs bg-gray-950 border border-gray-800 p-2 rounded">
+                            <span className="text-red-400 font-bold mr-2">Runtime [{f.action}]:</span>
+                            <span className="text-gray-300">{f.violations?.join(', ')}</span>
+                          </div>
+                        ))}
+                        {workspaceState.verifier_feedback.map((f, i) => (
+                          <div key={i} className="text-xs bg-gray-950 border border-gray-800 p-2 rounded">
+                            <span className="text-orange-400 font-bold mr-2">Verifier:</span>
+                            <span className="text-gray-300">{f.issues?.join('; ')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeTab === 'awareness' ? (
+          <div className="flex-1 overflow-y-auto bg-[#0a0a0c] p-8">
+            <div className="max-w-5xl mx-auto space-y-6">
+              <div className="flex items-center gap-3 mb-8">
+                <AlertTriangle className="w-8 h-8 text-amber-500" />
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-100">Introspection & Awareness</h2>
+                  <p className="text-sm text-gray-400">Gargalos identificados e diretivas de evolução pendentes</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Diagnostics */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                  <div className="p-4 border-b border-gray-800 bg-gray-900/50">
+                    <h3 className="font-semibold text-gray-200">Gargalos Recentes</h3>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {awareness && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-gray-950 border border-gray-800 rounded p-3">
+                          <div className="text-[10px] uppercase tracking-wider text-gray-500">Turns</div>
+                          <div className="text-lg text-gray-100">{awareness.analyzed_turns}</div>
+                        </div>
+                        <div className="bg-gray-950 border border-gray-800 rounded p-3">
+                          <div className="text-[10px] uppercase tracking-wider text-gray-500">Approval Backlog</div>
+                          <div className="text-lg text-gray-100">{awareness.pending_approval_backlog}</div>
+                        </div>
+                        <div className="bg-gray-950 border border-gray-800 rounded p-3">
+                          <div className="text-[10px] uppercase tracking-wider text-gray-500">Avg Surprise</div>
+                          <div className="text-lg text-gray-100">{awareness.average_surprise.toFixed(3)}</div>
+                        </div>
+                        <div className="bg-gray-950 border border-gray-800 rounded p-3">
+                          <div className="text-[10px] uppercase tracking-wider text-gray-500">Surprise Trend</div>
+                          <div className="text-lg text-gray-100">{awareness.surprise_trend.toFixed(3)}</div>
+                        </div>
+                      </div>
+                    )}
+                    {!awareness ? (
+                      <div className="text-center text-gray-500 text-sm">Nenhum diagnóstico gerado.</div>
+                    ) : awareness.bottlenecks.length === 0 ? (
+                      <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 p-3 rounded border border-emerald-500/20 text-sm">
+                        <CheckCircle className="w-4 h-4" /> Sistema operando sem gargalos críticos ({awareness.analyzed_turns} turnos analisados).
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {awareness.bottlenecks.map(b => (
+                          <div key={b.bottleneck_id} className="bg-red-500/10 border border-red-500/30 p-3 rounded-lg">
+                            <h4 className="font-semibold text-red-400 text-sm flex justify-between">
+                              {b.description}
+                              <span className="text-xs bg-red-950 px-2 py-0.5 rounded">Sev: {b.severity}</span>
+                            </h4>
+                            <ul className="mt-2 space-y-1">
+                              {b.evidence.map((ev, i) => (
+                                <li key={i} className="text-xs text-gray-300 flex items-start gap-2">
+                                  <span className="text-red-500/50 mt-0.5">•</span> {ev}
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="mt-3 flex gap-2">
+                              {b.affected_components.map(c => (
+                                <span key={c} className="text-[10px] uppercase tracking-wider text-gray-400 bg-gray-950 px-2 py-0.5 rounded border border-gray-800">
+                                  {c}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {awareness && (
+                      <div className="bg-gray-950 border border-gray-800 rounded p-3 space-y-2">
+                        <div className="text-xs uppercase tracking-wider text-gray-500">Failure Types e Dominância</div>
+                        <div className="text-sm text-gray-300">
+                          variant: {awareness.dominant_variant ?? 'n/a'} ({awareness.dominant_variant_ratio.toFixed(3)})
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(awareness.failure_types).length === 0 ? (
+                            <span className="text-sm text-gray-500">Nenhum failure type recente.</span>
+                          ) : (
+                            Object.entries(awareness.failure_types).map(([name, count]) => (
+                              <span key={name} className="text-xs bg-red-500/10 text-red-300 border border-red-500/20 px-2 py-1 rounded">
+                                {name}: {count}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Directives */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                  <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex justify-between items-center">
+                    <h3 className="font-semibold text-gray-200">Fila de Diretivas</h3>
+                    <span className="bg-blue-500/20 text-blue-400 text-xs px-2 py-0.5 rounded-full border border-blue-500/30">
+                      {directives.length} Pendentes
+                    </span>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {directives.length === 0 ? (
+                      <div className="text-center text-gray-500 text-sm py-4">Nenhuma ação evolutiva pendente.</div>
+                    ) : (
+                      directives.map(dir => (
+                        <div key={dir.directive_id} className="bg-gray-950 border border-gray-800 p-4 rounded-lg space-y-3">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border mb-2 inline-block ${
+                                dir.directive_type === 'parameter' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'
+                              }`}>
+                                {dir.directive_type}
+                              </span>
+                              <h4 className="text-sm font-medium text-gray-200">{dir.target_component}</h4>
+                            </div>
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`${apiBase}/v1/system/directives/apply`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ directive_id: dir.directive_id })
+                                  });
+                                  if (res.ok) void fetchDashboard(false);
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }}
+                              className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded transition-colors"
+                            >
+                              Aplicar
+                            </button>
+                          </div>
+                          
+                          <div className="text-xs text-gray-400 border-l-2 border-gray-700 pl-3 py-1">
+                            {dir.reasoning}
+                          </div>
+                          
+                          <pre className="text-xs text-gray-300 bg-gray-900 p-2 rounded border border-gray-800 mt-2">
+                            {JSON.stringify(dir.proposed_change, null, 2)}
+                          </pre>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : activeTab !== 'history' ? (
+          <div className="flex-1 overflow-y-auto bg-[#0a0a0c] p-8 flex items-center justify-center">
+            <div className="text-gray-500 flex flex-col items-center gap-4">
+              {activeTab === 'architecture' && <Cpu className="w-12 h-12 opacity-50" />}
+              {activeTab === 'state' && <FileText className="w-12 h-12 opacity-50" />}
+              {activeTab === 'awareness' && <AlertTriangle className="w-12 h-12 opacity-50" />}
+              <p className="text-lg">Em desenvolvimento...</p>
             </div>
           </div>
         ) : (

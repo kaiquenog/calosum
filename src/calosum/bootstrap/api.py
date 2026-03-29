@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Any
 
@@ -19,12 +20,6 @@ from calosum.shared.serialization import to_primitive
 from calosum.shared.types import UserTurn
 
 logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="Calosum API",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
 
 
 @lru_cache(maxsize=1)
@@ -52,16 +47,14 @@ def get_agent():
 # Inicialização global dos adaptadores de canais
 _active_channels = []
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(_: FastAPI):
     settings = get_settings()
     if settings.telegram_bot_token:
         from calosum.adapters.channel_telegram import TelegramChannelAdapter
-        import asyncio
-        
         logger.info("Inicializando Telegram Channel Adapter...")
         telegram_adapter = TelegramChannelAdapter(settings.telegram_bot_token)
-        
+
         async def on_telegram_message(user_turn: UserTurn):
             agent = get_agent()
             try:
@@ -83,17 +76,26 @@ async def startup_event():
                 await adapter.send(user_turn.session_id, "Ocorreu um erro ao processar sua mensagem.")
 
         _active_channels.append(telegram_adapter)
-        # O listen() agora é agendado corretamente no event loop
         asyncio.create_task(telegram_adapter.listen(on_telegram_message))
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    for adapter in _active_channels:
-        if hasattr(adapter, 'app'):
-            logger.info("Encerrando Telegram Channel Adapter...")
-            await adapter.app.updater.stop() # type: ignore
-            await adapter.app.stop()
-            await adapter.app.shutdown()
+    try:
+        yield
+    finally:
+        for adapter in _active_channels:
+            if hasattr(adapter, "app"):
+                logger.info("Encerrando Telegram Channel Adapter...")
+                await adapter.app.updater.stop()  # type: ignore
+                await adapter.app.stop()
+                await adapter.app.shutdown()
+        _active_channels.clear()
+
+
+app = FastAPI(
+    title="Calosum API",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan,
+)
 
 # Add CORS middleware
 app.add_middleware(
@@ -118,9 +120,8 @@ async def system_info() -> JSONResponse:
     """
     try:
         builder = get_builder()
-        # O agent ja pode ter sido instanciado, forçamos um descritivo
-        # baseado no builder. O describe() inclui o CapabilityDescriptor
-        info = builder.describe()
+        agent = get_agent()
+        info = builder.describe(agent)
         return JSONResponse({"status": "ok", "info": info})
     except Exception as e:
         logger.error("Error retrieving system info", exc_info=True)
@@ -162,20 +163,96 @@ async def system_state(session_id: str | None = None) -> JSONResponse:
     try:
         agent = get_agent()
         target_session = session_id or "api-session"
-        workspace = agent.last_workspace_by_session.get(target_session)
-        
-        if not workspace:
-            # Fallback se a sessao específica não tiver, pega a última registrada
-            if agent.last_workspace_by_session:
-                last_key = list(agent.last_workspace_by_session.keys())[-1]
-                workspace = agent.last_workspace_by_session[last_key]
-                
+        workspace = agent.workspace_for_session(target_session)
+        if workspace is None and session_id is None:
+            workspace = agent.workspace_for_session()
+
         if not workspace:
             return JSONResponse({"status": "error", "error": "No cognitive workspace found"}, status_code=404)
             
         return JSONResponse({"status": "ok", "state": to_primitive(workspace)})
     except Exception as e:
         logger.error("Error retrieving system state", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
+@app.get("/v1/system/awareness")
+async def system_awareness(session_id: str | None = None) -> JSONResponse:
+    """
+    Retorna o diagnóstico introspectivo da sessão.
+    Agrega telemetria para encontrar gargalos e exibir o health da interação.
+    """
+    try:
+        agent = get_agent()
+        target_session = session_id or "api-session"
+        diagnostic = agent.analyze_session(target_session, persist=False)
+        return JSONResponse({"status": "ok", "diagnostic": to_primitive(diagnostic)})
+    except Exception as e:
+        logger.error("Error generating system awareness", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
+@app.get("/v1/system/directives")
+async def system_directives() -> JSONResponse:
+    """
+    Retorna a fila de diretivas de evolução pendentes.
+    """
+    try:
+        agent = get_agent()
+        return JSONResponse({"status": "ok", "directives": to_primitive(agent.pending_directives)})
+    except Exception as e:
+        logger.error("Error retrieving system directives", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
+@app.post("/v1/system/directives/apply")
+async def apply_directive(request: Request) -> JSONResponse:
+    """
+    Aplica manualmente uma diretiva pendente (ex: PROMPT, TOPOLOGY).
+    """
+    try:
+        data = await request.json()
+        directive_id = data.get("directive_id")
+        if not directive_id:
+            return JSONResponse({"status": "error", "error": "directive_id is required"}, status_code=400)
+            
+        agent = get_agent()
+        target_directive = agent.apply_pending_directive(directive_id)
+
+        if target_directive is None:
+            return JSONResponse({"status": "error", "error": "Directive not found"}, status_code=404)
+
+        return JSONResponse({"status": "ok", "directive": to_primitive(target_directive)})
+    except Exception as e:
+        logger.error("Error applying directive", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
+@app.post("/v1/system/introspect")
+async def system_introspect(request: Request) -> JSONResponse:
+    """
+    Aciona diretamente o fluxo introspectivo para gerar uma resposta baseada no estado interno.
+    Útil para a UI consultar o agente sobre suas próprias métricas sem poluir o histórico principal.
+    """
+    try:
+        data = await request.json()
+        query = data.get("query", "")
+        session_id = data.get("session_id", "introspect-session")
+        
+        if not query:
+            return JSONResponse({"status": "error", "error": "Query is required"}, status_code=400)
+            
+        agent = get_agent()
+        
+        # A API pode acionar diretamente a ferramenta se quiser bypassar o LLM, ou
+        # enviar como um turno de sistema focado. Optamos por usar a Action Runtime
+        # já construída.
+        tool_payload = {"query": query, "session_id": session_id}
+        result_text = await agent.action_runtime.registry.execute("introspect_self", tool_payload)
+        
+        return JSONResponse({"status": "ok", "response": result_text})
+    except Exception as e:
+        logger.error("Error running system introspection", exc_info=True)
         return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
 
 

@@ -20,6 +20,9 @@ class InfrastructureSettings:
     otlp_jsonl: Path | None = None
     vector_db_url: str | None = None
     duckdb_path: Path | None = None
+    bridge_state_dir: Path | None = None
+    evolution_archive_path: Path | None = None
+    awareness_interval_turns: int = 1
     api_port: int = 8000
     otel_collector_endpoint: str | None = None
     jaeger_ui_url: str | None = None
@@ -29,11 +32,20 @@ class InfrastructureSettings:
     left_hemisphere_model: str | None = None
     left_hemisphere_provider: str | None = None
     left_hemisphere_reasoning_effort: str | None = None
+
     left_hemisphere_fallback_endpoint: str | None = None
     left_hemisphere_fallback_api_key: str | None = None
     left_hemisphere_fallback_model: str | None = None
     left_hemisphere_fallback_provider: str | None = None
     left_hemisphere_fallback_reasoning_effort: str | None = None
+
+    # Routing Policy
+    perception_model: str | None = None
+    reason_model: str | None = None
+    reflection_model: str | None = None
+    verifier_model: str | None = None
+
+    # Embedding settings
     embedding_endpoint: str | None = None
     embedding_api_key: str | None = None
     embedding_model: str | None = None
@@ -88,6 +100,14 @@ class InfrastructureSettings:
             otlp_jsonl=otlp_jsonl,
             vector_db_url=env.get("CALOSUM_VECTORDB_URL"),
             duckdb_path=_path(env.get("CALOSUM_DUCKDB_PATH")),
+            bridge_state_dir=_path(_arg("bridge_state_dir") or env.get("CALOSUM_BRIDGE_STATE_DIR")),
+            evolution_archive_path=_path(
+                _arg("evolution_archive_path") or env.get("CALOSUM_EVOLUTION_ARCHIVE_PATH")
+            ),
+            awareness_interval_turns=max(
+                1,
+                int(_arg("awareness_interval_turns") or env.get("CALOSUM_AWARENESS_INTERVAL_TURNS", 1)),
+            ),
             api_port=int(env.get("CALOSUM_API_PORT", 8000)),
             otel_collector_endpoint=env.get("CALOSUM_OTEL_COLLECTOR_ENDPOINT"),
             jaeger_ui_url=env.get("CALOSUM_JAEGER_UI_URL"),
@@ -102,6 +122,10 @@ class InfrastructureSettings:
             left_hemisphere_fallback_model=env.get("CALOSUM_LEFT_FALLBACK_MODEL"),
             left_hemisphere_fallback_provider=env.get("CALOSUM_LEFT_FALLBACK_PROVIDER"),
             left_hemisphere_fallback_reasoning_effort=env.get("CALOSUM_LEFT_FALLBACK_REASONING_EFFORT"),
+            perception_model=env.get("CALOSUM_PERCEPTION_MODEL"),
+            reason_model=env.get("CALOSUM_REASON_MODEL"),
+            reflection_model=env.get("CALOSUM_REFLECTION_MODEL"),
+            verifier_model=env.get("CALOSUM_VERIFIER_MODEL"),
             embedding_endpoint=env.get("CALOSUM_EMBEDDING_ENDPOINT"),
             embedding_api_key=env.get("CALOSUM_EMBEDDING_API_KEY"),
             embedding_model=env.get("CALOSUM_EMBEDDING_MODEL"),
@@ -119,6 +143,9 @@ class InfrastructureSettings:
                 otlp_jsonl=self.otlp_jsonl or Path(".calosum-runtime/telemetry/events.jsonl"),
                 vector_db_url=self.vector_db_url,
                 duckdb_path=self.duckdb_path or Path(".calosum-runtime/state/semantic.duckdb"),
+                bridge_state_dir=self.bridge_state_dir or _default_bridge_state_dir(self),
+                evolution_archive_path=self.evolution_archive_path or _default_evolution_archive_path(self),
+                awareness_interval_turns=max(1, self.awareness_interval_turns),
                 api_port=self.api_port,
                 otel_collector_endpoint=self.otel_collector_endpoint,
                 jaeger_ui_url=self.jaeger_ui_url,
@@ -133,6 +160,10 @@ class InfrastructureSettings:
                 left_hemisphere_fallback_model=self.left_hemisphere_fallback_model,
                 left_hemisphere_fallback_provider=self.left_hemisphere_fallback_provider,
                 left_hemisphere_fallback_reasoning_effort=self.left_hemisphere_fallback_reasoning_effort,
+                perception_model=self.perception_model,
+                reason_model=self.reason_model,
+                reflection_model=self.reflection_model,
+                verifier_model=self.verifier_model,
                 embedding_endpoint=self.embedding_endpoint,
                 embedding_api_key=self.embedding_api_key,
                 embedding_model=self.embedding_model,
@@ -148,6 +179,9 @@ class InfrastructureSettings:
                 otlp_jsonl=self.otlp_jsonl or Path("/data/telemetry/events.jsonl"),
                 vector_db_url=self.vector_db_url or "http://qdrant:6333",
                 duckdb_path=self.duckdb_path or Path("/data/state/semantic.duckdb"),
+                bridge_state_dir=self.bridge_state_dir or Path("/data/state"),
+                evolution_archive_path=self.evolution_archive_path or Path("/data/evolution/archive.jsonl"),
+                awareness_interval_turns=max(1, self.awareness_interval_turns),
                 api_port=self.api_port,
                 otel_collector_endpoint=self.otel_collector_endpoint
                 or "http://otel-collector:4318",
@@ -164,6 +198,10 @@ class InfrastructureSettings:
                 left_hemisphere_fallback_model=self.left_hemisphere_fallback_model,
                 left_hemisphere_fallback_provider=self.left_hemisphere_fallback_provider,
                 left_hemisphere_fallback_reasoning_effort=self.left_hemisphere_fallback_reasoning_effort,
+                perception_model=self.perception_model,
+                reason_model=self.reason_model,
+                reflection_model=self.reflection_model,
+                verifier_model=self.verifier_model,
                 embedding_endpoint=self.embedding_endpoint,
                 embedding_api_key=self.embedding_api_key,
                 embedding_model=self.embedding_model,
@@ -172,7 +210,7 @@ class InfrastructureSettings:
                 vault=self.vault,
             )
 
-        return self
+        return replace(self, awareness_interval_turns=max(1, self.awareness_interval_turns))
 
 
 def _path(value: str | os.PathLike[str] | None) -> Path | None:
@@ -205,3 +243,22 @@ def should_enable_local_persistence_defaults(
 
 def with_local_persistence_defaults(settings: InfrastructureSettings) -> InfrastructureSettings:
     return replace(settings, profile=InfrastructureProfile.PERSISTENT).with_profile_defaults()
+
+
+def _default_bridge_state_dir(settings: InfrastructureSettings) -> Path:
+    if settings.memory_dir is not None:
+        return settings.memory_dir.parent / "state"
+    if settings.duckdb_path is not None:
+        return settings.duckdb_path.parent
+    return Path(".calosum-runtime/state")
+
+
+def _default_evolution_archive_path(settings: InfrastructureSettings) -> Path:
+    if settings.memory_dir is not None:
+        return settings.memory_dir.parent / "evolution" / "archive.jsonl"
+    if settings.otlp_jsonl is not None:
+        telemetry_parent = settings.otlp_jsonl.parent
+        if telemetry_parent.name == "telemetry":
+            return telemetry_parent.parent / "evolution" / "archive.jsonl"
+        return telemetry_parent / "evolution" / "archive.jsonl"
+    return Path(".calosum-runtime/evolution/archive.jsonl")

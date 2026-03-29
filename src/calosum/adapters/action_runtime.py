@@ -59,6 +59,10 @@ class ConcreteActionRuntime:
             ToolSchema("execute_bash", "Execute shell command in sandbox", {"command": "string"}, ["shell"]),
             self._execute_bash
         )
+        registry.register(
+            ToolSchema("introspect_self", "Analyze system health, architecture, or awareness bottlenecks", {"query": "string"}, []),
+            self._execute_introspect_self
+        )
         registry.register(code_execution.schema, code_execution.execute)
         registry.register(http_request.schema, http_request.execute)
         
@@ -173,6 +177,10 @@ class ConcreteActionRuntime:
             workspace.runtime_feedback.extend(
                 [{"action": res.action_type, "status": res.status, "violations": res.violations} for res in results]
             )
+            for res in results:
+                pending_question = self._pending_question_from_result(res)
+                if pending_question and pending_question not in workspace.pending_questions:
+                    workspace.pending_questions.append(pending_question)
 
         return results
 
@@ -310,3 +318,146 @@ class ConcreteActionRuntime:
         except Exception as e:
             logger.error(f"Bash execution failure: {e}")
             return f"Bash execution failed: {e}"
+
+    async def _execute_introspect_self(self, payload: dict) -> str:
+        """
+        Responde perguntas introspectivas usando self-model, awareness e workspace reais.
+        """
+        query = payload.get("query", "").lower()
+        session_id = payload.get("session_id")
+
+        try:
+            from calosum.bootstrap.api import get_agent, get_builder
+            agent = get_agent()
+            builder = get_builder()
+            info = builder.describe(agent)
+            workspace = agent.workspace_for_session(session_id)
+            awareness = agent.latest_awareness_for_session(session_id)
+            resolved_session_id = (
+                session_id
+                or (workspace.task_frame.get("session_id") if workspace else None)
+                or "introspect-session"
+            )
+            if awareness is None:
+                awareness = agent.analyze_session(resolved_session_id, persist=False)
+
+            components = [
+                f"{component.component_id}={component.health}"
+                for component in agent.self_model.components
+            ]
+            tools = [
+                f"{tool.name}(perms={','.join(tool.required_permissions) or 'none'}, approval={'yes' if tool.requires_approval else 'no'})"
+                for tool in agent.self_model.capabilities.tools
+            ]
+            routing = info.get("routing_resolution", {})
+
+            if "arquitetura" in query or "como você funciona" in query or "como voce funciona" in query:
+                return (
+                    f"Arquitetura ativa: {', '.join(components)}. "
+                    f"Backends: perception={_routing_summary(routing.get('perception'))}; "
+                    f"reason={_routing_summary(routing.get('reason'))}; "
+                    f"reflection={_routing_summary(routing.get('reflection'))}; "
+                    f"verifier={_routing_summary(routing.get('verifier'))}."
+                )
+
+            if (
+                "backend" in query
+                or "memória" in query
+                or "memoria" in query
+                or "telemetria" in query
+                or "tracing" in query
+            ):
+                return (
+                    f"Sessão {resolved_session_id}: "
+                    f"reason={_routing_summary(routing.get('reason'))}; "
+                    f"perception={_routing_summary(routing.get('perception'))}; "
+                    f"memory={info.get('memory_backend') or 'unknown'}; "
+                    f"knowledge_graph={info.get('knowledge_graph_backend') or 'unknown'}; "
+                    f"telemetry={info.get('telemetry_backend') or 'unknown'}; "
+                    f"otlp_jsonl={info.get('otlp_jsonl') or 'none'}; "
+                    f"otel_collector={info.get('otel_collector_endpoint') or 'none'}."
+                )
+
+            if "tool" in query or "ferramenta" in query or "capacidade" in query:
+                return (
+                    f"Ferramentas registradas: {', '.join(tools) if tools else 'nenhuma'}. "
+                    f"Health global das capabilities: {agent.self_model.capabilities.health}."
+                )
+
+            if "falha" in query or "gargalo" in query or "problema" in query:
+                if not awareness.bottlenecks:
+                    return (
+                        f"Awareness mais recente: sem gargalos críticos em {awareness.analyzed_turns} turnos. "
+                        f"Surpresa média={awareness.average_surprise:.3f}, retries médios={awareness.average_retries:.3f}."
+                    )
+
+                issues = "; ".join(
+                    f"{item.description} (sev={item.severity}, evidência={'; '.join(item.evidence[:2])})"
+                    for item in awareness.bottlenecks
+                )
+                return (
+                    f"Gargalos recentes: {issues}. "
+                    f"Tipos de falha: {_failure_summary(awareness.failure_types)}. "
+                    f"Backlog de aprovação={awareness.pending_approval_backlog}, "
+                    f"diretivas pendentes={awareness.pending_directive_count}, "
+                    f"tendência de surprise={awareness.surprise_trend:+.3f}."
+                )
+
+            if "mudar" in query or "sugere" in query or "diretiva" in query:
+                if not agent.pending_directives:
+                    return "Nenhuma diretiva pendente no momento."
+                directives = [
+                    f"{item.directive_type.value}:{item.target_component} -> {item.proposed_change}"
+                    for item in agent.pending_directives
+                ]
+                return f"Diretivas pendentes: {'; '.join(directives)}."
+
+            workspace_summary = "sem workspace recente"
+            if workspace is not None:
+                workspace_summary = (
+                    f"sessão={workspace.task_frame.get('session_id') or resolved_session_id}, "
+                    f"pending_questions={len(workspace.pending_questions)}, "
+                    f"runtime_feedback={len(workspace.runtime_feedback)}, "
+                    f"verifier_feedback={len(workspace.verifier_feedback)}"
+                )
+            return (
+                f"Resumo interno: {workspace_summary}. "
+                f"Awareness: turns={awareness.analyzed_turns}, surprise={awareness.average_surprise:.3f}, "
+                f"dominant_variant={awareness.dominant_variant or 'n/a'}, "
+                f"directives_pending={awareness.pending_directive_count}."
+            )
+        except Exception as e:
+            logger.error(f"Introspection execution failure: {e}")
+            return f"Não foi possível acessar a telemetria ou o self-model interno: {e}"
+
+    def _pending_question_from_result(self, result: ActionExecutionResult) -> str | None:
+        if result.status != "needs_approval":
+            return None
+
+        output = result.output if isinstance(result.output, dict) else {}
+        missing_permissions = output.get("missing_permissions", [])
+        if missing_permissions:
+            return (
+                f"A ação '{result.action_type}' precisa de aprovação para conceder: "
+                f"{', '.join(str(item) for item in missing_permissions)}."
+            )
+        return f"A ação '{result.action_type}' precisa de aprovação antes de continuar."
+
+
+def _routing_summary(route: dict | None) -> str:
+    if not route:
+        return "indisponível"
+    requested = route.get("requested_model") or "auto"
+    active = route.get("active_model") or "n/a"
+    backend = route.get("backend") or "n/a"
+    availability = "available" if route.get("available") else "unavailable"
+    note = route.get("note")
+    if note:
+        return f"requested={requested}, active={active}, backend={backend}, {availability}, note={note}"
+    return f"requested={requested}, active={active}, backend={backend}, {availability}"
+
+
+def _failure_summary(failure_types: dict[str, int]) -> str:
+    if not failure_types:
+        return "nenhuma"
+    return ", ".join(f"{name}={count}" for name, count in sorted(failure_types.items()))

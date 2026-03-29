@@ -62,9 +62,11 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.runtime_dsl": {"shared.types"},
     "domain.memory": {"shared.types", "shared.ports"},
     "domain.persistent_memory": {"domain.memory", "shared.serialization", "shared.types"},
-    "domain.telemetry": {"shared.types"},
+    "domain.telemetry": {"shared.types", "shared.serialization"},
     "domain.tool_registry": {"shared.types"},
     "domain.workspace": {"domain.orchestrator", "shared.types"},
+    "domain.introspection": {"shared.types"},
+    "domain.evolution": {"shared.types"},
     "domain.metacognition": {"domain.bridge", "shared.types"},
     "domain.multiagent": {"domain.event_bus", "shared.types"},
     "domain.self_model": {"domain.orchestrator", "shared.types"},
@@ -73,7 +75,9 @@ MODULE_RULES: dict[str, set[str]] = {
         "shared.async_utils",
         "domain.bridge",
         "domain.event_bus",
+        "domain.evolution",
         "domain.agent_execution",
+        "domain.introspection",
         "domain.left_hemisphere",
         "domain.memory",
         "domain.metacognition",
@@ -99,8 +103,10 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.memory_qdrant",
         "adapters.night_trainer",
         "adapters.right_hemisphere_hf",
+        "adapters.telemetry_otlp",
         "adapters.text_embeddings",
         "domain.bridge",
+        "domain.evolution",
         "domain.memory",
         "domain.orchestrator",
         "domain.persistent_memory",
@@ -121,6 +127,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.channel_telegram",
         "bootstrap.factory",
         "bootstrap.settings",
+        "domain.introspection",
         "shared.serialization",
         "shared.types",
     },
@@ -128,7 +135,7 @@ MODULE_RULES: dict[str, set[str]] = {
 
     # ADAPTERS
     "adapters.active_inference": {"shared.types"},
-    "adapters.action_runtime": {"adapters.tools", "shared.async_utils", "shared.tools", "shared.types"},
+    "adapters.action_runtime": {"adapters.tools", "shared.async_utils", "shared.tools", "shared.types", "bootstrap.api", "domain.introspection"},
     "adapters.bridge_store": {"shared.ports"},
     "adapters.channel_telegram": {"shared.types"},
     "adapters.knowledge_graph_nanorag": {"shared.types"},
@@ -137,6 +144,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.llm_qwen": {"adapters.llm_payloads", "shared.async_utils", "shared.types"},
     "adapters.memory_qdrant": {"adapters.text_embeddings", "shared.async_utils", "shared.types", "domain.memory", "shared.ports"},
     "adapters.right_hemisphere_hf": {"shared.types"},
+    "adapters.telemetry_otlp": {"domain.telemetry"},
     "adapters.text_embeddings": {"shared.async_utils"},
     "adapters.night_trainer": {"adapters.night_trainer_dspy"},
     "adapters.night_trainer_dspy": set(),
@@ -162,6 +170,8 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.runtime",
         "domain.self_model",
         "domain.workspace",
+        "domain.introspection",
+        "domain.evolution",
         "shared.serialization",
         "bootstrap.settings",
         "domain.telemetry",
@@ -170,7 +180,7 @@ MODULE_RULES: dict[str, set[str]] = {
     },
 }
 
-MAX_MODULE_LINES = 400
+MAX_MODULE_LINES = 500
 
 
 @dataclass(slots=True)

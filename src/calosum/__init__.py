@@ -1,7 +1,6 @@
 """Public package surface for the Calosum cognitive architecture."""
 
 from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
-from calosum.adapters.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
 from calosum.bootstrap.factory import CalosumAgentBuilder
 from calosum.domain.bridge import CognitiveTokenizer, CognitiveTokenizerConfig
 from calosum.domain.left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
@@ -66,6 +65,11 @@ from calosum.shared.types import (
     TypedLambdaProgram,
     UserTurn,
 )
+
+try:
+    from calosum.adapters.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
+except Exception:  # pragma: no cover - optional dependency surface
+    NanoGraphRAGKnowledgeGraphStore = None  # type: ignore[assignment]
 
 __all__ = [
     "ActionExecutionResult",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -23,6 +24,69 @@ class TelemetryEvent:
 
 class TelemetrySink(Protocol):
     def emit(self, event: TelemetryEvent) -> None: ...
+
+
+def event_to_otlp_trace_envelope(
+    event: TelemetryEvent,
+    *,
+    service_name: str = "calosum",
+) -> dict[str, Any]:
+    timestamp_unix_nano = _iso_to_unix_nano(event.recorded_at)
+    return {
+        "resourceSpans": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": service_name}},
+                        {"key": "calosum.session_id", "value": {"stringValue": event.session_id}},
+                    ]
+                },
+                "scopeSpans": [
+                    {
+                        "scope": {"name": "calosum.telemetry"},
+                        "spans": [
+                            {
+                                "traceId": event.trace_id,
+                                "spanId": event.span_id,
+                                "name": event.channel,
+                                "kind": 1,
+                                "startTimeUnixNano": timestamp_unix_nano,
+                                "endTimeUnixNano": timestamp_unix_nano,
+                                "attributes": [
+                                    {"key": "calosum.turn_id", "value": {"stringValue": event.turn_id}},
+                                    {
+                                        "key": "calosum.recorded_at",
+                                        "value": {"stringValue": event.recorded_at},
+                                    },
+                                    {
+                                        "key": "calosum.payload",
+                                        "value": {"stringValue": json.dumps(event.payload, ensure_ascii=False)},
+                                    },
+                                ]
+                                + [
+                                    {
+                                        "key": f"calosum.metric.{key}",
+                                        "value": {"doubleValue": float(value)},
+                                    }
+                                    for key, value in event.metrics.items()
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+
+def _iso_to_unix_nano(recorded_at: str) -> str:
+    try:
+        dt = datetime.fromisoformat(recorded_at)
+    except ValueError:
+        dt = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return str(int(dt.timestamp() * 1_000_000_000))
 
 
 @dataclass(slots=True)
@@ -46,6 +110,26 @@ class InMemoryTelemetrySink:
 
 
 @dataclass(slots=True)
+class CompositeTelemetrySink:
+    sinks: list[TelemetrySink]
+    query_sink: Any | None = None
+
+    def emit(self, event: TelemetryEvent) -> None:
+        for sink in self.sinks:
+            sink.emit(event)
+
+    def query(
+        self,
+        session_id: str | None = None,
+        channel: str | None = None,
+    ) -> list[TelemetryEvent]:
+        sink = self.query_sink or next((item for item in self.sinks if hasattr(item, "query")), None)
+        if sink is None:
+            raise TypeError("Composite telemetry sink requires at least one queryable sink")
+        return sink.query(session_id=session_id, channel=channel)
+
+
+@dataclass(slots=True)
 class OTLPJsonlTelemetrySink:
     path: Path
     service_name: str = "calosum"
@@ -58,7 +142,7 @@ class OTLPJsonlTelemetrySink:
     def emit(self, event: TelemetryEvent) -> None:
         self.events.append(event)
         with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(self._to_otlp_envelope(event), ensure_ascii=False) + "\n")
+            handle.write(json.dumps(event_to_otlp_trace_envelope(event, service_name=self.service_name), ensure_ascii=False) + "\n")
 
     def query(
         self,
@@ -73,48 +157,7 @@ class OTLPJsonlTelemetrySink:
         return filtered
 
     def _to_otlp_envelope(self, event: TelemetryEvent) -> dict[str, Any]:
-        return {
-            "resourceSpans": [
-                {
-                    "resource": {
-                        "attributes": [
-                            {"key": "service.name", "value": {"stringValue": self.service_name}},
-                            {"key": "calosum.session_id", "value": {"stringValue": event.session_id}},
-                        ]
-                    },
-                    "scopeSpans": [
-                        {
-                            "scope": {"name": "calosum.telemetry"},
-                            "spans": [
-                                {
-                                    "traceId": event.trace_id,
-                                    "spanId": event.span_id,
-                                    "name": event.channel,
-                                    "attributes": [
-                                        {"key": "calosum.turn_id", "value": {"stringValue": event.turn_id}},
-                                        {
-                                            "key": "calosum.recorded_at",
-                                            "value": {"stringValue": event.recorded_at},
-                                        },
-                                        {
-                                            "key": "calosum.payload",
-                                            "value": {"stringValue": json.dumps(event.payload, ensure_ascii=False)},
-                                        },
-                                    ]
-                                    + [
-                                        {
-                                            "key": f"calosum.metric.{key}",
-                                            "value": {"doubleValue": float(value)},
-                                        }
-                                        for key, value in event.metrics.items()
-                                    ],
-                                }
-                            ],
-                        }
-                    ],
-                }
-            ]
-        }
+        return event_to_otlp_trace_envelope(event, service_name=self.service_name)
 
     def _read_persisted_events(self) -> list[TelemetryEvent]:
         events: list[TelemetryEvent] = []
@@ -313,10 +356,32 @@ class CognitiveTelemetryBus:
     ) -> None:
         self.record_reflection(session_id, turn_id, payload)
 
+    def record_awareness(self, session_id: str, diagnostic: Any) -> None:
+        from calosum.shared.serialization import to_primitive
+        self.sink.emit(
+            TelemetryEvent(
+                channel="awareness",
+                session_id=session_id,
+                turn_id="system-loop",
+                recorded_at=utc_now().isoformat(),
+                payload=to_primitive(diagnostic),
+                trace_id=hashlib.sha256(f"{session_id}:awareness".encode("utf-8")).hexdigest()[:32],
+                span_id=self._span_id("system-loop", "awareness"),
+                metrics={
+                    "bottlenecks_count": float(len(diagnostic.bottlenecks)),
+                    "tool_success_rate": float(diagnostic.tool_success_rate),
+                    "pending_approval_backlog": float(diagnostic.pending_approval_backlog),
+                    "pending_directive_count": float(diagnostic.pending_directive_count),
+                    "surprise_trend": float(diagnostic.surprise_trend),
+                    "dominant_variant_ratio": float(diagnostic.dominant_variant_ratio),
+                },
+            )
+        )
+
     def dashboard_for_session(self, session_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
         if not hasattr(self.sink, "query"):
             raise TypeError("dashboard_for_session requires a queryable telemetry sink")
-        channels = ("felt", "thought", "decision", "execution", "reflection")
+        channels = ("felt", "thought", "decision", "execution", "reflection", "awareness")
         dashboard: dict[str, list[dict[str, Any]]] = {}
         for channel in channels:
             events = self.sink.query(session_id=session_id, channel=channel)

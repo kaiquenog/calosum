@@ -28,6 +28,7 @@ from calosum.shared.types import (
     PrimitiveAction,
     TypedLambdaProgram,
     UserTurn,
+    CognitiveWorkspace,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class QwenLeftHemisphereAdapter:
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
         return run_sync(
             self.areason(
@@ -81,6 +83,7 @@ class QwenLeftHemisphereAdapter:
                 memory_context=memory_context,
                 runtime_feedback=runtime_feedback,
                 attempt=attempt,
+                workspace=workspace,
             )
         )
 
@@ -102,13 +105,24 @@ class QwenLeftHemisphereAdapter:
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
+        # Detectar intenção introspectiva baseada no workspace/input
+        introspective_intent = False
+        text_lower = user_turn.user_text.lower()
+        if "como você funciona" in text_lower or "como voce funciona" in text_lower or "gargalo" in text_lower or "arquitetura" in text_lower or "diretiva" in text_lower:
+            introspective_intent = True
+            
         prompt = build_left_hemisphere_prompt(
             user_turn,
             bridge_packet,
             memory_context,
             runtime_feedback,
         )
+        
+        if introspective_intent:
+            prompt += "\n\nO usuário fez uma pergunta sobre o seu próprio estado ou arquitetura. Utilize a ferramenta 'introspect_self' passando a query correspondente para obter dados reais antes de responder."
+            
         prompt = augment_prompt_with_compiled_artifact(prompt, self.compiled_prompt_artifact)
         request = self._build_request(prompt)
 
@@ -118,21 +132,34 @@ class QwenLeftHemisphereAdapter:
             content = self._extract_content(data, request["api_mode"])
 
             if not content.strip():
-                return self._fallback_result(
+                result = self._fallback_result(
                     f"empty_response_from_{request['api_mode']}",
                     request["api_mode"],
                     request["resolved_model"],
                 )
+                if workspace:
+                    workspace.left_notes.update({"error": "empty_response"})
+                return result
 
             parsed = json.loads(content)
-            return self._parse_to_result(
+            result = self._parse_to_result(
                 parsed,
                 api_mode=request["api_mode"],
                 resolved_model=request["resolved_model"],
                 system_directives=bridge_packet.control.system_directives,
             )
+            
+            if workspace:
+                workspace.left_notes.update({
+                    "response_text": result.response_text,
+                    "reasoning_summary": result.reasoning_summary,
+                    "actions": [a.action_type for a in result.actions],
+                    "introspective_intent": introspective_intent
+                })
+            return result
+            
         except json.JSONDecodeError as exc:
-            return LeftHemisphereResult(
+            result = LeftHemisphereResult(
                 response_text="",
                 lambda_program=TypedLambdaProgram("Any", "()", "None"),
                 actions=[],
@@ -143,13 +170,19 @@ class QwenLeftHemisphereAdapter:
                     "model_name": request["resolved_model"],
                 },
             )
+            if workspace:
+                workspace.left_notes.update({"error": "json_decode_error", "details": str(exc)})
+            return result
         except Exception as exc:
-            return self._fallback_result(
+            result = self._fallback_result(
                 repr(exc),
                 request["api_mode"],
                 request["resolved_model"],
                 bridge_packet.control.system_directives,
             )
+            if workspace:
+                workspace.left_notes.update({"error": "runtime_exception", "details": repr(exc)})
+            return result
 
     def repair(
         self,
@@ -160,6 +193,7 @@ class QwenLeftHemisphereAdapter:
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
         return run_sync(
             self.arepair(
@@ -170,6 +204,7 @@ class QwenLeftHemisphereAdapter:
                 rejected_results=rejected_results,
                 attempt=attempt,
                 critique_feedback=critique_feedback,
+                workspace=workspace,
             )
         )
 
@@ -182,6 +217,7 @@ class QwenLeftHemisphereAdapter:
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
         feedback = [
             f"Ação {item.action_type} rejeitada: {', '.join(item.violations)}"
@@ -189,7 +225,7 @@ class QwenLeftHemisphereAdapter:
         ]
         if critique_feedback:
             feedback.extend(critique_feedback)
-        return await self.areason(user_turn, bridge_packet, memory_context, feedback, attempt)
+        return await self.areason(user_turn, bridge_packet, memory_context, feedback, attempt, workspace)
 
     def _build_request(self, prompt: str) -> dict[str, Any]:
         api_mode = self._resolve_api_mode()

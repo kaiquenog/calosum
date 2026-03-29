@@ -35,7 +35,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
             builder = CalosumAgentBuilder(settings)
             with patch(
-                "calosum.bootstrap.factory.HuggingFaceRightHemisphereAdapter",
+                "calosum.adapters.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
                 return_value=_FakeRightHemisphere(),
             ):
                 agent = builder.build()
@@ -51,7 +51,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
         builder = CalosumAgentBuilder(settings)
 
         with patch(
-            "calosum.bootstrap.factory.HuggingFaceRightHemisphereAdapter",
+            "calosum.adapters.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
             side_effect=RuntimeError("missing optional model stack"),
         ):
             agent = builder.build()
@@ -137,6 +137,39 @@ class InfrastructureBuilderTests(unittest.TestCase):
         description = builder.describe()
         self.assertIn("capabilities", description)
         self.assertEqual(description["capabilities"]["left_hemisphere"]["model_name"], "gpt-4o")
+
+    def test_builder_uses_reason_model_for_runtime_and_describes_real_tools(self) -> None:
+        settings = InfrastructureSettings(
+            left_hemisphere_endpoint="https://api.openai.com/v1",
+            left_hemisphere_model="gpt-4o-mini",
+            left_hemisphere_provider="openai",
+            reason_model="gpt-4.1-mini",
+        ).with_profile_defaults()
+        builder = CalosumAgentBuilder(settings)
+
+        with patch(
+            "calosum.adapters.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
+            return_value=_FakeRightHemisphere(),
+        ):
+            agent = builder.build()
+
+        description = builder.describe(agent)
+        self.assertEqual(agent.left_hemisphere.config.model_name, "gpt-4.1-mini")
+        self.assertGreater(len(description["capabilities"]["tools"]), 0)
+        self.assertEqual(description["routing_resolution"]["reason"]["active_model"], "gpt-4.1-mini")
+
+    def test_builder_honors_jepa_routing_policy_for_perception(self) -> None:
+        settings = InfrastructureSettings(
+            perception_model="jepa",
+        ).with_profile_defaults()
+        builder = CalosumAgentBuilder(settings)
+
+        agent = builder.build()
+        description = builder.describe(agent)
+
+        self.assertIsInstance(agent.right_hemisphere.base_adapter, RightHemisphereJEPA)
+        self.assertEqual(description["right_hemisphere_backend"], "active_inference_jepa_policy")
+        self.assertEqual(description["routing_resolution"]["perception"]["active_model"], "jepa")
 
 
 if __name__ == "__main__":

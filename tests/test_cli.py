@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -52,10 +53,11 @@ class CliIntegrationTests(unittest.TestCase):
 
             env = os.environ.copy()
             env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
-            env["CALOSUM_LEFT_ENDPOINT"] = "http://127.0.0.1:9999/v1/chat/completions" # Fail fast for tests
+            env["CALOSUM_LEFT_ENDPOINT"] = "http://127.0.0.1:9999/v1/chat/completions"
+            env["CALOSUM_PERCEPTION_MODEL"] = "jepa"
             completed = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     "-m",
                     "calosum.bootstrap.cli",
                     "run-scenario",

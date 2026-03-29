@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 from calosum.domain.orchestrator import CalosumAgent
 from calosum.domain.self_model import build_self_model
-from calosum.shared.types import CognitiveArchitectureMap
+from calosum.shared.types import (
+    CapabilityDescriptor,
+    CognitiveArchitectureMap,
+    ComponentHealth,
+    ModelDescriptor,
+)
 
 
 class SelfModelTests(unittest.TestCase):
@@ -32,6 +37,42 @@ class SelfModelTests(unittest.TestCase):
         
         # Verify that capabilities snapshot is propagated if available
         self.assertIsNotNone(agent.self_model.capabilities)
+
+    def test_self_model_propagates_component_health_from_capability_snapshot(self) -> None:
+        snapshot = CapabilityDescriptor(
+            right_hemisphere=ModelDescriptor(
+                provider="local",
+                model_name="jepa",
+                backend="active_inference_heuristic_fallback",
+                health=ComponentHealth.DEGRADED,
+            ),
+            left_hemisphere=ModelDescriptor(
+                provider="openai",
+                model_name="gpt-4.1-mini",
+                backend="openai_responses_adapter",
+                health=ComponentHealth.HEALTHY,
+            ),
+            embeddings=None,
+            knowledge_graph=ModelDescriptor(
+                provider="local",
+                model_name="nanorag",
+                backend="in_memory_graph_fallback",
+                health=ComponentHealth.DEGRADED,
+            ),
+            tools=[],
+            health=ComponentHealth.DEGRADED,
+        )
+        agent = CalosumAgent(capability_snapshot=snapshot)
+
+        self_model = build_self_model(agent)
+        health_by_component = {
+            component.component_id: component.health
+            for component in self_model.components
+        }
+
+        self.assertEqual(health_by_component["right_hemisphere"], ComponentHealth.DEGRADED)
+        self.assertEqual(health_by_component["memory_system"], ComponentHealth.DEGRADED)
+        self.assertEqual(self_model.capabilities.health, ComponentHealth.DEGRADED)
 
 
 if __name__ == "__main__":

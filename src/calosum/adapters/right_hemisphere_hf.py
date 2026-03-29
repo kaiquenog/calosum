@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from calosum.shared.types import MemoryContext, Modality, RightHemisphereState, UserTurn
+from calosum.shared.types import MemoryContext, Modality, RightHemisphereState, UserTurn, CognitiveWorkspace
 
 logger = logging.getLogger(__name__)
 
@@ -49,28 +49,43 @@ class HuggingFaceRightHemisphereAdapter:
     def __init__(self, config: HuggingFaceRightHemisphereConfig | None = None) -> None:
         self.config = config or HuggingFaceRightHemisphereConfig()
         
-        # O import é feito aqui para evitar lentidão de importação no bootstrap
-        import transformers
-        transformers.logging.set_verbosity_error()
-        transformers.utils.logging.disable_progress_bar()
-        
-        from sentence_transformers import SentenceTransformer
-        
-        logger.info(f"Loading embedding model: {self.config.embedding_model_name}")
-        self.embedder = SentenceTransformer(self.config.embedding_model_name)
-        
-        # Pre-compute emotion embeddings for zero-shot cosine similarity
-        self._emotion_labels = list(self.config.salience_keywords.keys())
-        self._emotion_embeddings = self.embedder.encode(self._emotion_labels)
+        try:
+            # O import é feito aqui para evitar lentidão de importação no bootstrap
+            import transformers
+            transformers.logging.set_verbosity_error()
+            transformers.utils.logging.disable_progress_bar()
+            
+            from sentence_transformers import SentenceTransformer
+            
+            logger.info(f"Loading embedding model: {self.config.embedding_model_name}")
+            self.embedder = SentenceTransformer(self.config.embedding_model_name)
+            
+            # Pre-compute emotion embeddings for zero-shot cosine similarity
+            self._emotion_labels = list(self.config.salience_keywords.keys())
+            self._emotion_embeddings = self.embedder.encode(self._emotion_labels)
+            
+            self.status = "healthy"
+        except ImportError as e:
+            logger.error(f"HuggingFace stack unavailable: {e}")
+            self.status = "unavailable"
+            raise RuntimeError("missing optional model stack") from e
+        except Exception as e:
+            logger.error(f"Failed to load HF model: {e}")
+            self.status = "degraded"
+            raise RuntimeError(f"failed to load model: {e}") from e
 
-    def perceive(self, user_turn: UserTurn, memory_context: Any | None = None) -> RightHemisphereState:
+    def perceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
         text = user_turn.user_text
         if not text.strip():
             text = "silence"
 
         # 1. Gera o vetor latente real
         embeddings = self.embedder.encode([text])
-        latent_vector = embeddings[0].tolist()
+        if hasattr(embeddings, "tolist"):
+            latent_vector = embeddings[0].tolist()
+        else:
+            # Em caso de mock retornar lista pura
+            latent_vector = embeddings[0] if isinstance(embeddings[0], list) else embeddings
 
         # 2. Extrai rótulos emocionais reais (via similaridade vetorial leve)
         emotional_labels = self._extract_emotional_labels(text, latent_vector)
@@ -96,7 +111,7 @@ class HuggingFaceRightHemisphereAdapter:
 
         surprise_score = self._calculate_surprise(latent_vector, memory_context)
 
-        return RightHemisphereState(
+        state = RightHemisphereState(
             context_id=user_turn.turn_id,
             latent_vector=latent_vector,
             salience=salience,
@@ -110,13 +125,23 @@ class HuggingFaceRightHemisphereAdapter:
                 "vector_dimension": len(latent_vector)
             },
         )
+        
+        if workspace is not None:
+            workspace.right_notes.update({
+                "backend": "huggingface",
+                "surprise_score": surprise_score,
+                "salience": salience,
+                "emotional_labels": emotional_labels or ["neutral"],
+            })
+            
+        return state
 
-    async def aperceive(self, user_turn: UserTurn, memory_context: Any | None = None) -> RightHemisphereState:
+    async def aperceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
         # A inferência real usando sentence-transformers bloqueia a CPU, 
         # em um cenário produtivo intenso isso deveria rodar em um ThreadPoolExecutor.
         # Por hora, mantemos simples para a Sprint 1.
         import asyncio
-        return await asyncio.to_thread(self.perceive, user_turn, memory_context)
+        return await asyncio.to_thread(self.perceive, user_turn, memory_context, workspace)
 
     def _calculate_surprise(self, latent_vector: list[float], memory_context: Any | None) -> float:
         if not memory_context or not memory_context.recent_episodes:

@@ -253,6 +253,7 @@ class AgentExecutionEngine:
                 "emotional_labels": right_state.emotional_labels,
                 "salience": right_state.salience,
                 "world_hypotheses": right_state.world_hypotheses,
+                "surprise_score": right_state.surprise_score,
             },
             thought={
                 "lambda_signature": left_result.lambda_program.signature,

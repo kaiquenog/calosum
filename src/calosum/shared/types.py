@@ -50,12 +50,21 @@ class ModelDescriptor:
 
 
 @dataclass(slots=True)
+class RoutingPolicy:
+    perception_model: str
+    reason_model: str
+    reflection_model: str
+    verifier_model: str | None = None
+
+
+@dataclass(slots=True)
 class CapabilityDescriptor:
     right_hemisphere: ModelDescriptor | None
     left_hemisphere: ModelDescriptor | None
     embeddings: ModelDescriptor | None
     knowledge_graph: ModelDescriptor | None
     tools: list[ToolDescriptor]
+    routing_policy: RoutingPolicy | None = None
     health: ComponentHealth = ComponentHealth.HEALTHY
 
 
@@ -95,6 +104,50 @@ class MultimodalSignal:
     payload: Any
     quality: float = 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class DirectiveType(StrEnum):
+    PARAMETER = "parameter"
+    PROMPT = "prompt"
+    TOPOLOGY = "topology"
+    ARCHITECTURE = "architecture"
+
+
+@dataclass(slots=True)
+class CognitiveBottleneck:
+    bottleneck_id: str
+    description: str
+    severity: float
+    evidence: list[str]
+    affected_components: list[str]
+
+
+@dataclass(slots=True)
+class SessionDiagnostic:
+    session_id: str
+    analyzed_turns: int
+    tool_success_rate: float
+    average_retries: float
+    average_surprise: float
+    bottlenecks: list[CognitiveBottleneck]
+    failure_types: dict[str, int] = field(default_factory=dict)
+    pending_approval_backlog: int = 0
+    pending_directive_count: int = 0
+    surprise_trend: float = 0.0
+    dominant_variant: str | None = None
+    dominant_variant_ratio: float = 0.0
+    generated_at: datetime = field(default_factory=utc_now)
+
+
+@dataclass(slots=True)
+class EvolutionDirective:
+    directive_id: str
+    directive_type: DirectiveType
+    target_component: str
+    proposed_change: dict[str, Any]
+    reasoning: str
+    status: str = "pending"  # pending, applied, rejected
+    created_at: datetime = field(default_factory=utc_now)
 
 
 @dataclass(slots=True)
