@@ -1,146 +1,305 @@
 # Calosum
 
-O **Calosum** é um esqueleto para a construção de um Agente de Inteligência Artificial Neuro-simbólico. Ele foi estruturado simulando partes do córtex cerebral humano, dividindo a responsabilidade do agente em diferentes "regiões", como um hemisfério emocional e um lógico, conectados por uma ponte cognitiva.
-
-Atualmente, o repositório é um **alicerce arquitetural com integrações reais parciais**. A base de código, os contratos e a infraestrutura já estão prontos; o hemisfério esquerdo pode falar com OpenAI ou endpoints OpenAI-compatible, e a memória vetorial já usa Qdrant com embeddings configuráveis e fallback explícito quando a stack local ou remota não estiver disponível.
-
-## Arquitetura Base
-
-- **Hemisfério Direito**: Processa as percepções, entende sinais multimodais (áudio, texto, vídeo) e mapeia emoções ou a "saliência" (urgência) do input.
-- **Corpo Caloso (`Bridge`)**: Traduz as emoções e o estado latente em "soft prompts" (dicas cognitivas) para direcionar como o outro hemisfério vai reagir.
-- **Hemisfério Esquerdo**: Realiza o raciocínio rigoroso, consulta as memórias e elabora um plano de etapas lógicas e seguras.
-- **Memória Dual**: O agente possui memórias episódicas (curto prazo) e regras consolidadas (longo prazo).
-- **Run-time e Telemetria**: Todo ciclo cognitivo é traçado, metrificado e executado com tentativas de correções (retries automáticos).
+Framework de agente IA neuro-simbólico com arquitetura cognitiva de duplo hemisfério. Combina percepção baseada em embeddings, raciocínio via LLM, execução segura de ações e metacognição evolutiva inspirada em Group-Evolving Agents (GEA).
 
 ---
 
-## Pré-requisitos
+## Arquitetura
 
-Para explorar o projeto localmente, você precisará de:
-- `python3 >= 3.11`
-- `docker` e `docker compose` (Apenas se quiser rodar serviços opcionais de infraestrutura, como telemetria Jaeger e Qdrant)
+```
+UserTurn
+  │
+  ▼
+RightHemisphere ── percepção, emoção, salience
+  │
+  ▼
+CognitiveTokenizer ── bridge (soft prompts, corpus caloso)
+  │
+  ▼
+LeftHemisphere ── raciocínio, geração de ações
+  │
+  ▼
+StrictLambdaRuntime ── execução segura
+  │
+  ▼
+Verifier ── crítica e loop de reparo
+  │
+  ▼ [se surprise > 0.6 ou ambiguity > 0.8]
+GEAReflectionController ── group turns (variantes cognitivas competidoras)
+```
+
+O projeto segue o padrão **Ports and Adapters** com fronteiras de dependência verificadas estaticamente por AST em `harness_checks.py`. Violações de camada quebram o build.
+
+### Camadas
+
+| Camada | Regra |
+|--------|-------|
+| `shared/` | Tipos, Protocols, utilidades puras. Zero dependências internas. |
+| `domain/` | Lógica cognitiva central. **Nunca importa de `adapters/` ou `bootstrap/`**. Sem SDKs externos. |
+| `adapters/` | Implementações concretas dos Protocols. Todo código ML (`torch`, `transformers`, `peft`) vive aqui. |
+| `bootstrap/` | Único ponto de instanciação. Injeta adapters no domain via Factory. |
 
 ---
 
-## Início Rápido: Vendo o Calosum Funcionar
+## Conceitos principais
 
-Mesmo sem depender de uma API de Inteligência Artificial pesada, você pode invocar a engine de arquitetura do Calosum no seu terminal para entender como ela divide e soluciona problemas. 
+### Duplo hemisfério
 
-Se a stack opcional de HuggingFace local não estiver disponível, o bootstrap faz fallback automático para o hemisfério direito heurístico em vez de falhar na inicialização.
+- **Hemisfério direito** (`RightHemisphereJEPA` / `HuggingFaceRightHemisphere`): processa percepção, estima salience (0–1), extrai labels emocionais e gera hipóteses de mundo (urgência, complexidade, diversidade sensorial).
+- **Bridge / Corpus Caloso** (`CognitiveTokenizer`): projeta o estado latente em soft prompts discretos via Information Bottleneck. Os parâmetros (temperature, salience_threshold, directives) são ajustados por neuroplasticidade a cada turno de reflexão.
+- **Hemisfério esquerdo** (`LeftHemisphereLogicalSLM`): recebe o bridge packet, consulta memória dual, gera programas lambda tipados com primitivas de ação seguras.
 
-### 1. Rodar um "Turno" (Um pensamento do agente)
+### Inferência ativa
 
-Ao mandar uma frase para o sistema, você verá o modelo capturar as nuances da mensagem e devolver um JSON rico, demonstrando o passo de raciocínio lógico (no hemisfério esquerdo) embasado na percepção de urgência calculada pelo modelo.
+O componente `ActiveInferenceMetrics` decompõe a surpresa em:
 
-Mande um comando avisando que precisa de ajuda com persistência:
+- **Complexity**: divergência do modelo base (distância latente)
+- **Ambiguity**: incerteza nas hipóteses de mundo
+
+A surpresa combinada (energia livre estimada) determina se o turno é processado diretamente ou escalado para um group turn.
+
+### Group Turns e GEA
+
+Quando `surprise > 0.6` ou `ambiguity > 0.8`, o orquestrador gera múltiplas variantes cognitivas em paralelo:
+
+| Variante | Perfil |
+|----------|--------|
+| `analitico` | temperature baixa, prioriza consistência lógica e verificabilidade |
+| `empatico` | salience baixo, prioriza contexto afetivo e linguagem segura |
+| `pragmatico` | fronteira mínima de ações, resposta concisa |
+
+O `GEAReflectionController` pontua cada candidato por empatia, segurança de runtime e simplicidade de ações, seleciona o vencedor e propõe micro-ajustes ao bridge (neuroplasticidade).
+
+### Evolução e Introspecção
+
+- **`IntrospectionEngine`**: analisa o dashboard de telemetria por sessão (felt, thought, decision, execution) e detecta gargalos — taxa de falha, backlog de aprovações, tendência de surpresa.
+- **`EvolutionProposer`**: converte diagnósticos em `EvolutionDirective` (ajuste de parâmetro ou instrução de prompt) para revisão do operador.
+- **`JsonlEvolutionArchive`**: persiste diretivas pendentes e aplicadas entre sessões.
+
+### Runtime seguro
+
+`StrictLambdaRuntime` valida cada ação contra um registro de ferramentas tipadas. Ações desconhecidas são rejeitadas imediatamente. O `AgentExecutionEngine` faz retry automático com feedback de crítica do `HeuristicVerifier` (loop de reparo com revisão guiada).
+
+### Self-Model e Workspace
+
+- **`CognitiveWorkspace`**: contexto compartilhado para um turno — inclui estado da sessão, snapshot de capacidades e diretivas ativas.
+- **`build_self_model`**: gera um `CognitiveArchitectureMap` com componentes, conexões e superfície de adaptação do agente, usado para introspecção e exposição via API.
+
+---
+
+## Estrutura de módulos
+
+```
+src/calosum/
+├── shared/
+│   ├── ports.py              # Protocols injetáveis
+│   ├── types.py              # Dataclasses centrais
+│   ├── schemas.py            # Schemas da API
+│   └── async_utils.py        # maybe_await, run_sync
+│
+├── domain/
+│   ├── orchestrator.py       # CalosumAgent — pipeline principal
+│   ├── bridge.py             # CognitiveTokenizer
+│   ├── right_hemisphere.py   # RightHemisphereJEPA (heurístico)
+│   ├── left_hemisphere.py    # LeftHemisphereLogicalSLM
+│   ├── memory.py             # DualMemorySystem (episódica + semântica)
+│   ├── persistent_memory.py  # JSONL / Qdrant / DuckDB
+│   ├── runtime.py            # StrictLambdaRuntime
+│   ├── runtime_dsl.py        # DSL de programas lambda tipados
+│   ├── metacognition.py      # GEAReflectionController, variantes cognitivas
+│   ├── verifier.py           # HeuristicVerifier
+│   ├── telemetry.py          # CognitiveTelemetryBus
+│   ├── event_bus.py          # InternalEventBus
+│   ├── agent_execution.py    # AgentExecutionEngine (retry/repair)
+│   ├── workspace.py          # CognitiveWorkspace
+│   ├── self_model.py         # Snapshot de capacidades e auto-modelo
+│   ├── evolution.py          # EvolutionProposer + JsonlEvolutionArchive
+│   ├── introspection.py      # IntrospectionEngine
+│   └── multiagent.py         # Raciocínio multi-papel (Planner/Executor/Verifier)
+│
+├── adapters/
+│   ├── right_hemisphere_hf.py       # Percepção via HuggingFace (MiniLM)
+│   ├── active_inference.py          # Surprise via energia livre
+│   ├── llm_failover.py              # Roteamento multi-provedor com cooldown
+│   ├── llm_qwen.py                  # Integração Qwen
+│   ├── llm_payloads.py              # Formatação de output estruturado
+│   ├── text_embeddings.py           # OpenAI / HuggingFace / lexical (fallback)
+│   ├── memory_qdrant.py             # Qdrant vector store
+│   ├── action_runtime.py            # Adaptadores de execução de ações
+│   ├── bridge_store.py              # Persistência do estado do bridge
+│   ├── telemetry_otlp.py            # Exportador OTLP
+│   ├── knowledge_graph_nanorag.py   # NanoGraphRAG (opcional)
+│   ├── channel_telegram.py          # Canal Telegram
+│   ├── night_trainer.py             # Base de aprendizado contínuo
+│   ├── night_trainer_dspy.py        # Auto-melhoria via DSPy
+│   └── night_trainer_lora.py        # Fine-tuning LoRA noturno
+│
+├── bootstrap/
+│   ├── factory.py    # CalosumAgentBuilder — injeção de dependência
+│   ├── settings.py   # InfrastructureSettings
+│   ├── api.py        # Servidor FastAPI
+│   └── cli.py        # Entrypoints CLI
+│
+└── harness_checks.py   # Governança arquitetural (verificação AST)
+```
+
+---
+
+## Instalação
+
+**Requisitos**: Python 3.11+, Node.js 18+ (apenas para a UI)
 
 ```bash
+pip install -r requirements.txt
+
+# Verificar integridade arquitetural
+PYTHONPATH=src python3 -m calosum.harness_checks
+```
+
+---
+
+## Uso rápido
+
+```bash
+# Chat interativo
+python3 -m calosum.bootstrap.cli chat
+
+# Turno único
 python3 -m calosum.bootstrap.cli run-turn \
   --session-id demo \
-  --text "Estou muito ansioso e preciso de um plano urgente!" \
+  --text "sua mensagem" \
   --infra-profile persistent
-```
 
-**Resultado Esperado:** O sistema imprimirá um JSON onde demonstrará a telemetria, sinalizando prioridade de empatia (`empathetic_priority: true`), e o Plano gerado (nos `actions`) que guia o usuário a uma solução calma e gradativa.
+# Servidor HTTP
+python3 -m calosum.bootstrap.api
+# POST http://localhost:8000/v1/chat/completions
 
-### 2. Rodar Cenários Completos via JSON
-
-Você também pode passar um conjunto de falas (turnos) para o agente treinar e rodar reflexões em massa usando os exemplos da pasta de cenários se presentes, ou comandos diretos.
-
-```bash
-python3 -m calosum.bootstrap.cli run-scenario caminho/do/cenario.json \
-  --memory-dir .calosum-memory \
-  --otlp-jsonl .calosum-telemetry/events.jsonl
-```
-
-### 2.1. Usando OpenAI no hemisfério esquerdo
-
-Se quiser trocar temporariamente o endpoint local por OpenAI oficial, configure no `.env`:
-
-```bash
-CALOSUM_LEFT_ENDPOINT="https://api.openai.com/v1"
-CALOSUM_LEFT_API_KEY="sua-chave"
-CALOSUM_LEFT_MODEL="gpt-5-mini"
-```
-
-Com esse formato, o adapter autodetecta a OpenAI oficial e usa `Responses API` com Structured Outputs. Para workloads mais pesados, troque o modelo para `gpt-5.4`.
-
-### 2.2. Usando embeddings reais na memória vetorial
-
-Se o Qdrant estiver ativo, voce pode configurar um backend de embeddings dedicado:
-
-```bash
-CALOSUM_VECTORDB_URL="http://localhost:6333"
-CALOSUM_EMBEDDING_ENDPOINT="https://api.openai.com/v1"
-CALOSUM_EMBEDDING_API_KEY="sua-chave"
-CALOSUM_EMBEDDING_MODEL="text-embedding-3-small"
-```
-
-Sem essas variaveis, o builder reaproveita a configuracao OpenAI do hemisferio esquerdo quando ela estiver presente. Se nenhum backend remoto ou local estiver disponivel, o adapter cai para um embedding lexical deterministico, preservando a busca vetorial sem falha dura.
-
-### 3. Experimentos de Ciclo Cognitivo e Reflexão
-
-Na pasta `examples/`, você encontra scripts focados em demonstrar as features específicas de fluxo interno do agente.
-
-```bash
-PYTHONPATH=src python3 examples/cognitive_cycle.py
+# UI de telemetria
+cd ui && npm run dev   # http://localhost:5173
 ```
 
 ---
 
-## Infraestrutura: Rodando com Docker Compose
+## Perfis de infraestrutura
 
-O agente já possui infraestrutura containerizada planejada para os passos futuros da evolução do sistema.
+Controlados pela variável `CALOSUM_INFRA_PROFILE`:
+
+| Perfil | Comportamento |
+|--------|---------------|
+| `ephemeral` (padrão) | Tudo em RAM. Sem persistência. Ideal para testes. |
+| `persistent` | Arquivos JSONL em `.calosum-runtime/`. Desenvolvimento local. |
+| `docker` | Qdrant + OTLP + Jaeger. Ambiente produção-like. |
+
+O bootstrap nunca falha duro por infraestrutura ausente: Qdrant → JSONL → RAM, HuggingFace → JEPA heurístico, embeddings remotos → lexical determinístico.
+
+---
+
+## Variáveis de ambiente
+
+### LLM principal
+
+| Variável | Descrição |
+|----------|-----------|
+| `CALOSUM_LEFT_ENDPOINT` | Endpoint da API (ex: `https://api.openai.com/v1`) |
+| `CALOSUM_LEFT_API_KEY` | Chave de API |
+| `CALOSUM_LEFT_MODEL` | Modelo (ex: `gpt-4o`, `qwen2.5-72b`) |
+| `CALOSUM_LEFT_PROVIDER` | `openai` ou `qwen` (autodetectado pelo endpoint) |
+| `CALOSUM_LEFT_REASONING_EFFORT` | `low` / `medium` / `high` (extended thinking) |
+
+### LLM de fallback
+
+| Variável | Descrição |
+|----------|-----------|
+| `CALOSUM_LEFT_FALLBACK_ENDPOINT` | Endpoint alternativo |
+| `CALOSUM_LEFT_FALLBACK_API_KEY` | Chave alternativa |
+| `CALOSUM_LEFT_FALLBACK_MODEL` | Modelo alternativo |
+
+### Roteamento por papel cognitivo
+
+| Variável | Papel |
+|----------|-------|
+| `CALOSUM_PERCEPTION_MODEL` | Hemisfério direito |
+| `CALOSUM_REASON_MODEL` | Hemisfério esquerdo |
+| `CALOSUM_REFLECTION_MODEL` | GEA reflection scoring |
+| `CALOSUM_VERIFIER_MODEL` | Verificador |
+
+### Infraestrutura
+
+| Variável | Descrição |
+|----------|-----------|
+| `CALOSUM_VECTORDB_URL` | Qdrant (ex: `http://localhost:6333`) |
+| `CALOSUM_EMBEDDING_ENDPOINT` | Serviço de embeddings |
+| `CALOSUM_EMBEDDING_API_KEY` | Chave de embeddings |
+| `CALOSUM_EMBEDDING_MODEL` | Modelo (ex: `text-embedding-3-small`) |
+| `CALOSUM_MEMORY_DIR` | Diretório de memória persistente |
+| `CALOSUM_DUCKDB_PATH` | Banco de dados do grafo semântico |
+| `CALOSUM_OTEL_COLLECTOR_ENDPOINT` | Coletor OTLP (ex: `http://localhost:4318`) |
+| `CALOSUM_JAEGER_UI_URL` | Interface Jaeger (ex: `http://localhost:16686`) |
+| `CALOSUM_TELEGRAM_BOT_TOKEN` | Token do bot Telegram |
+
+---
+
+## Docker
 
 ```bash
 docker compose -f deploy/docker-compose.yml up --build -d
 ```
 
-**O que este comando inicia?**
-- `orchestrator` (Levanta o servidor vivo estruturado via FastAPI acessível em `http://localhost:8000/v1/chat/completions`)
-- `qdrant` (Banco Vetorial oficial atuando na memória episódica).
-- `otel-collector` e `jaeger` (Para tracing e telemetria de performance local).
+| Serviço | Porta | Descrição |
+|---------|-------|-----------|
+| `orchestrator` | 8000 | API FastAPI do Calosum |
+| `qdrant` | 6333 | Banco de vetores |
+| `otel-collector` | 4317 / 4318 | Coletor OpenTelemetry |
+| `jaeger` | 16686 | UI de rastreamento distribuído |
 
-Você também pode agora rodar sessões de chat infinitas localmente pelo terminal via:
+---
+
+## UI de telemetria
+
+Interface React para visualização do ciclo cognitivo em tempo real: timeline de eventos (felt, thought, decision, execution, reflection), scoreboard de variantes GEA e métricas de awareness de sessão.
+
 ```bash
-python3 -m calosum.bootstrap.cli chat
+cd ui && npm run dev     # desenvolvimento
+npm run build            # produção
 ```
 
-O REPL usa a sessao `terminal-session` por padrao. Quando voce sobe a API e a UI localmente sem configuracao adicional, a telemetria desse chat passa a ser persistida em `.calosum-runtime/telemetry/events.jsonl`, permitindo que o painel visualize os turnos do terminal.
+**Stack**: React 19, TypeScript, Vite, Tailwind CSS 4, lucide-react.
 
 ---
 
-## Como Começar a Desenvolver (Onde Modificar?)
-
-O projeto adota o estilo **Ports and Adapters**. Você não precisa quebrar as lógicas internas caso queira acoplar a API do ChatGPT ou do LangChain, basta implementar a Interface!
-
-1. Vá em `src/calosum/ports.py` para entender as interfaces que devem ser respeitadas.
-2. Para entender as interfaces atuais, veja `src/calosum/shared/ports.py`.
-3. Para plugar um LLM de verdade no raciocínio, você pode implementar `LeftHemispherePort` e injetar o adapter pelo construtor em `src/calosum/bootstrap/factory.py`.
-4. Todo conhecimento consolidado fica nos Manuais, leia `docs/ARCHITECTURE.md` para entender as barreiras e `docs/PLANS.md` para documentar evoluções maiores.
-
-### Como Realizar Ajustes Finos (Fine-Tuning e ML)
-
-Se o seu objetivo é treinar o agente, ajustar pesos (LoRA/PEFT) ou modificar o comportamento dos embeddings e modelos fundacionais, o **conhecimento mais importante é o isolamento da camada de ML**:
-
-1. **A Regra de Ouro (Isolamento de Tensores):** Todo o código de Machine Learning (`torch`, `transformers`, `peft`) **deve viver exclusivamente na camada `adapters/`**. O núcleo do sistema (`domain/`) não conhece tensores, apenas tipos nativos e contratos (`shared/`).
-2. **Treinamento Contínuo (Sleep Mode):** Os ajustes finos contínuos e atualizações de pesos LoRA acontecem em rotinas específicas, como as implementadas em `src/calosum/adapters/night_trainer.py`.
-3. **Percepção e Embeddings (Text-JEPA):** Para calibrar a extração de "saliência" (urgência/emoção) do hemisfério direito, altere `src/calosum/adapters/right_hemisphere_hf.py`. Para a memória vetorial do Qdrant, os backends de embedding ficam em `src/calosum/adapters/text_embeddings.py`.
-4. **Raciocínio Lógico (LLM):** Mudanças de system prompt, extração estruturada e injeção de "soft prompts" do corpo caloso residem nos adapters do Hemisfério Esquerdo (ex: `src/calosum/adapters/llm_qwen.py`).
-5. **Governança (Harness):** Qualquer tentativa de importar bibliotecas de ML diretamente no `domain/` ou `shared/` será bloqueada pelo validador arquitetural `harness_checks.py`. Sempre passe os dados através das interfaces (Ports).
-
----
-
-## Testes e Validação Arquitetural
-
-Sempre que modificar as pastas do sistema ou arquivos, certifique-se de que a estrutura semântica dos imports e governança mantêm a pureza exigida, rodando o check:
+## Testes
 
 ```bash
+# Suite completa
+PYTHONPATH=src python3 -m unittest discover -s tests -t .
+
+# Arquivo específico
+PYTHONPATH=src python3 -m unittest tests.test_pipeline
+
+# Método específico
+PYTHONPATH=src python3 -m unittest tests.test_runtime.TestStrictLambdaRuntime.test_reject_unknown_action
+
+# Governança arquitetural
 PYTHONPATH=src python3 -m calosum.harness_checks
 ```
 
-Para garantir que a base mock e engine rodem perfeitamente, invoque os testes unitários da pasta `tests`:
+23 arquivos de teste cobrindo pipeline cognitivo, group turns, runtime seguro, memória dual, API, CLI, embeddings, telemetria OTLP, introspecção e auto-modelo.
 
-```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -t .
-```
+---
+
+## Desenvolvimento
+
+### Adicionando uma nova integração
+
+1. Defina um Protocol em `shared/ports.py`.
+2. Implemente o adapter em `adapters/` atrás desse Protocol.
+3. Registre no `CalosumAgentBuilder` em `bootstrap/factory.py`.
+4. O domain não deve saber da existência do adapter.
+
+### Regras de camada (verificadas automaticamente)
+
+- `domain/` nunca importa de `adapters/` ou `bootstrap/`.
+- Nenhum SDK externo (torch, transformers, httpx, openai) no `domain/` ou `shared/`.
+- Limite de 400 linhas por arquivo.
+- Mudanças em mais de um subsistema requerem plano em `docs/exec-plans/active/` (mover para `completed/` ao concluir).
+- Dívida técnica registrada em `docs/exec-plans/tech-debt-tracker.md`.
