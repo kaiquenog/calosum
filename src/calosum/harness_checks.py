@@ -135,6 +135,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.text_embeddings": {"shared.async_utils"},
     "adapters.night_trainer": {"adapters.night_trainer_dspy"},
     "adapters.night_trainer_dspy": set(),
+    "adapters.night_trainer_lora": set(),
     "adapters.tools.code_execution": {"shared.tools"},
     "adapters.tools.http_request": {"shared.tools"},
 

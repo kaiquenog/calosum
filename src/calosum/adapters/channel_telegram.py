@@ -30,9 +30,23 @@ class TelegramChannelAdapter:
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_telegram_message))
         
         logger.info("Iniciando escuta no Telegram (polling)...")
-        await self.app.initialize()
-        await self.app.start()
-        await self.app.updater.start_polling() # type: ignore
+        import asyncio
+        
+        async def _start_polling():
+            try:
+                await self.app.initialize()
+                await self.app.start()
+                # Start polling requires an active event loop but can't block the main FastAPI thread
+                # Se usarmos apenas start_polling, ele trava. Se usarmos drop_pending_updates ele pode falhar por timeout silencioso.
+                # A abordagem correta no python-telegram-bot v20+ rodando junto com fastapi é rodar o run_polling
+                # mas como não queremos bloquear, usamos updater.start_polling com tratamento de erro
+                await self.app.updater.start_polling(drop_pending_updates=True) # type: ignore
+                logger.info("Telegram polling rodando em background com sucesso.")
+            except Exception as e:
+                logger.error(f"Erro na thread de inicialização do Telegram: {e}")
+                
+        # Inicia a rotina sem bloquear a inicialização do FastAPI e lidando com Timeouts de rede (ex: docker bridge)
+        asyncio.create_task(_start_polling())
 
     async def send(self, session_id: str, text: str) -> None:
         try:

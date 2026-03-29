@@ -65,18 +65,35 @@ async def startup_event():
         async def on_telegram_message(user_turn: UserTurn):
             agent = get_agent()
             try:
+                # Dispara processamento em background para não bloquear o polling do Telegram
+                asyncio.create_task(_process_and_reply(agent, telegram_adapter, user_turn))
+            except Exception as e:
+                logger.error(f"Erro engatilhando mensagem do Telegram: {e}")
+
+        async def _process_and_reply(agent, adapter, user_turn):
+            try:
                 result = await agent.aprocess_turn(user_turn)
                 if hasattr(result, "selected_result"):
                     response_text = result.selected_result.left_result.response_text
                 else:
                     response_text = result.left_result.response_text
-                await telegram_adapter.send(user_turn.session_id, response_text)
+                await adapter.send(user_turn.session_id, response_text)
             except Exception as e:
                 logger.error(f"Erro processando mensagem do Telegram: {e}")
-                await telegram_adapter.send(user_turn.session_id, "Ocorreu um erro ao processar sua mensagem.")
+                await adapter.send(user_turn.session_id, "Ocorreu um erro ao processar sua mensagem.")
 
         _active_channels.append(telegram_adapter)
+        # O listen() agora é agendado corretamente no event loop
         asyncio.create_task(telegram_adapter.listen(on_telegram_message))
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    for adapter in _active_channels:
+        if hasattr(adapter, 'app'):
+            logger.info("Encerrando Telegram Channel Adapter...")
+            await adapter.app.updater.stop() # type: ignore
+            await adapter.app.stop()
+            await adapter.app.shutdown()
 
 # Add CORS middleware
 app.add_middleware(

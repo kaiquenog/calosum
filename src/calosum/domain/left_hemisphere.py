@@ -56,6 +56,12 @@ class LeftHemisphereLogicalSLM:
             plan_steps=plan_steps,
         )
 
+        # Injetando uma instrução que simula o uso de um "prompt otimizado"
+        # Na versão real, o DSPy carregaria este prompt dinamicamente.
+        optimized_system_prompt = self._load_optimized_prompt()
+        if optimized_system_prompt:
+            bridge_packet.control.system_directives.insert(0, f"[DSPy Optimized]: {optimized_system_prompt}")
+
         actions = [
             PrimitiveAction(
                 action_type="respond_text",
@@ -216,6 +222,22 @@ class LeftHemisphereLogicalSLM:
             triple.predicate == "prefers_response_style" and triple.object == "short"
             for triple in memory_context.knowledge_triples
         )
+
+    def _load_optimized_prompt(self) -> str | None:
+        """Carrega o prompt otimizado gerado pelo DSPy na noite anterior, se existir."""
+        import json
+        import os
+        from pathlib import Path
+        
+        # Em produção real isso viria de um DB ou Redis. Por ora, lemos do FS.
+        artifact_path = Path(".calosum-runtime/dspy_artifacts/latest/compiled_prompt.json")
+        if artifact_path.exists():
+            try:
+                data = json.loads(artifact_path.read_text(encoding="utf-8"))
+                return data.get("selected_prompt")
+            except Exception:
+                pass
+        return None
 
     def _prefers_stepwise_structure(self, memory_context: MemoryContext) -> bool:
         joined_rules = " ".join(rule.statement.lower() for rule in memory_context.semantic_rules)
