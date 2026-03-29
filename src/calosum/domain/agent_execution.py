@@ -273,7 +273,7 @@ class AgentExecutionEngine:
             },
             capabilities=capabilities or {},
             bridge_config=bridge_config,
-            active_variant=variant_label or "default",
+            active_variant=variant_label,
         )
 
     def clone_component_with_overrides(self, component: Any, overrides: dict[str, Any]) -> Any:

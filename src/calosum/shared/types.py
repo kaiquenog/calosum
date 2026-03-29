@@ -373,7 +373,7 @@ class CognitiveTelemetrySnapshot:
     decision: dict[str, Any]
     capabilities: dict[str, Any] = field(default_factory=dict)
     bridge_config: dict[str, Any] = field(default_factory=dict)
-    active_variant: str = "default"
+    active_variant: str | None = None
 
 
 @dataclass(slots=True)

@@ -18,9 +18,9 @@ class AwarenessTests(unittest.TestCase):
                 {"surprise_score": 0.65},
             ],
             "thought": [
-                {"active_variant": "default"},
-                {"active_variant": "default"},
-                {"active_variant": "default"},
+                {"active_variant": None},
+                {"active_variant": None},
+                {"active_variant": None},
             ],
             "decision": [
                 {"tool_success_rate": 0.5, "runtime_retry_count": 2},
@@ -48,7 +48,7 @@ class AwarenessTests(unittest.TestCase):
         self.assertEqual(diagnostic.pending_approval_backlog, 1)
         self.assertEqual(diagnostic.pending_directive_count, 2)
         self.assertGreater(diagnostic.surprise_trend, 0.0)
-        self.assertEqual(diagnostic.dominant_variant, "default")
+        self.assertIsNone(diagnostic.dominant_variant)
         self.assertGreater(len(diagnostic.bottlenecks), 0)
 
     def test_evolution_archive_reload_only_pending_directives(self) -> None:
