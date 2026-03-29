@@ -52,7 +52,6 @@ MODULE_RULES: dict[str, set[str]] = {
     "shared.tools": set(),
 
     # DOMAIN
-    "domain.advanced_interfaces": {"shared.types", "domain.metacognition", "shared.ports"},
     "domain.agent_execution": {"shared.async_utils", "shared.ports", "shared.types"},
     "domain.bridge": {"shared.types", "shared.ports"},
     "domain.event_bus": set(),

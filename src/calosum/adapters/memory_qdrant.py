@@ -3,9 +3,11 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 
 from qdrant_client import AsyncQdrantClient, QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 from calosum.shared.async_utils import run_sync
@@ -27,6 +29,8 @@ from calosum.shared.types import (
 
 
 from calosum.shared.ports import DatasetExporterPort
+
+logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class QdrantAdapterConfig:
@@ -109,6 +113,7 @@ class QdrantDualMemoryAdapter:
     def store_episode(self, episode: MemoryEpisode) -> None:
         run_sync(self.astore_episode(episode))
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
     async def astore_episode(self, episode: MemoryEpisode) -> None:
         point_id = str(uuid.uuid4())
         payload = self._episode_payload(episode)
@@ -167,6 +172,7 @@ class QdrantDualMemoryAdapter:
 
         return report
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
     async def _asearch_points(
         self,
         collection_name: str,

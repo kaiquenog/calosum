@@ -20,7 +20,11 @@ from calosum.shared.types import UserTurn
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Calosum API")
+app = FastAPI(
+    title="Calosum API",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 
 @lru_cache(maxsize=1)
@@ -53,6 +57,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/health")
+async def health_check() -> JSONResponse:
+    """Basic health check to ensure the API is running."""
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/ready")
+async def readiness_check() -> JSONResponse:
+    """
+    Readiness check to verify that dependencies (LLM, Qdrant) are reachable.
+    In a real scenario, you'd ping the actual services. Here we just ensure 
+    the builder can instantiate the agent without crashing.
+    """
+    try:
+        get_agent()
+        return JSONResponse({"status": "ready"})
+    except Exception as e:
+        logger.error("Readiness check failed", exc_info=True)
+        return JSONResponse({"status": "unready", "error": str(e)}, status_code=503)
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request) -> JSONResponse:

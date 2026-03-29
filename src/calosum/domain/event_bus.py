@@ -27,6 +27,15 @@ class InternalEventBus:
             except RuntimeError:
                 pass # No loop running yet
 
+    async def stop(self):
+        if self._worker_task is not None:
+            self._worker_task.cancel()
+            try:
+                await self._worker_task
+            except asyncio.CancelledError:
+                pass
+            self._worker_task = None
+
     async def _process_events(self):
         while True:
             event = await self.queue.get()

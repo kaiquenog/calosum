@@ -65,6 +65,7 @@ six==1.17.0
 sse-starlette==3.3.3
 starlette==1.0.0
 sympy==1.14.0
+tenacity==8.3.0
 threadpoolctl==3.6.0
 tokenizers==0.22.2
 torch==2.11.0

@@ -46,15 +46,18 @@ class HeuristicVerifier:
         is_valid = len(issues) == 0
         if is_valid:
             reasoning.append("Result looks structurally valid and safe.")
+            confidence = 1.0
         else:
             reasoning.append(f"Found {len(issues)} issues during critique.")
+            # Reduces confidence as issues grow
+            confidence = max(0.5, 1.0 - (len(issues) * 0.1))
 
         return CritiqueVerdict(
             is_valid=is_valid,
             critique_reasoning=reasoning,
             identified_issues=issues,
             suggested_fixes=fixes,
-            confidence=0.8,
+            confidence=confidence,
         )
 
     async def averify(

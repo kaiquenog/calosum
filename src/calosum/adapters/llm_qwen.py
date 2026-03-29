@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from calosum.adapters.llm_payloads import (
     augment_prompt_with_compiled_examples,
@@ -81,6 +82,17 @@ class QwenLeftHemisphereAdapter:
             )
         )
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
+        reraise=True
+    )
+    async def _post_with_retry(self, url: str, json_payload: dict[str, Any]) -> httpx.Response:
+        response = await self.client.post(url, json=json_payload)
+        response.raise_for_status()
+        return response
+
     async def areason(
         self,
         user_turn: UserTurn,
@@ -99,8 +111,7 @@ class QwenLeftHemisphereAdapter:
         request = self._build_request(prompt)
 
         try:
-            response = await self.client.post(request["url"], json=request["payload"])
-            response.raise_for_status()
+            response = await self._post_with_retry(request["url"], request["payload"])
             data = response.json()
             content = self._extract_content(data, request["api_mode"])
 

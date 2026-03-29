@@ -108,6 +108,8 @@ class TextEmbeddingAdapter:
 
     def _embeddings_url(self) -> str:
         base = (self.config.api_url or "https://api.openai.com/v1").rstrip("/")
+        if base.endswith("/chat/completions"):
+            base = base[: -len("/chat/completions")]
         if base.endswith("/embeddings"):
             return base
         if base.endswith("/v1"):

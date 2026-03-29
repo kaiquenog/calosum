@@ -19,6 +19,7 @@ dependencies = [
     "sse-starlette>=1.8.0",
     "sentence-transformers>=3.0.0",
     "transformers>=4.40.0",
+    "tenacity>=8.3.0",
 ]
 
 [project.scripts]

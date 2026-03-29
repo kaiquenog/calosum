@@ -62,6 +62,14 @@ class RightHemisphereState:
     surprise_score: float = 0.0
     telemetry: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self):
+        if not (0.0 <= self.salience <= 1.0):
+            raise ValueError(f"salience must be between 0.0 and 1.0, got {self.salience}")
+        if not (0.0 <= self.confidence <= 1.0):
+            raise ValueError(f"confidence must be between 0.0 and 1.0, got {self.confidence}")
+        if not (0.0 <= self.surprise_score <= 1.0):
+            raise ValueError(f"surprise_score must be between 0.0 and 1.0, got {self.surprise_score}")
+
 
 @dataclass(slots=True)
 class SoftPromptToken:
@@ -83,6 +91,10 @@ class BridgeControlSignal:
     empathy_priority: bool
     system_directives: list[str] = field(default_factory=list)
     annotations: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.target_temperature < 0.0:
+            raise ValueError(f"target_temperature must be non-negative, got {self.target_temperature}")
 
 
 @dataclass(slots=True)
@@ -126,6 +138,10 @@ class CritiqueVerdict:
     identified_issues: list[str]
     suggested_fixes: list[str]
     confidence: float
+
+    def __post_init__(self):
+        if not (0.0 <= self.confidence <= 1.0):
+            raise ValueError(f"confidence must be between 0.0 and 1.0, got {self.confidence}")
 
 
 @dataclass(slots=True)
