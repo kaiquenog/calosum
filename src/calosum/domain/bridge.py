@@ -182,9 +182,15 @@ class CognitiveTokenizer:
             directives.insert(0, "lead with empathy before dense logic")
             directives.append("prefer safe clarification under emotional uncertainty")
 
+        # Active Inference: Epistemic Foraging
+        surprise_score = getattr(right_state, "surprise_score", 0.0)
+        ambiguity_score = getattr(right_state, "world_hypotheses", {}).get("interaction_complexity", 0.0)
+        if surprise_score >= 0.3 or ambiguity_score >= 0.5:
+            directives.append("HIGH SURPRISE DETECTED: you MUST prioritize epistemic foraging using tools (search_web, execute_bash, read_file, introspect_self) to gather context and reduce uncertainty BEFORE providing a final answer.")
+
         # Modulação Dinâmica de Temperatura via Surpresa
         # Entradas surpreendentes (alto surprise_score) baixam a temperatura para forçar foco e analítica
-        surprise_penalty = getattr(right_state, "surprise_score", 0.0) * 0.25
+        surprise_penalty = surprise_score * 0.25
 
         control = BridgeControlSignal(
             target_temperature=round(
