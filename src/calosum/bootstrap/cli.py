@@ -53,6 +53,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_scenario.add_argument("--memory-dir")
     run_scenario.add_argument("--otlp-jsonl")
 
+    sleep_cmd = subparsers.add_parser("sleep", help="Run sleep mode consolidation and DSPy Night Trainer")
+    sleep_cmd.add_argument(
+        "--infra-profile",
+        choices=[profile.value for profile in InfrastructureProfile],
+    )
+    sleep_cmd.add_argument("--memory-dir")
+    sleep_cmd.add_argument("--otlp-jsonl")
+
     chat_cmd = subparsers.add_parser("chat", help="Start an interactive chat REPL")
     chat_cmd.add_argument("--session-id", default="terminal-session")
     chat_cmd.add_argument(
@@ -81,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "chat":
         return _handle_chat(agent, args)
 
+    if args.command == "sleep":
+        return _handle_sleep(agent, args, builder)
+
     if args.command == "run-scenario":
         result = _handle_run_scenario(agent, Path(args.scenario_path))
         result["infrastructure"] = builder.describe()
@@ -90,6 +101,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.error(f"unknown command: {args.command}")
     return 2
 
+
+def _handle_sleep(agent, args: argparse.Namespace, builder: CalosumAgentBuilder) -> int:
+    import sys
+    print("Running memory consolidation (Sleep Mode)...")
+    report = agent.sleep_mode()
+    print(f"Consolidated {report.episodes_considered} episodes.")
+    print(f"Promoted {len(report.promoted_rules)} semantic rules.")
+    
+    print("\nStarting Night Trainer (DSPy optimization)...")
+    trainer = builder.build_night_trainer()
+    result = trainer.run_training_cycle()
+    
+    print(f"Night Trainer Result: {json.dumps(result, indent=2)}")
+    
+    return 0 if result.get("status") in ("success", "skipped") else 1
 
 def _handle_run_turn(agent, args: argparse.Namespace) -> dict[str, Any]:
     user_turn = UserTurn(

@@ -288,6 +288,21 @@ class CalosumAgentBuilder:
             health=overall_health,
         )
 
+    def build_night_trainer(self) -> Any:
+        import os
+        from calosum.adapters.night_trainer import NightTrainer
+
+        return NightTrainer(
+            model_name=self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct",
+            dataset_path=self._runtime_root() / "nightly_data" / "dspy_dataset.jsonl",
+            output_dir=self._runtime_root() / "dspy_artifacts" / "latest",
+            api_url=self.settings.left_hemisphere_endpoint,
+            api_key=self.settings.left_hemisphere_api_key,
+            provider=self.settings.left_hemisphere_provider,
+            reasoning_effort=self.settings.left_hemisphere_reasoning_effort,
+            backend=os.getenv("CALOSUM_NIGHT_TRAINER_BACKEND", "dspy"),
+        )
+
     def describe(self, agent: CalosumAgent | None = None) -> dict[str, Any]:
         action_runtime = getattr(agent, "action_runtime", None) if agent is not None else None
         snapshot = agent.capability_snapshot if agent is not None else None
@@ -348,9 +363,7 @@ class CalosumAgentBuilder:
         return "in_memory"
 
     def _right_hemisphere_health(self) -> ComponentHealth:
-        if self._last_right_hemisphere_backend == "active_inference_heuristic_fallback":
-            return ComponentHealth.DEGRADED
-        return ComponentHealth.HEALTHY
+        return ComponentHealth.DEGRADED if self._last_right_hemisphere_backend == "active_inference_heuristic_fallback" else ComponentHealth.HEALTHY
 
     def _right_hemisphere_backend_name(self) -> str:
         return self._last_right_hemisphere_backend or "active_inference_with_optional_huggingface"
@@ -365,21 +378,14 @@ class CalosumAgentBuilder:
         return self.settings.reason_model or self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct"
 
     def _embedding_backend_name(self) -> str | None:
-        if not self.settings.vector_db_url:
-            return None
-        return self._last_embedding_backend or self._derived_embedding_provider() or "auto"
+        return self._last_embedding_backend or self._derived_embedding_provider() or "auto" if self.settings.vector_db_url else None
 
     def _knowledge_graph_health(self) -> ComponentHealth:
-        if self._knowledge_graph_backend_name() == "in_memory_graph_fallback":
-            return ComponentHealth.DEGRADED
-        return ComponentHealth.HEALTHY
+        return ComponentHealth.DEGRADED if self._knowledge_graph_backend_name() == "in_memory_graph_fallback" else ComponentHealth.HEALTHY
 
     def _knowledge_graph_backend_name(self) -> str:
-        if self._last_knowledge_graph_backend:
-            return self._last_knowledge_graph_backend
-        if importlib.util.find_spec("nano_graphrag"):
-            return "nanorag_compatible_networkx"
-        return "networkx_graph_rag_fallback"
+        if self._last_knowledge_graph_backend: return self._last_knowledge_graph_backend
+        return "nanorag_compatible_networkx" if importlib.util.find_spec("nano_graphrag") else "networkx_graph_rag_fallback"
 
     def _runtime_root(self) -> Path:
         if self.settings.memory_dir is not None:
@@ -475,22 +481,10 @@ class CalosumAgentBuilder:
         return "openai_compatible"
 
     def _derived_embedding_endpoint(self) -> str | None:
-        if self.settings.embedding_endpoint:
-            return self.settings.embedding_endpoint
-        if self._left_endpoint_supports_embeddings():
-            return self.settings.left_hemisphere_endpoint
-        return None
+        return self.settings.embedding_endpoint or (self.settings.left_hemisphere_endpoint if self._left_endpoint_supports_embeddings() else None)
 
     def _derived_embedding_model(self) -> str | None:
-        if self.settings.embedding_model:
-            return self.settings.embedding_model
-        if self._left_endpoint_supports_embeddings():
-            return "text-embedding-3-small"
-        return None
+        return self.settings.embedding_model or ("text-embedding-3-small" if self._left_endpoint_supports_embeddings() else None)
 
     def _derived_embedding_provider(self) -> str | None:
-        if self.settings.embedding_provider:
-            return self.settings.embedding_provider
-        if self._left_endpoint_supports_embeddings():
-            return self._default_embedding_provider()
-        return None
+        return self.settings.embedding_provider or (self._default_embedding_provider() if self._left_endpoint_supports_embeddings() else None)
