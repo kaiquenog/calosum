@@ -16,6 +16,7 @@ Este diretorio e o sistema de registro do projeto.
 ## Catalogos
 
 - [design-docs/index.md](design-docs/index.md): crenças e decisões de desenho
+- [design-docs/architectural-evolution-sota.md](design-docs/architectural-evolution-sota.md): evolução arquitetural baseada no estado da arte
 - [product-specs/index.md](product-specs/index.md): objetivos e escopo funcional do sistema
 - [references/harness-engineering.md](references/harness-engineering.md): pesquisa usada para governanca do repositorio
 - [exec-plans/tech-debt-tracker.md](exec-plans/tech-debt-tracker.md): pendencias e debt ativo
