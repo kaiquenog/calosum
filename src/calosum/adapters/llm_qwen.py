@@ -219,12 +219,14 @@ class QwenLeftHemisphereAdapter:
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
-        feedback = [
-            f"Ação {item.action_type} rejeitada: {', '.join(item.violations)}"
-            for item in rejected_results
-        ]
+        feedback = []
         if critique_feedback:
             feedback.extend(critique_feedback)
+        else:
+            feedback.extend([
+                f"Ação {item.action_type} rejeitada: {', '.join(item.violations)}"
+                for item in rejected_results
+            ])
         return await self.areason(user_turn, bridge_packet, memory_context, feedback, attempt, workspace)
 
     def _build_request(self, prompt: str) -> dict[str, Any]:

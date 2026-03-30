@@ -155,13 +155,20 @@ class AgentExecutionEngine:
         retry_count = 0
         critique_revision_count = 0
         current_result = left_result
+        all_execution_results = []
+        cumulative_feedback = []
 
         while True:
             execution_results = await maybe_await(
                 self.call_component(self.action_runtime, "arun", "run", current_result, workspace)
             )
+            all_execution_results.extend(execution_results)
+            
             rejected_results = [
                 result for result in execution_results if result.status == "rejected"
+            ]
+            executed_results = [
+                result for result in execution_results if result.status == "executed"
             ]
 
             critique_verdict = None
@@ -172,12 +179,28 @@ class AgentExecutionEngine:
 
             is_valid = critique_verdict.is_valid if critique_verdict else not rejected_results
 
-            if is_valid or retry_count >= self.max_runtime_retries:
-                return current_result, execution_results, retry_count, critique_revision_count
+            # Check if we executed tools that produce observations (epistemic tools)
+            # We want to feed these back and prompt the LLM again, forming a ReAct loop.
+            epistemic_actions = {"search_web", "read_file", "execute_bash", "introspect_self", "code_execution", "http_request"}
+            has_observations = any(res.action_type in epistemic_actions for res in executed_results)
+            
+            # If the LLM ALSO output a respond_text, we assume it's a final answer or intermediate chat
+            # To ensure it finishes the thought after observing, if it has observations it MUST loop
+            # unless we reached the retry limit.
+            needs_observation_loop = is_valid and has_observations
+
+            if (is_valid and not needs_observation_loop) or retry_count >= self.max_runtime_retries:
+                # Build final left result combining the latest response but ALL actions
+                final_result = replace(current_result, actions=current_result.actions) # keep current actions or all? The caller inspects final_result.actions for telemetry. Let's just return current_result.
+                return current_result, all_execution_results, retry_count, critique_revision_count
 
             retry_count += 1
             if critique_verdict and not critique_verdict.is_valid:
                 critique_revision_count += 1
+
+            # Format new feedback
+            new_feedback = self._format_runtime_feedback(rejected_results, executed_results, critique_verdict)
+            cumulative_feedback.extend(new_feedback)
 
             current_result = await self._repair_left_result(
                 left_hemisphere=left_hemisphere,
@@ -189,6 +212,7 @@ class AgentExecutionEngine:
                 attempt=retry_count,
                 critique_verdict=critique_verdict,
                 workspace=workspace,
+                cumulative_feedback=cumulative_feedback,
             )
 
     async def _repair_left_result(
@@ -203,8 +227,9 @@ class AgentExecutionEngine:
         attempt: int,
         critique_verdict: CritiqueVerdict | None = None,
         workspace: CognitiveWorkspace | None = None,
+        cumulative_feedback: list[str] | None = None,
     ) -> LeftHemisphereResult:
-        feedback = self._format_runtime_feedback(rejected_results, critique_verdict)
+        feedback = cumulative_feedback if cumulative_feedback is not None else self._format_runtime_feedback(rejected_results, [], critique_verdict)
         
         if hasattr(left_hemisphere, "arepair") or hasattr(left_hemisphere, "repair"):
             repair_method = getattr(left_hemisphere, "arepair", None)
@@ -356,11 +381,19 @@ class AgentExecutionEngine:
     def _format_runtime_feedback(
         self,
         rejected_results: list[ActionExecutionResult],
+        executed_results: list[ActionExecutionResult],
         critique_verdict: CritiqueVerdict | None = None,
     ) -> list[str]:
         feedback = [
             f"{result.action_type}:{'; '.join(result.violations)}" for result in rejected_results
         ]
+        
+        # Epistemic loop feedback: if we successfully executed a tool, feed the result back
+        for res in executed_results:
+            if res.action_type in {"execute_bash", "read_file", "search_web", "introspect_self", "code_execution", "http_request"}:
+                out = res.output.get("result") or res.output.get("message") or res.output
+                feedback.append(f"OBSERVATION from {res.action_type}: {out}")
+
         if critique_verdict and not critique_verdict.is_valid:
             feedback.extend([f"FAILURE_TYPE: {item.value}" for item in critique_verdict.failure_types])
             feedback.extend([f"CRITIQUE_ISSUE: {issue}" for issue in critique_verdict.identified_issues])

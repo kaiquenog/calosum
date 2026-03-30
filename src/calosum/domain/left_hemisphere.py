@@ -195,11 +195,13 @@ class LeftHemisphereLogicalSLM:
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
-        feedback = [
-            f"{item.action_type}:{'; '.join(item.violations)}" for item in rejected_results
-        ]
+        feedback = []
         if critique_feedback:
             feedback.extend(critique_feedback)
+        else:
+            feedback.extend([
+                f"{item.action_type}:{'; '.join(item.violations)}" for item in rejected_results
+            ])
         return self.reason(
             user_turn=user_turn,
             bridge_packet=bridge_packet,

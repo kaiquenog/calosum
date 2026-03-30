@@ -127,7 +127,7 @@ class AsyncRetryAndPersistenceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.runtime_retry_count, 1)
         self.assertEqual(result.critique_revision_count, 1)
-        self.assertTrue(all(item.status == "executed" for item in result.execution_results))
+        self.assertTrue(any(item.status == "executed" and item.action_type == "respond_text" for item in result.execution_results))
         self.assertEqual(result.left_result.response_text, "repaired response")
         self.assertTrue(
             any(

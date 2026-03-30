@@ -29,7 +29,9 @@ Soft Prompts (Bridge): {[token.token for token in bridge_packet.soft_prompts]}
 System Directives: {bridge_packet.control.system_directives}
 Semantic Rules: {rules}
 Knowledge Triples: {triples}
-Runtime Feedback: {feedback or []}
+Runtime Feedback (Observations): {feedback or []}
+
+IMPORTANT - MULTI-STEP REASONING: You are an autonomous agent. If you need to gather information, output actions like "execute_bash", "search_web", "read_file", or "introspect_self". The system will execute them and provide the output back to you as "Runtime Feedback" in a loop. Do NOT include a "respond_text" action if you are just exploring; wait until you have gathered all data, then use "respond_text" to give the final answer.
 
 Available Action Types (Use exactly these action_type values):
 - "respond_text": {{ "text": "your response here" }}
