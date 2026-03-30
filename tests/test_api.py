@@ -10,6 +10,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from calosum.bootstrap import api as api_module
+from calosum.shared.types import DirectiveType, EvolutionDirective
 
 
 class ApiIntegrationTests(unittest.TestCase):
@@ -180,6 +181,40 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(data["status"], "ok")
         self.assertIn("directives", data)
         self.assertIsInstance(data["directives"], list)
+
+    def test_apply_runtime_contract_audit_directive_via_api(self) -> None:
+        directive = EvolutionDirective(
+            directive_id="directive-api-runtime-audit",
+            directive_type=DirectiveType.TOPOLOGY,
+            target_component="action_runtime",
+            proposed_change={
+                "action": "audit_runtime_contracts",
+                "failure_types": {"validation_failed": 1},
+            },
+            reasoning="Runtime contract audit requested by API",
+        )
+        api_module.get_agent().pending_directives.append(directive)
+
+        pending_response = self.client.get("/v1/system/directives")
+        self.assertEqual(pending_response.status_code, 200)
+        pending = pending_response.json()["directives"]
+        pending_ids = [item["directive_id"] for item in pending]
+        self.assertIn("directive-api-runtime-audit", pending_ids)
+
+        apply_response = self.client.post(
+            "/v1/system/directives/apply",
+            json={"directive_id": "directive-api-runtime-audit"},
+        )
+        self.assertEqual(apply_response.status_code, 200)
+        data = apply_response.json()
+        self.assertEqual(data["status"], "ok")
+        applied = data["directive"]
+        self.assertEqual(applied["status"], "applied")
+        self.assertIn("_audit", applied["proposed_change"])
+        self.assertEqual(
+            applied["proposed_change"]["_audit"]["validation_failed_recent_count"],
+            1,
+        )
 
     def test_system_introspect_returns_grounded_self_awareness(self) -> None:
         self.client.post(

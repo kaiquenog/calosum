@@ -101,6 +101,17 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[0].status, "rejected")
         self.assertEqual(results[0].output.get("error_type"), "validation_failed")
 
+    async def test_runtime_contract_audit_reports_tool_contracts(self):
+        runtime = ConcreteActionRuntime()
+
+        report = runtime.audit_runtime_contracts({"validation_failed": 1})
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["validation_failed_recent_count"], 1)
+        tool_names = {item["tool"] for item in report["tool_contracts"]}
+        self.assertIn("respond_text", tool_names)
+        self.assertIn("search_web", tool_names)
+
     async def test_code_execution_runs_constrained_python(self):
         runtime = ConcreteActionRuntime()
         left_result = LeftHemisphereResult(

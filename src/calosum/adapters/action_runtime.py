@@ -5,7 +5,7 @@ import logging
 from calosum.adapters.tools.code_execution import CodeExecutionTool
 from calosum.adapters.tools.http_request import HttpRequestTool
 from calosum.shared.async_utils import run_sync
-from calosum.shared.tools import ToolRegistry, ToolSchema
+from calosum.shared.tools import ToolRegistry, ToolSchema, build_runtime_contract_audit_report
 from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult, ToolDescriptor, CognitiveWorkspace
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,9 @@ class ConcreteActionRuntime:
 
     def get_registered_tools(self) -> list[ToolDescriptor]:
         return self.registry.get_descriptors()
+
+    def audit_runtime_contracts(self, failure_types: dict[str, int] | None = None) -> dict[str, object]:
+        return build_runtime_contract_audit_report(self.registry, failure_types)
 
     async def arun(self, left_result: LeftHemisphereResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]:
         results = []

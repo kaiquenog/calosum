@@ -98,6 +98,73 @@ class AwarenessTests(unittest.TestCase):
         assert applied is not None
         self.assertEqual(applied.status, "rejected_guardrail_topology_locked")
 
+    def test_action_runtime_contract_audit_directive_is_applied(self) -> None:
+        class RuntimeAuditStub:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, int]] = []
+
+            def run(self, left_result, workspace=None):  # pragma: no cover - not used in this test
+                return []
+
+            async def arun(self, left_result, workspace=None):  # pragma: no cover - not used in this test
+                return []
+
+            def get_registered_tools(self):
+                return []
+
+            def audit_runtime_contracts(self, failure_types: dict[str, int] | None = None):
+                normalized = failure_types or {}
+                self.calls.append(normalized)
+                return {
+                    "status": "ok",
+                    "validation_failed_recent_count": normalized.get("validation_failed", 0),
+                }
+
+        runtime = RuntimeAuditStub()
+        agent = CalosumAgent(action_runtime=runtime)
+        directive = EvolutionDirective(
+            directive_id="directive-runtime-audit",
+            directive_type=DirectiveType.TOPOLOGY,
+            target_component="action_runtime",
+            proposed_change={
+                "action": "audit_runtime_contracts",
+                "failure_types": {"validation_failed": 1},
+            },
+            reasoning="Apply runtime contract audit",
+        )
+        agent.pending_directives.append(directive)
+
+        applied = agent.apply_pending_directive("directive-runtime-audit")
+
+        self.assertIsNotNone(applied)
+        assert applied is not None
+        self.assertEqual(applied.status, "applied")
+        self.assertIn("_audit", applied.proposed_change)
+        self.assertEqual(runtime.calls, [{"validation_failed": 1}])
+
+    def test_action_runtime_contract_audit_directive_falls_back_when_runtime_has_no_audit_method(self) -> None:
+        agent = CalosumAgent()
+        directive = EvolutionDirective(
+            directive_id="directive-runtime-audit-fallback",
+            directive_type=DirectiveType.TOPOLOGY,
+            target_component="action_runtime",
+            proposed_change={
+                "action": "audit_runtime_contracts",
+                "failure_types": {"validation_failed": 2},
+            },
+            reasoning="Apply runtime contract audit with fallback",
+        )
+        agent.pending_directives.append(directive)
+
+        applied = agent.apply_pending_directive("directive-runtime-audit-fallback")
+
+        self.assertIsNotNone(applied)
+        assert applied is not None
+        self.assertEqual(applied.status, "applied")
+        audit = applied.proposed_change.get("_audit", {})
+        self.assertEqual(audit.get("status"), "partial")
+        self.assertEqual(audit.get("validation_failed_recent_count"), 2)
+
     def test_right_hemisphere_parameter_directive_is_clamped_and_audited(self) -> None:
         agent = CalosumAgent(
             right_hemisphere=ActiveInferenceRightHemisphereAdapter(RightHemisphereJEPA()),

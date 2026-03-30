@@ -4,6 +4,20 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine
 
 
+_EXPECTED_TYPE_MAP: dict[str, Any] = {
+    "str": str,
+    "string": str,
+    "list": list,
+    "dict": dict,
+    "object": dict,
+    "bool": bool,
+    "int": int,
+    "integer": int,
+    "float": float,
+    "number": (int, float),
+}
+
+
 @dataclass(slots=True)
 class ToolSchema:
     name: str
@@ -68,21 +82,75 @@ class ToolRegistry:
             for schema in self._schemas.values()
         ]
 
+    def supports_expected_type(self, expected_type: Any) -> bool:
+        normalized = str(expected_type).strip().lower()
+        if not normalized:
+            return False
+        return normalized in _EXPECTED_TYPE_MAP
+
+    def supported_parameter_types(self) -> list[str]:
+        return sorted(_EXPECTED_TYPE_MAP.keys())
+
     def _matches_type(self, value: Any, expected_type: Any) -> bool:
         normalized = str(expected_type).strip().lower()
-        expected_map = {
-            "str": str,
-            "string": str,
-            "list": list,
-            "dict": dict,
-            "object": dict,
-            "bool": bool,
-            "int": int,
-            "integer": int,
-            "float": float,
-            "number": (int, float),
-        }
-        python_type = expected_map.get(normalized)
+        python_type = _EXPECTED_TYPE_MAP.get(normalized)
         if python_type is None:
             return True
         return isinstance(value, python_type)
+
+
+def build_runtime_contract_audit_report(
+    registry: ToolRegistry,
+    failure_types: dict[str, int] | None = None,
+) -> dict[str, object]:
+    failure_types = failure_types or {}
+    validation_failures = int(failure_types.get("validation_failed", 0))
+    supported_types = registry.supported_parameter_types()
+
+    tool_contracts: list[dict[str, object]] = []
+    unsupported_type_violations: list[str] = []
+
+    for schema in registry.list_schemas():
+        parameters: list[dict[str, str]] = []
+        for name, expected in schema.parameters.items():
+            expected_label = str(expected).strip().lower() or str(expected)
+            parameters.append({"name": name, "type": expected_label})
+            if not registry.supports_expected_type(expected):
+                unsupported_type_violations.append(
+                    f"{schema.name}.{name} uses unsupported type contract '{expected_label}'"
+                )
+
+        tool_contracts.append(
+            {
+                "tool": schema.name,
+                "parameter_count": len(schema.parameters),
+                "parameters": parameters,
+                "required_permissions": list(schema.required_permissions),
+                "requires_approval": schema.needs_approval,
+            }
+        )
+
+    recommendations: list[str] = []
+    if validation_failures > 0:
+        recommendations.append(
+            "Inject explicit tool contract block in left-hemisphere prompt and repair feedback."
+        )
+        recommendations.append(
+            "Track per-tool validation_failed counts in telemetry to identify dominant mismatch patterns."
+        )
+    if unsupported_type_violations:
+        recommendations.append(
+            "Normalize unsupported schema parameter types to canonical runtime types."
+        )
+    if not recommendations:
+        recommendations.append("Runtime contracts look consistent with current registry type system.")
+
+    return {
+        "status": "ok",
+        "registered_tools": len(tool_contracts),
+        "supported_parameter_types": supported_types,
+        "validation_failed_recent_count": validation_failures,
+        "unsupported_type_violations": unsupported_type_violations,
+        "tool_contracts": tool_contracts,
+        "recommendations": recommendations,
+    }

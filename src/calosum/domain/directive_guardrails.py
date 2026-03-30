@@ -60,3 +60,47 @@ def apply_controlled_right_hemisphere_params(
         }
 
     return applied, rejected
+
+
+def apply_runtime_contract_audit_directive(action_runtime: Any, directive: Any) -> bool:
+    if getattr(directive, "target_component", None) != "action_runtime":
+        return False
+
+    changes = getattr(directive, "proposed_change", {})
+    if not isinstance(changes, dict):
+        return False
+    if str(changes.get("action", "")).strip() != "audit_runtime_contracts":
+        return False
+
+    raw_failure_types = changes.get("failure_types", {})
+    failure_types: dict[str, int] = {}
+    if isinstance(raw_failure_types, dict):
+        for name, value in raw_failure_types.items():
+            if not isinstance(name, str):
+                continue
+            try:
+                failure_types[name] = int(value)
+            except (TypeError, ValueError):
+                continue
+
+    audit_method = getattr(action_runtime, "audit_runtime_contracts", None)
+    if callable(audit_method):
+        audit_report = audit_method(failure_types=failure_types)
+    else:
+        descriptor_loader = getattr(action_runtime, "get_registered_tools", None)
+        tool_descriptors = descriptor_loader() if callable(descriptor_loader) else []
+        audit_report = {
+            "status": "partial",
+            "reason": "action_runtime_adapter_does_not_implement_audit_runtime_contracts",
+            "registered_tools": len(tool_descriptors),
+            "tools": [tool.name for tool in tool_descriptors],
+            "validation_failed_recent_count": failure_types.get("validation_failed", 0),
+        }
+
+    directive.proposed_change = {
+        **changes,
+        "failure_types": failure_types,
+        "_audit": audit_report,
+    }
+    directive.status = "applied"
+    return True

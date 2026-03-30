@@ -7,7 +7,10 @@ from time import perf_counter
 from uuid import uuid4
 
 from calosum.shared.async_utils import maybe_await, run_sync
-from calosum.domain.directive_guardrails import apply_controlled_right_hemisphere_params
+from calosum.domain.directive_guardrails import (
+    apply_controlled_right_hemisphere_params,
+    apply_runtime_contract_audit_directive,
+)
 from calosum.domain.agent_execution import AgentExecutionEngine
 from calosum.domain.bridge import CognitiveTokenizer
 from calosum.domain.event_bus import CognitiveEvent, InternalEventBus
@@ -388,6 +391,8 @@ class CalosumAgent:
         target, changes = directive.target_component, directive.proposed_change
         try:
             if directive.directive_type in {DirectiveType.TOPOLOGY, DirectiveType.ARCHITECTURE}:
+                if apply_runtime_contract_audit_directive(self.action_runtime, directive):
+                    return
                 directive.status = "rejected_guardrail_topology_locked"
                 return
 
