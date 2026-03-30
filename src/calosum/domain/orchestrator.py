@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -243,7 +244,7 @@ class CalosumAgent:
             from dataclasses import asdict
             capabilities_dict = asdict(self.capability_snapshot)
 
-        for variant in variants:
+        async def _run_variant(variant: CognitiveVariantSpec) -> CognitiveCandidate:
             variant_started_at = perf_counter()
             tokenizer = self._build_variant_tokenizer(variant)
             left_hemisphere = self._build_variant_left_hemisphere(variant)
@@ -259,7 +260,9 @@ class CalosumAgent:
                 workspace=workspace,
             )
             turn_result.latency_ms = round((perf_counter() - variant_started_at) * 1000.0, 3)
-            candidates.append(CognitiveCandidate(variant=variant, turn_result=turn_result))
+            return CognitiveCandidate(variant=variant, turn_result=turn_result)
+
+        candidates = list(await asyncio.gather(*(_run_variant(variant) for variant in variants)))
 
         reflection = await maybe_await(
             self.execution_engine.call_component(

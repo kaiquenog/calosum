@@ -202,7 +202,8 @@ class AgentExecutionEngine:
             needs_observation_loop = is_valid and has_observations
 
             if (is_valid and not needs_observation_loop) or retry_count >= self.max_runtime_retries or foraging_steps >= 5:
-                return current_result, all_execution_results, retry_count, critique_revision_count
+                finalized_result = self._ensure_response_text(current_result, all_execution_results)
+                return finalized_result, all_execution_results, retry_count, critique_revision_count
 
             if not is_valid:
                 retry_count += 1
@@ -418,6 +419,50 @@ class AgentExecutionEngine:
             feedback.extend([f"CRITIQUE_ISSUE: {issue}" for issue in critique_verdict.identified_issues])
             feedback.extend([f"SUGGESTED_FIX: {fix}" for fix in critique_verdict.suggested_fixes])
         return feedback
+
+    def _ensure_response_text(
+        self,
+        left_result: LeftHemisphereResult,
+        execution_results: list[ActionExecutionResult],
+    ) -> LeftHemisphereResult:
+        if left_result.response_text.strip():
+            return left_result
+
+        fallback_text = self._fallback_text_from_execution(execution_results)
+        if not fallback_text:
+            return left_result
+
+        reasoning_summary = list(left_result.reasoning_summary)
+        reasoning_summary.append("response_text_fallback=runtime_output")
+        return replace(left_result, response_text=fallback_text, reasoning_summary=reasoning_summary)
+
+    def _fallback_text_from_execution(
+        self,
+        execution_results: list[ActionExecutionResult],
+    ) -> str | None:
+        for result in reversed(execution_results):
+            if result.status != "executed":
+                continue
+            if result.action_type == "respond_text":
+                text = str(result.output.get("message") or result.output.get("result") or "").strip()
+                if text:
+                    return text
+
+        for result in reversed(execution_results):
+            if result.status != "executed" or result.action_type != "propose_plan":
+                continue
+            steps = result.output.get("steps")
+            if isinstance(steps, list) and steps:
+                rendered = " ".join(f"{index + 1}. {str(step).strip()}" for index, step in enumerate(steps[:3]))
+                if rendered:
+                    return f"Plano sugerido: {rendered}"
+            step_count = result.output.get("step_count")
+            if isinstance(step_count, int) and step_count > 0:
+                return f"Plano preparado com {step_count} passos."
+
+        if any(result.status == "executed" for result in execution_results):
+            return "Execucao concluida com sucesso. Posso detalhar os proximos passos."
+        return None
 
     def _supports_workspace_kwarg(self, method: Any) -> bool:
         try:

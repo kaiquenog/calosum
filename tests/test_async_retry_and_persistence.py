@@ -114,6 +114,36 @@ class MockLeftHemisphere:
     async def arepair(self, *args, **kwargs):
         return self.reason(*args[:3])
 
+
+class EmptyResponseLeftHemisphere:
+    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+        return LeftHemisphereResult(
+            response_text="",
+            lambda_program=TypedLambdaProgram(
+                "Context -> Plan",
+                "lambda _: propose_plan()",
+                "plan",
+            ),
+            actions=[
+                PrimitiveAction(
+                    action_type="propose_plan",
+                    typed_signature="Context -> Plan",
+                    payload={"steps": ["Mapear demandas", "Priorizar", "Executar primeiro bloco"]},
+                    safety_invariants=["safe"],
+                )
+            ],
+            reasoning_summary=[],
+        )
+
+    async def areason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+        return self.reason(user_turn, bridge_packet, memory_context, runtime_feedback, attempt)
+
+    def repair(self, *args, **kwargs):
+        return self.reason(*args[:3])
+
+    async def arepair(self, *args, **kwargs):
+        return self.reason(*args[:3])
+
 class AsyncRetryAndPersistenceTests(unittest.IsolatedAsyncioTestCase):
     async def test_async_pipeline_retries_after_runtime_rejection(self) -> None:
         agent = CalosumAgent(
@@ -137,6 +167,24 @@ class AsyncRetryAndPersistenceTests(unittest.IsolatedAsyncioTestCase):
         )
         dashboard = agent.cognitive_dashboard("async-session")
         self.assertEqual(dashboard["decision"][0]["runtime_retry_count"], 1)
+
+    async def test_empty_response_text_is_filled_from_runtime_execution(self) -> None:
+        agent = CalosumAgent(
+            left_hemisphere=EmptyResponseLeftHemisphere(),
+            config=CalosumAgentConfig(max_runtime_retries=0),
+        )
+
+        result = await agent.aprocess_turn(
+            UserTurn(session_id="fallback-session", user_text="Me de um plano curto.")
+        )
+
+        self.assertTrue(result.left_result.response_text.strip())
+        self.assertIn("Plano", result.left_result.response_text)
+        self.assertIn(
+            "response_text_fallback=runtime_output",
+            result.left_result.reasoning_summary,
+        )
+        self.assertTrue(any(item.status == "executed" for item in result.execution_results))
 
     async def test_persistent_memory_and_otlp_sink_survive_reloads(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

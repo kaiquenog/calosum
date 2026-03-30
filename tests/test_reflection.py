@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -175,6 +176,109 @@ class ReflectionTests(unittest.TestCase):
         )
         self.assertTrue(
             any("fronteira de acoes" in directive for directive in directives_by_variant["pragmatico"])
+        )
+
+    def test_group_turn_executes_variants_in_parallel(self) -> None:
+        class StaticRightHemisphere:
+            def perceive(self, user_turn, memory_context=None, workspace=None):
+                return RightHemisphereState(
+                    context_id=user_turn.turn_id,
+                    latent_vector=[0.05] * 16,
+                    salience=0.7,
+                    emotional_labels=["ansioso"],
+                    world_hypotheses={"interaction_complexity": 0.9, "urgency": 0.7},
+                    confidence=0.8,
+                    surprise_score=0.95,
+                    telemetry={},
+                )
+
+            async def aperceive(self, user_turn, memory_context=None, workspace=None):
+                return self.perceive(user_turn, memory_context, workspace)
+
+        class SlowLeftHemisphere:
+            async def areason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
+                await asyncio.sleep(0.12)
+                return LeftHemisphereResult(
+                    response_text="ok",
+                    lambda_program=TypedLambdaProgram(
+                        "Context -> Response",
+                        "lambda _: emit('respond_text')",
+                        "respond",
+                    ),
+                    actions=[
+                        PrimitiveAction(
+                            "respond_text",
+                            "ResponsePlan -> SafeTextMessage",
+                            {"text": "ok"},
+                            ["safe output only"],
+                        )
+                    ],
+                    reasoning_summary=["slow_reasoner"],
+                    telemetry={},
+                )
+
+            def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
+                return LeftHemisphereResult(
+                    response_text="ok",
+                    lambda_program=TypedLambdaProgram(
+                        "Context -> Response",
+                        "lambda _: emit('respond_text')",
+                        "respond",
+                    ),
+                    actions=[
+                        PrimitiveAction(
+                            "respond_text",
+                            "ResponsePlan -> SafeTextMessage",
+                            {"text": "ok"},
+                            ["safe output only"],
+                        )
+                    ],
+                    reasoning_summary=["slow_reasoner"],
+                    telemetry={},
+                )
+
+            async def arepair(self, *args, **kwargs):
+                return await self.areason(*args[:3], runtime_feedback=kwargs.get("critique_feedback"))
+
+            def repair(self, *args, **kwargs):
+                return self.reason(*args[:3], runtime_feedback=kwargs.get("critique_feedback"))
+
+        agent = CalosumAgent(
+            right_hemisphere=StaticRightHemisphere(),
+            left_hemisphere=SlowLeftHemisphere(),
+        )
+        turn = UserTurn(session_id="parallel-session", user_text="Executar variantes em paralelo.")
+        variants = [
+            CognitiveVariantSpec(variant_id="a"),
+            CognitiveVariantSpec(variant_id="b"),
+            CognitiveVariantSpec(variant_id="c"),
+        ]
+
+        result = agent.process_group_turn(turn, variants)
+        total_candidate_latency = sum(candidate.turn_result.latency_ms for candidate in result.candidates)
+
+        self.assertGreater(total_candidate_latency, 0.0)
+        self.assertLess(result.selected_result.latency_ms, total_candidate_latency * 0.7)
+
+    def test_reflection_controller_updates_bandit_registry(self) -> None:
+        agent = CalosumAgent()
+        turn = UserTurn(
+            session_id="bandit-session",
+            user_text="Estou ansioso e preciso de um plano tecnico urgente.",
+        )
+        variants = [
+            CognitiveVariantSpec(variant_id="analitico_v1"),
+            CognitiveVariantSpec(variant_id="empatico_v1"),
+        ]
+
+        result = agent.process_group_turn(turn, variants)
+        snapshot = agent.reflection_controller.strategy_registry_snapshot()
+
+        self.assertIn("emotional", snapshot)
+        self.assertIn(result.reflection.selected_variant_id, snapshot["emotional"])
+        self.assertEqual(
+            snapshot["emotional"][result.reflection.selected_variant_id]["n_pulls"],
+            1.0,
         )
 
 
