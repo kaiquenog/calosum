@@ -37,6 +37,9 @@ Available Action Types (Use exactly these action_type values):
 - "load_semantic_rules": {{ "rules": ["grounding rule 1", "grounding rule 2"] }}
 - "search_web": {{ "query": "search keywords" }}
 - "write_file": {{ "path": "file/path.txt", "content": "file content" }}
+- "read_file": {{ "path": "file/path.txt" }}
+- "execute_bash": {{ "command": "ls -la" }}
+- "introspect_self": {{ "query": "status" }}
 - "code_execution": {{ "code": "print(sum(range(5)))", "approved": true }}
 - "http_request": {{ "method": "GET", "url": "https://example.com/api" }}
 """.strip()
