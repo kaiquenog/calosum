@@ -142,7 +142,12 @@ class DSPyNightTrainer:
         if optimizer_class is None:
             raise RuntimeError("DSPy optimizer GEPA/MIPROv2 unavailable")
 
-        kwargs = {"metric": _training_metric, "max_iterations": 6, "max_iters": 6}
+        kwargs = {
+            "metric": _training_metric,
+            "max_iterations": 6,
+            "max_iters": 6,
+            "max_metric_calls": 96,
+        }
         return optimizer_class(**_filter_kwargs(optimizer_class, kwargs)), optimizer_name
 
     def _compile_program(self, optimizer: Any, program: Any, trainset: list[Any]) -> Any:
@@ -212,7 +217,13 @@ class DSPyNightTrainer:
         ]
 
 
-def _training_metric(example: Any, prediction: Any, trace: Any = None) -> float:
+def _training_metric(
+    example: Any,
+    prediction: Any,
+    trace: Any = None,
+    pred_name: str | None = None,
+    pred_trace: Any = None,
+) -> float:
     expected = _coerce_mapping_value(example, "response_text")
     actual = _coerce_mapping_value(prediction, "response_text") or _coerce_mapping_value(prediction, "answer")
     actions = _coerce_mapping_value(prediction, "actions")

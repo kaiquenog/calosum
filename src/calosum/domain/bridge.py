@@ -223,6 +223,7 @@ class CognitiveTokenizer:
 
         return CognitiveBridgePacket(
             context_id=right_state.context_id,
+            latent_vector=right_state.latent_vector,
             soft_prompts=tokens,
             control=control,
             salience=calibrated_salience,

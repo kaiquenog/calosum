@@ -246,6 +246,7 @@ class CognitiveBridgePacket:
     soft_prompts: list[SoftPromptToken]
     control: BridgeControlSignal
     salience: float
+    latent_vector: list[float] = field(default_factory=list)
     bridge_metadata: dict[str, Any] = field(default_factory=dict)
 
 

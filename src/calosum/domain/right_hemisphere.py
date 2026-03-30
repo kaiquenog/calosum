@@ -42,8 +42,13 @@ class RightHemisphereJEPA:
     interface de comunicacao com os demais modulos.
     """
 
-    def __init__(self, config: RightHemisphereJEPAConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: RightHemisphereJEPAConfig | None = None,
+        vision_adapter: VisionEmbeddingPort | None = None,
+    ) -> None:
         self.config = config or RightHemisphereJEPAConfig()
+        self.vision_adapter = vision_adapter
         self._salience_history_by_session: dict[str, list[float]] = defaultdict(list)
 
     def perceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
@@ -51,13 +56,22 @@ class RightHemisphereJEPA:
         latent_vector = self._latent_from_seed(seed, self.config.latent_size)
         emotional_labels = self._extract_emotional_labels(user_turn)
         raw_salience = self._estimate_salience(user_turn, emotional_labels)
+        
+        # Process visual signals if present
+        visual_latents: list[float] = []
+        if self.vision_adapter:
+            for signal in user_turn.signals:
+                if signal.modality == Modality.VIDEO and isinstance(signal.payload, bytes):
+                    visual_latents.extend(self.vision_adapter.embed_image(signal.payload))
+
         runtime_feedback_bias = self._runtime_feedback_bias(workspace)
         salience = self._calibrate_salience(user_turn.session_id, min(1.0, raw_salience + runtime_feedback_bias))
         world_hypotheses = {
             "interaction_complexity": min(1.0, len(user_turn.user_text) / 240.0),
             "sensor_diversity": min(1.0, len(user_turn.signals) / 6.0),
+            "visual_richness": min(1.0, len(visual_latents) / 1024.0),
             "urgency": salience,
-            "semantic_density": 0.5,  # Placeholder for V2 latents density
+            "semantic_density": 0.5 + (0.1 if visual_latents else 0.0),
             "operational_risk": runtime_feedback_bias,
         }
 

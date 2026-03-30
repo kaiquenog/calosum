@@ -57,7 +57,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("capabilities", data["info"])
         self.assertGreater(len(data["info"]["capabilities"]["tools"]), 0)
         self.assertIn("routing_resolution", data["info"])
-        self.assertEqual(data["info"]["routing_resolution"]["perception"]["active_model"], "jepa")
+        self.assertEqual(data["info"]["routing_resolution"]["perception"]["active"], "jepa")
 
     def test_system_architecture_returns_self_model(self) -> None:
         response = self.client.get("/v1/system/architecture")

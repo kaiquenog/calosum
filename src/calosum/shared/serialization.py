@@ -22,6 +22,21 @@ def to_primitive(value: Any) -> Any:
         return {str(key): to_primitive(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [to_primitive(item) for item in value]
+    
+    # NumPy support
+    try:
+        import numpy as np
+        if isinstance(value, np.ndarray):
+            if value.ndim == 0: # Handle 0-d arrays
+                return to_primitive(value.item())
+            return [to_primitive(item) for item in value.tolist()]
+        if isinstance(value, (np.generic, np.number, np.bool_)):
+            return value.item()
+        if hasattr(value, "dtype"): # Generic catch-all for remaining numpy scalars
+            return value.item()
+    except (ImportError, AttributeError):
+        pass
+        
     return value
 
 

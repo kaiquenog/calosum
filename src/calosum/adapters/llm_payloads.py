@@ -228,3 +228,48 @@ def extract_chat_content(data: dict[str, Any]) -> str:
         end_idx = content.rfind("}") + 1
         content = content[start_idx:end_idx]
     return content.strip()
+
+
+def build_openai_responses_payload(prompt: str, model: str, max_tokens: int, reasoning_effort: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": model,
+        "input_text": prompt,
+        "output_format": "json_object",
+        "parameters": {"max_new_tokens": max_tokens, "temperature": 0.1, "top_p": 0.9},
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "strict": False,
+                "json_schema": {
+                    "name": "left_hemisphere_result",
+                    "schema": left_hemisphere_result_schema()
+                }
+            }
+        },
+    }
+    if reasoning_effort:
+        payload["reasoning"] = {"effort": reasoning_effort}
+    return payload
+
+def build_openai_chat_payload(prompt: str, model: str, max_tokens: int) -> dict[str, Any]:
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a logical neuro-symbolic agent. Output valid JSON only, corresponding to LeftHemisphereResult format."},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+        "temperature": 0.1,
+    }
+
+def build_compatible_chat_payload(prompt: str, model: str, max_tokens: int) -> dict[str, Any]:
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a logical neuro-symbolic agent. Output valid JSON only."},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }

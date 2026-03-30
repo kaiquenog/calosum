@@ -12,7 +12,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from calosum.adapters.llm_payloads import (
     augment_prompt_with_compiled_artifact,
+    build_compatible_chat_payload,
     build_left_hemisphere_prompt,
+    build_openai_chat_payload,
+    build_openai_responses_payload,
     extract_chat_content,
     extract_responses_content,
     left_hemisphere_result_schema,
@@ -235,25 +238,19 @@ class QwenLeftHemisphereAdapter:
 
         if api_mode == "openai_responses":
             return {
-                "api_mode": api_mode,
-                "resolved_model": resolved_model,
-                "url": self._responses_url(),
-                "payload": self._responses_payload(prompt, resolved_model),
+                "api_mode": api_mode, "resolved_model": resolved_model,
+                "url": self._responses_url(), "payload": build_openai_responses_payload(prompt, resolved_model, self.config.max_tokens, self.config.reasoning_effort),
             }
 
         if api_mode == "openai_chat":
             return {
-                "api_mode": api_mode,
-                "resolved_model": resolved_model,
-                "url": self._chat_completions_url(),
-                "payload": self._openai_chat_payload(prompt, resolved_model),
+                "api_mode": api_mode, "resolved_model": resolved_model,
+                "url": self._chat_completions_url(), "payload": build_openai_chat_payload(prompt, resolved_model, self.config.max_tokens),
             }
 
         return {
-            "api_mode": "openai_compatible_chat",
-            "resolved_model": resolved_model,
-            "url": self._chat_completions_url(),
-            "payload": self._compatible_chat_payload(prompt, resolved_model),
+            "api_mode": api_mode, "resolved_model": resolved_model,
+            "url": self._chat_completions_url(), "payload": build_compatible_chat_payload(prompt, resolved_model, self.config.max_tokens),
         }
 
     def _resolve_api_mode(self) -> str:
@@ -302,69 +299,6 @@ class QwenLeftHemisphereAdapter:
         if base.endswith("/v1"):
             return f"{base}/chat/completions"
         return f"{base}/v1/chat/completions"
-
-    def _responses_payload(self, prompt: str, resolved_model: str) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "model": resolved_model,
-            "instructions": (
-                "You are a logical neuro-symbolic agent. Return JSON that matches the "
-                "requested schema exactly."
-            ),
-            "input": prompt,
-            "max_output_tokens": self.config.max_tokens,
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "left_hemisphere_result",
-                    "strict": False,
-                    "schema": left_hemisphere_result_schema(),
-                }
-            },
-        }
-        if self.config.reasoning_effort:
-            payload["reasoning"] = {"effort": self.config.reasoning_effort}
-        return payload
-
-    def _openai_chat_payload(self, prompt: str, resolved_model: str) -> dict[str, Any]:
-        return {
-            "model": resolved_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a logical neuro-symbolic agent. Return JSON that matches "
-                        "the requested schema exactly."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": self.config.max_tokens,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "left_hemisphere_result",
-                    "strict": False,
-                    "schema": left_hemisphere_result_schema(),
-                },
-            },
-        }
-
-    def _compatible_chat_payload(self, prompt: str, resolved_model: str) -> dict[str, Any]:
-        return {
-            "model": resolved_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a logical neuro-symbolic agent. Output valid JSON only, "
-                        "corresponding to LeftHemisphereResult format."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": self.config.max_tokens,
-            "response_format": {"type": "json_object"},
-        }
 
     def _extract_content(self, data: dict[str, Any], api_mode: str) -> str:
         if api_mode == "openai_responses":

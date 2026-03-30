@@ -12,9 +12,11 @@ from calosum.adapters.llm_failover import ResilientLeftHemisphereAdapter
 from calosum.adapters.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.adapters.telemetry_otlp import OTLPHTTPTraceSink
 from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
+from calosum.domain.event_bus import InternalEventBus
 from calosum.domain.evolution import JsonlEvolutionArchive
 from calosum.domain.memory import DualMemorySystem, InMemorySemanticGraphStore
 from calosum.domain.orchestrator import CalosumAgent, CalosumAgentConfig
+from calosum.domain.introspection_capabilities import CalosumSystemIntrospector
 from calosum.domain.persistent_memory import (
     JsonlEpisodicStore,
     JsonlSemanticStore,
@@ -23,7 +25,10 @@ from calosum.domain.persistent_memory import (
 from calosum.domain.right_hemisphere import RightHemisphereJEPA
 from calosum.bootstrap.settings import InfrastructureProfile, InfrastructureSettings
 from calosum.domain.telemetry import CognitiveTelemetryBus, CompositeTelemetrySink, InMemoryTelemetrySink, OTLPJsonlTelemetrySink
-from calosum.shared.types import CapabilityDescriptor, ComponentHealth, ModelDescriptor
+from calosum.shared.ports import LatentExchangePort, VisionEmbeddingPort
+from calosum.adapters.multimodal_perception import MockVisionAdapter
+from calosum.adapters.latent_exchange import InternalLatentExchangeAdapter
+from calosum.shared.types import CapabilityDescriptor, ComponentHealth
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +42,7 @@ class CalosumAgentBuilder:
     _last_knowledge_graph_backend: str | None = field(default=None, init=False, repr=False)
     _last_right_hemisphere_model_name: str | None = field(default=None, init=False, repr=False)
 
-    def build(self) -> CalosumAgent:
+    def build(self, agent_accessor: Any | None = None) -> CalosumAgent:
         left_hemisphere = self.build_left_hemisphere()
         right_hemisphere = self.build_right_hemisphere()
         from calosum.domain.bridge import CognitiveTokenizer
@@ -46,11 +51,23 @@ class CalosumAgentBuilder:
         if self.settings.bridge_state_dir is not None:
             bridge_store = LocalBridgeStateStore(base_dir=self.settings.bridge_state_dir)
         tokenizer = CognitiveTokenizer(store=bridge_store)
-        action_runtime = ConcreteActionRuntime(vault=self.settings.vault)
+        action_runtime = ConcreteActionRuntime(
+            vault=self.settings.vault,
+            agent_accessor=agent_accessor
+        )
         memory_system = self.build_memory_system()
         telemetry_bus = self.build_telemetry_bus()
         capability_snapshot = self.build_capability_snapshot(action_runtime)
         night_trainer = self.build_night_trainer()
+        
+        # V3: Latent Exchange & Vision
+        latent_exchange = InternalLatentExchangeAdapter(event_bus=self.settings.event_bus or InternalEventBus())
+        vision_adapter = MockVisionAdapter()
+        
+        # Inject vision into right hemisphere if it's the JEPA one
+        if isinstance(right_hemisphere, ActiveInferenceRightHemisphereAdapter):
+            if hasattr(right_hemisphere.base_adapter, "vision_adapter"):
+                right_hemisphere.base_adapter.vision_adapter = vision_adapter
         return CalosumAgent(
             right_hemisphere=right_hemisphere,
             tokenizer=tokenizer,
@@ -62,6 +79,7 @@ class CalosumAgentBuilder:
             capability_snapshot=capability_snapshot,
             evolution_archive=JsonlEvolutionArchive(self.settings.evolution_archive_path),
             night_trainer=night_trainer,
+            latent_exchange=latent_exchange,
         )
 
     def build_left_hemisphere(self):
@@ -216,7 +234,10 @@ class CalosumAgentBuilder:
         return embedder
 
     def _build_agent_config(self) -> CalosumAgentConfig:
-        return CalosumAgentConfig(awareness_interval_turns=self.settings.awareness_interval_turns)
+        return CalosumAgentConfig(
+            awareness_interval_turns=self.settings.awareness_interval_turns,
+            episode_volume_threshold=50 # V3 Default
+        )
 
     def _build_single_left_hemisphere(
         self,
@@ -240,59 +261,7 @@ class CalosumAgentBuilder:
         return QwenLeftHemisphereAdapter()
 
     def build_capability_snapshot(self, action_runtime: Any | None = None) -> CapabilityDescriptor:
-        from calosum.shared.types import RoutingPolicy
-        right_health = self._right_hemisphere_health()
-        right_model = ModelDescriptor(
-            provider="huggingface_local" if "huggingface" in self._right_hemisphere_backend_name() else "local",
-            model_name=self._right_hemisphere_model_name(),
-            backend=self._right_hemisphere_backend_name(),
-            health=right_health,
-        )
-        left_model = ModelDescriptor(
-            provider=self.settings.left_hemisphere_provider or "auto",
-            model_name=self._reason_model_name(),
-            backend=self._left_hemisphere_backend_name(),
-            health=ComponentHealth.HEALTHY,
-        )
-        embedding_model = None
-        if self._embedding_backend_name():
-            embedding_model = ModelDescriptor(
-                provider=self._derived_embedding_provider() or "auto",
-                model_name=self._derived_embedding_model() or "auto",
-                backend=self._embedding_backend_name() or "auto",
-                health=ComponentHealth.HEALTHY,
-            )
-        kg_model = ModelDescriptor(
-            provider="local",
-            model_name="nanorag",
-            backend=self._knowledge_graph_backend_name(),
-            health=self._knowledge_graph_health(),
-        )
-        tools = []
-        if action_runtime:
-            tools = action_runtime.get_registered_tools()
-        routing_policy = RoutingPolicy(
-            perception_model=self.settings.perception_model or right_model.model_name,
-            reason_model=self.settings.reason_model or left_model.model_name,
-            reflection_model=self.settings.reflection_model or left_model.model_name,
-            verifier_model=self.settings.verifier_model,
-        )
-        healths = {right_health, left_model.health, kg_model.health}
-        overall_health = ComponentHealth.HEALTHY
-        if ComponentHealth.UNAVAILABLE in healths:
-            overall_health = ComponentHealth.UNAVAILABLE
-        elif ComponentHealth.DEGRADED in healths:
-            overall_health = ComponentHealth.DEGRADED
-
-        return CapabilityDescriptor(
-            right_hemisphere=right_model,
-            left_hemisphere=left_model,
-            embeddings=embedding_model,
-            knowledge_graph=kg_model,
-            tools=tools,
-            routing_policy=routing_policy,
-            health=overall_health,
-        )
+        return CalosumSystemIntrospector.build_capability_snapshot(self, action_runtime)
 
     def build_night_trainer(self) -> Any:
         import os
@@ -310,48 +279,7 @@ class CalosumAgentBuilder:
         )
 
     def describe(self, agent: CalosumAgent | None = None) -> dict[str, Any]:
-        action_runtime = getattr(agent, "action_runtime", None) if agent is not None else None
-        snapshot = agent.capability_snapshot if agent is not None else None
-        if snapshot is None:
-            snapshot = self.build_capability_snapshot(action_runtime)
-        return {
-            "pattern": "ports_and_adapters_with_builder_factory",
-            "profile": self.settings.profile.value,
-            "capabilities": asdict(snapshot),
-            "memory_backend": self._memory_backend_name(),
-            "telemetry_backend": self._telemetry_backend_name(),
-            "right_hemisphere_backend": self._right_hemisphere_backend_name(),
-            "left_hemisphere_backend": self._left_hemisphere_backend_name(),
-            "action_runtime": "concrete_adapter",
-            "memory_dir": str(self.settings.memory_dir) if self.settings.memory_dir else None,
-            "otlp_jsonl": str(self.settings.otlp_jsonl) if self.settings.otlp_jsonl else None,
-            "vector_db_url": self.settings.vector_db_url,
-            "duckdb_path": str(self.settings.duckdb_path) if self.settings.duckdb_path else None,
-            "bridge_state_dir": str(self.settings.bridge_state_dir) if self.settings.bridge_state_dir else None,
-            "evolution_archive_path": (
-                str(self.settings.evolution_archive_path)
-                if self.settings.evolution_archive_path
-                else None
-            ),
-            "awareness_interval_turns": self.settings.awareness_interval_turns,
-            "otel_collector_endpoint": self.settings.otel_collector_endpoint,
-            "jaeger_ui_url": self.settings.jaeger_ui_url,
-            "right_hemisphere_endpoint": self.settings.right_hemisphere_endpoint,
-            "left_hemisphere_endpoint": self.settings.left_hemisphere_endpoint,
-            "left_hemisphere_model": self._reason_model_name(),
-            "left_hemisphere_provider": self.settings.left_hemisphere_provider,
-            "left_hemisphere_reasoning_effort": self.settings.left_hemisphere_reasoning_effort,
-            "left_hemisphere_failover_enabled": bool(self.settings.left_hemisphere_fallback_endpoint),
-            "left_hemisphere_fallback_endpoint": self.settings.left_hemisphere_fallback_endpoint,
-            "left_hemisphere_fallback_model": self.settings.left_hemisphere_fallback_model,
-            "left_hemisphere_fallback_provider": self.settings.left_hemisphere_fallback_provider,
-            "knowledge_graph_backend": self._knowledge_graph_backend_name(),
-            "embedding_backend": self._embedding_backend_name(),
-            "embedding_endpoint": self.settings.embedding_endpoint or self._derived_embedding_endpoint(),
-            "embedding_model": self.settings.embedding_model or self._derived_embedding_model(),
-            "embedding_provider": self.settings.embedding_provider or self._derived_embedding_provider(),
-            "routing_resolution": self._routing_resolution(snapshot),
-        }
+        return CalosumSystemIntrospector.describe(self, agent)
 
     def _memory_backend_name(self) -> str:
         if self.settings.vector_db_url:
@@ -411,48 +339,14 @@ class CalosumAgentBuilder:
         return Path(".calosum-runtime")
 
     def _routing_resolution(self, snapshot: CapabilityDescriptor) -> dict[str, dict[str, Any]]:
-        right_model = snapshot.right_hemisphere
-        left_model = snapshot.left_hemisphere
-        reflection_requested = self.settings.reflection_model or left_model.model_name if left_model else None
-        reflection_shared = left_model is not None and reflection_requested == left_model.model_name
-        verifier_requested = self.settings.verifier_model
+        r_m, l_m = snapshot.right_hemisphere, snapshot.left_hemisphere
+        refl_req = self.settings.reflection_model or l_m.model_name if l_m else None
+        refl_sh = l_m is not None and refl_req == l_m.model_name
         return {
-            "perception": {
-                "requested_model": self.settings.perception_model or right_model.model_name if right_model else None,
-                "active_model": right_model.model_name if right_model else None,
-                "backend": right_model.backend if right_model else None,
-                "available": right_model.health != ComponentHealth.UNAVAILABLE if right_model else False,
-            },
-            "reason": {
-                "requested_model": self.settings.reason_model or left_model.model_name if left_model else None,
-                "active_model": left_model.model_name if left_model else None,
-                "backend": left_model.backend if left_model else None,
-                "available": left_model.health != ComponentHealth.UNAVAILABLE if left_model else False,
-            },
-            "reflection": {
-                "requested_model": reflection_requested,
-                "active_model": left_model.model_name if reflection_shared and left_model else None,
-                "backend": left_model.backend if reflection_shared and left_model else None,
-                "available": reflection_shared and left_model is not None and left_model.health != ComponentHealth.UNAVAILABLE,
-                "shared_with_reasoning": reflection_shared,
-                "note": (
-                    "shared reasoning backend"
-                    if reflection_shared
-                    else "dedicated reflection route not implemented"
-                ),
-            },
-            "verifier": {
-                "requested_model": verifier_requested,
-                "active_model": "heuristic_verifier" if verifier_requested is None else None,
-                "backend": "heuristic_verifier",
-                "available": verifier_requested is None,
-                "shared_with_reasoning": False,
-                "note": (
-                    "heuristic verifier active"
-                    if verifier_requested is None
-                    else "dedicated verifier model route not implemented"
-                ),
-            },
+            "perception": {"active": r_m.model_name if r_m else None, "backend": r_m.backend if r_m else None},
+            "reason": {"active": l_m.model_name if l_m else None, "backend": l_m.backend if l_m else None},
+            "reflection": {"active": l_m.model_name if refl_sh and l_m else None, "shared": refl_sh},
+            "verifier": {"active": "heuristic_verifier", "shared": False},
         }
 
     def _left_hemisphere_backend_name_from_settings(self) -> str:

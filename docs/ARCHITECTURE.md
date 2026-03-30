@@ -20,8 +20,8 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
    Modelos de negócios do agente neuro-simbólico. Pura lógica sem detalhes I/O diretos. `agent_execution.py` concentra o loop de retry/repair; `orchestrator.py` decide entre turno simples e group turn via threshold de surpresa/ambiguidade.
 3. **`adapters/`** (`action_runtime.py`, `active_inference.py`, `bridge_store.py`, `channel_telegram.py`, `knowledge_graph_nanorag.py`, `llm_failover.py`, `llm_payloads.py`, `llm_qwen.py`, `memory_qdrant.py`, `night_trainer.py`, `night_trainer_dspy.py`, `night_trainer_lora.py`, `right_hemisphere_hf.py`, `text_embeddings.py`, `tools/code_execution.py`, `tools/http_request.py`)
    Implementações concretas dos ports. Todo código que depende de SDKs externos (torch, transformers, peft, qdrant-client, dspy, openai, httpx, telegram) reside aqui exclusivamente.
-4. **`bootstrap/`** (`settings.py`, `factory.py`, `cli.py`, `api.py`, `__main__.py`)
-   Entrada da aplicação. `factory.py` instancia adapters, constrói `capability_snapshot` real e injeta tudo no domain via `CalosumAgentBuilder`. É o único ponto autorizado a acoplar adapters e domain.
+4. **`bootstrap/`** (`settings.py`, `factory.py`, `context.py`, `cli.py`, `api.py`, `routers/system.py`, `routers/chat.py`, `routers/telemetry.py`, `__main__.py`)
+   Entrada da aplicação. `factory.py` instancia adapters, constrói `capability_snapshot` real e injeta tudo no domain via `CalosumAgentBuilder`. `context.py` concentra singletons/cache e resolução de settings para API. `routers/*` mantém as rotas FastAPI segmentadas por domínio HTTP. O pacote `bootstrap` segue sendo o único ponto autorizado a acoplar adapters e domain.
 
 ## Governanca de Harness
 
@@ -40,6 +40,7 @@ O projeto também possui um componente frontend na pasta `ui/` construído com R
 - Pacote `adapters` obedece cegamente a interface em `shared`. Não toma decisões fora de traduzir a infra.
 - Pacote `bootstrap` é o único capaz e autorizado a instanciar `adapters` concretos injetando-os nas instâncias do `domain` de acordo com configs do painel `settings.py`.
 - Quando um adapter opcional de infraestrutura local não estiver disponível, o `bootstrap` deve preferir fallback explícito a falha dura sempre que isso não quebrar o contrato funcional.
+- Dependências opcionais de canais externos (ex.: Telegram) devem degradar graciosamente no bootstrap, preservando a disponibilidade da API principal.
 - O agente tem uma entrada limpa e orquestrada pelo `orchestrator.py`. Interações isoladas da `cli.py` ou `api.py` não vazam contexto pro `domain`.
 
 ## Crescimento Controlado

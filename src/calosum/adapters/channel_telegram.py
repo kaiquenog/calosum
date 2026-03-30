@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import logging
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+try:
+    from telegram import Update
+    from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+    _TELEGRAM_IMPORT_ERROR: Exception | None = None
+except Exception as exc:  # pragma: no cover - optional dependency path
+    Update = Any  # type: ignore[assignment]
+    ContextTypes = Any  # type: ignore[assignment]
+    ApplicationBuilder = None  # type: ignore[assignment]
+    MessageHandler = None  # type: ignore[assignment]
+    filters = None  # type: ignore[assignment]
+    _TELEGRAM_IMPORT_ERROR = exc
 
 from calosum.shared.types import UserTurn
 
@@ -25,6 +34,10 @@ class TelegramChannelAdapter:
         dm_policy: str = "open",
         allowlist_ids: list[str] | None = None,
     ) -> None:
+        if _TELEGRAM_IMPORT_ERROR is not None:
+            raise RuntimeError(
+                "python-telegram-bot optional dependency is unavailable"
+            ) from _TELEGRAM_IMPORT_ERROR
         self.token = token
         self.app = ApplicationBuilder().token(self.token).build()
         self._on_message_callback: Callable[[UserTurn], Awaitable[None]] | None = None

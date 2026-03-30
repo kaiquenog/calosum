@@ -2,13 +2,144 @@ from __future__ import annotations
 
 import json
 import uuid
+import logging
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from calosum.shared.ports import ActionRuntimePort, RightHemispherePort
+    from calosum.domain.agent_config import CalosumAgentConfig
 
 from calosum.shared.types import DirectiveType, EvolutionDirective, SessionDiagnostic, utc_now
+
+logger = logging.getLogger(__name__)
+
+
+class EvolutionManager:
+    """
+    Gerencia o ciclo de vida de diretivas e diagnósticos de evolução.
+    Encapsula aplicação de mudanças e persistência.
+    """
+
+    def __init__(
+        self,
+        archive: JsonlEvolutionArchive | None = None,
+        proposer: EvolutionProposer | None = None,
+    ) -> None:
+        self.archive = archive
+        self.proposer = proposer or EvolutionProposer()
+        self.pending_directives: list[EvolutionDirective] = (
+            self.archive.load_pending_directives() if self.archive else []
+        )
+        self.approved_prompt_directives: list[str] = (
+            self.archive.load_applied_prompt_directives() if self.archive else []
+        )
+
+    def queue_directive(self, directive: EvolutionDirective) -> None:
+        fingerprint = self._fingerprint(directive)
+        existing = {
+            self._fingerprint(item)
+            for item in self.pending_directives
+            if item.status == "pending"
+        }
+        if fingerprint in existing:
+            return
+        directive.status = "pending"
+        self.pending_directives.append(directive)
+        if self.archive:
+            self.archive.record_directive(directive, event="queued")
+
+    def apply_pending_directive(
+        self, directive_id: str, context: Any
+    ) -> EvolutionDirective | None:
+        directive = next(
+            (item for item in self.pending_directives if item.directive_id == directive_id),
+            None,
+        )
+        if directive is None:
+            return None
+        self.pending_directives = [
+            item for item in self.pending_directives if item.directive_id != directive_id
+        ]
+        self.apply_directive(directive, context)
+        if self.archive:
+            self.archive.record_directive(directive, event="manual_apply")
+        return directive
+
+    def apply_directive(self, directive: EvolutionDirective, context: Any) -> None:
+        """
+        Aplica as mudanças descritas na diretiva ao contexto do agente.
+        """
+        from calosum.domain.directive_guardrails import (
+            apply_controlled_right_hemisphere_params,
+            apply_runtime_contract_audit_directive,
+        )
+
+        target, changes = directive.target_component, directive.proposed_change
+        try:
+            if directive.directive_type in {DirectiveType.TOPOLOGY, DirectiveType.ARCHITECTURE}:
+                if apply_runtime_contract_audit_directive(context.action_runtime, directive):
+                    return
+                directive.status = "rejected_guardrail_topology_locked"
+                return
+
+            if directive.directive_type == DirectiveType.PARAMETER and target == "orchestrator":
+                for k, v in changes.items():
+                    if hasattr(context.config, k):
+                        setattr(context.config, k, v)
+                directive.status = "applied"
+            elif (
+                directive.directive_type == DirectiveType.PARAMETER
+                and target == "orchestrator.branching_budget"
+            ):
+                for k, v in changes.items():
+                    if hasattr(context.config.branching_budget, k):
+                        setattr(context.config.branching_budget, k, v)
+                directive.status = "applied"
+            elif directive.directive_type == DirectiveType.PARAMETER and target == "bridge":
+                if hasattr(context.tokenizer, "config"):
+                    for k, v in changes.items():
+                        if hasattr(context.tokenizer.config, k):
+                            setattr(context.tokenizer.config, k, v)
+                    directive.status = "applied"
+            elif (
+                directive.directive_type == DirectiveType.PARAMETER
+                and target == "right_hemisphere"
+            ):
+                applied, rejected = apply_controlled_right_hemisphere_params(
+                    context.right_hemisphere, changes
+                )
+                directive.proposed_change = {
+                    **changes,
+                    "_audit": {"applied": applied, "rejected": rejected},
+                }
+                directive.status = "applied" if applied else "rejected_guardrail_no_safe_change"
+            elif directive.directive_type == DirectiveType.PROMPT and target in {
+                "left_hemisphere",
+                "reflection_controller",
+            }:
+                instruction = str(changes.get("instruction", "")).strip()
+                if instruction and instruction not in self.approved_prompt_directives:
+                    self.approved_prompt_directives.append(instruction)
+                directive.status = "applied"
+            else:
+                directive.status = "rejected_guardrail_target_unknown"
+        except Exception as e:
+            logger.error(f"Failed to apply directive {directive.directive_id}: {e}")
+            directive.status = "failed"
+
+    def _fingerprint(self, directive: EvolutionDirective) -> str:
+        return json.dumps(
+            {
+                "directive_type": directive.directive_type.value,
+                "target_component": directive.target_component,
+                "proposed_change": directive.proposed_change,
+            },
+            sort_keys=True,
+        )
 
 
 class EvolutionProposer:

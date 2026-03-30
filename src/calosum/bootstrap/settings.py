@@ -32,6 +32,7 @@ class InfrastructureSettings:
     left_hemisphere_model: str | None = None
     left_hemisphere_provider: str | None = None
     left_hemisphere_reasoning_effort: str | None = None
+    event_bus: Any | None = None
 
     left_hemisphere_fallback_endpoint: str | None = None
     left_hemisphere_fallback_api_key: str | None = None

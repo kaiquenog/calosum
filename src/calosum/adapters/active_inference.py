@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -134,8 +135,9 @@ class ActiveInferenceRightHemisphereAdapter:
         baseline: float,
     ) -> tuple[float, dict[str, Any]]:
         vectors = _recent_vectors(memory_context, expected_size=len(latent_vector))
-        if not latent_vector or not vectors:
-            return baseline or 0.5, {
+        if len(latent_vector) == 0 or len(vectors) == 0:
+            status = baseline if (baseline is not None and not isinstance(baseline, (list, np.ndarray if np else list))) else 0.5
+            return float(status), {
                 "surprise_backend": "active_inference_bootstrap_default",
                 "surprise_engine": "baseline_fallback",
                 "active_inference_states": len(vectors),
@@ -165,18 +167,32 @@ class ActiveInferenceRightHemisphereAdapter:
             # Heuristic Fallback with Pure Python
             backend = "pure_python_vfe_fallback"
             current_vec = list(latent_vector)
-            distances_list = [_cosine_distance_py(current_vec, past) for past in vectors]
-            prior = _recency_prior_py(len(distances_list), self.config.recency_bias)
-            
-            # Simple Softmax
-            posterior = _softmax_py([-self.config.distance_temperature * d for d in distances_list])
-            complexity = sum(p * (math.log(p or 1e-9) - math.log(pr or 1e-9)) for p, pr in zip(posterior, prior))
-            ambiguity = sum(p * d for p, d in zip(posterior, distances_list))
-            novelty = min(distances_list) / 2.0
+            distances = []
+            if len(vectors) > 0:
+                distances_list = [_cosine_distance_py(current_vec, past) for past in vectors]
+                distances = [d for d in distances_list if d is not None]
+                prior = _recency_prior_py(len(distances), self.config.recency_bias)
+                
+                # Simple Softmax
+                posterior = _softmax_py([-self.config.distance_temperature * d for d in distances])
+                complexity = sum(p * (math.log(p or 1e-9) - math.log(pr or 1e-9)) for p, pr in zip(posterior, prior))
+                ambiguity = sum(p * d for p, d in zip(posterior, distances))
+                novelty = min(distances) / 2.0
+            else:
+                complexity, ambiguity, novelty, posterior = 0.0, 0.0, 0.0, []
 
         free_energy = max(0.0, complexity + ambiguity + (self.config.novelty_weight * novelty))
         scale = max(1.0, 1.0 + math.log(len(vectors) + 1))
         normalized = round(float(min(1.0, free_energy / scale)), 3)
+
+        peak = 0.0
+        if len(posterior) > 0:
+            peak = float(np.max(posterior)) if np else max(posterior)
+            
+        alignment = 1.0
+        if len(distances) > 0:
+            min_dist = float(np.min(distances)) if np else min(distances)
+            alignment = 1.0 - (min_dist / 2.0)
 
         return normalized, {
             "surprise_backend": f"active_inference::{backend}",
@@ -186,8 +202,8 @@ class ActiveInferenceRightHemisphereAdapter:
             "free_energy_complexity": round(complexity, 4),
             "free_energy_ambiguity": round(ambiguity, 4),
             "free_energy_novelty": round(novelty, 4),
-            "posterior_peak": round(float(np.max(posterior)), 4),
-            "memory_alignment": round(float(1.0 - (np.min(distances) / 2.0)), 4),
+            "posterior_peak": round(float(peak), 4),
+            "memory_alignment": round(float(alignment), 4),
         }
 
 

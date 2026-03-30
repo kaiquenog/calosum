@@ -21,7 +21,9 @@ from calosum.shared.types import (
     MemoryContext,
     RightHemisphereState,
     UserTurn,
+    CognitiveWorkspace,
 )
+from calosum.domain.execution_utils import build_execution_telemetry, ensure_response_text
 
 
 class AgentExecutionEngine:
@@ -97,15 +99,11 @@ class AgentExecutionEngine:
             }
             await maybe_await(self.call_component(tokenizer, "record_reflection_event", "record_reflection_event", event_payload))
 
-        telemetry = self._build_telemetry(
-            right_state=right_state,
-            bridge_packet=bridge_packet,
-            left_result=left_result,
-            execution_results=execution_results,
-            retry_count=retry_count,
-            critique_revision_count=critique_revision_count,
-            capabilities=capabilities,
-            variant_label=variant_label,
+        telemetry = build_execution_telemetry(
+            right_state=right_state, bridge_packet=bridge_packet,
+            left_result=left_result, execution_results=execution_results,
+            retry_count=retry_count, critique_revision_count=critique_revision_count,
+            capabilities=capabilities, variant_label=variant_label,
         )
         return AgentTurnResult(
             user_turn=user_turn,
@@ -202,7 +200,12 @@ class AgentExecutionEngine:
             needs_observation_loop = is_valid and has_observations
 
             if (is_valid and not needs_observation_loop) or retry_count >= self.max_runtime_retries or foraging_steps >= 5:
-                finalized_result = self._ensure_response_text(current_result, all_execution_results)
+                res_text = ensure_response_text(current_result, all_execution_results)
+                finalized_summary = list(current_result.reasoning_summary)
+                if not current_result.response_text.strip() and res_text.strip():
+                    finalized_summary.append("response_text_fallback=runtime_output")
+                
+                finalized_result = replace(current_result, response_text=res_text, reasoning_summary=finalized_summary)
                 return finalized_result, all_execution_results, retry_count, critique_revision_count
 
             if not is_valid:
@@ -282,75 +285,15 @@ class AgentExecutionEngine:
             )
         )
 
-    def _build_telemetry(
-        self,
-        *,
-        right_state: RightHemisphereState,
-        bridge_packet: CognitiveBridgePacket,
-        left_result: LeftHemisphereResult,
-        execution_results: list[ActionExecutionResult],
-        retry_count: int,
-        critique_revision_count: int,
-        capabilities: dict[str, Any] | None = None,
-        variant_label: str | None = None,
-    ) -> CognitiveTelemetrySnapshot:
-        action_count = len(execution_results)
-        executed_count = sum(1 for result in execution_results if result.status == "executed")
-        rejected_count = sum(1 for result in execution_results if result.status == "rejected")
-        tool_success_rate = round(executed_count / action_count, 3) if action_count else 1.0
-        
-        bridge_config = {
-            "target_temperature": bridge_packet.control.target_temperature,
-            "empathy_priority": bridge_packet.control.empathy_priority,
-            "system_directives_count": len(bridge_packet.control.system_directives),
-        }
-        
-        return CognitiveTelemetrySnapshot(
-            felt={
-                "context_id": right_state.context_id,
-                "emotional_labels": right_state.emotional_labels,
-                "salience": right_state.salience,
-                "world_hypotheses": right_state.world_hypotheses,
-                "surprise_score": right_state.surprise_score,
-                "telemetry": right_state.telemetry,
-            },
-            thought={
-                "lambda_signature": left_result.lambda_program.signature,
-                "reasoning_summary": left_result.reasoning_summary,
-                "system_directives": left_result.telemetry.get("system_directives", []),
-                "runtime_retry_count": retry_count,
-                "critique_revision_count": critique_revision_count,
-                "cognitive_override_detected": any(
-                    "mismatch" in text.lower() or "override" in text.lower() or "false alarm" in text.lower()
-                    for text in left_result.reasoning_summary
-                ),
-            },
-            decision={
-                "response_text": left_result.response_text,
-                "action_types": [action.action_type for action in left_result.actions],
-                "action_count": action_count,
-                "tool_success_rate": tool_success_rate,
-                "runtime_retry_count": retry_count,
-                "runtime_rejected_count": rejected_count,
-                "critique_revision_count": critique_revision_count,
-            },
-            capabilities=capabilities or {},
-            bridge_config=bridge_config,
-            active_variant=variant_label,
-        )
-
     def clone_component_with_overrides(self, component: Any, overrides: dict[str, Any]) -> Any:
         config = getattr(component, "config", None)
-        if config is None:
-            return component
+        if config is None: return component
         cloned_config = replace(config)
-        for key, value in overrides.items():
-            if hasattr(cloned_config, key):
-                setattr(cloned_config, key, value)
+        for k, v in overrides.items():
+            if hasattr(cloned_config, k): setattr(cloned_config, k, v)
         try:
             return component.__class__(config=cloned_config)
-        except TypeError:
-            return component
+        except Exception: return component
 
     def call_component(
         self,
@@ -419,50 +362,6 @@ class AgentExecutionEngine:
             feedback.extend([f"CRITIQUE_ISSUE: {issue}" for issue in critique_verdict.identified_issues])
             feedback.extend([f"SUGGESTED_FIX: {fix}" for fix in critique_verdict.suggested_fixes])
         return feedback
-
-    def _ensure_response_text(
-        self,
-        left_result: LeftHemisphereResult,
-        execution_results: list[ActionExecutionResult],
-    ) -> LeftHemisphereResult:
-        if left_result.response_text.strip():
-            return left_result
-
-        fallback_text = self._fallback_text_from_execution(execution_results)
-        if not fallback_text:
-            return left_result
-
-        reasoning_summary = list(left_result.reasoning_summary)
-        reasoning_summary.append("response_text_fallback=runtime_output")
-        return replace(left_result, response_text=fallback_text, reasoning_summary=reasoning_summary)
-
-    def _fallback_text_from_execution(
-        self,
-        execution_results: list[ActionExecutionResult],
-    ) -> str | None:
-        for result in reversed(execution_results):
-            if result.status != "executed":
-                continue
-            if result.action_type == "respond_text":
-                text = str(result.output.get("message") or result.output.get("result") or "").strip()
-                if text:
-                    return text
-
-        for result in reversed(execution_results):
-            if result.status != "executed" or result.action_type != "propose_plan":
-                continue
-            steps = result.output.get("steps")
-            if isinstance(steps, list) and steps:
-                rendered = " ".join(f"{index + 1}. {str(step).strip()}" for index, step in enumerate(steps[:3]))
-                if rendered:
-                    return f"Plano sugerido: {rendered}"
-            step_count = result.output.get("step_count")
-            if isinstance(step_count, int) and step_count > 0:
-                return f"Plano preparado com {step_count} passos."
-
-        if any(result.status == "executed" for result in execution_results):
-            return "Execucao concluida com sucesso. Posso detalhar os proximos passos."
-        return None
 
     def _supports_workspace_kwarg(self, method: Any) -> bool:
         try:

@@ -61,15 +61,24 @@ class NightTrainer:
         try:
             if self.backend in {"auto", "dspy"}:
                 dspy_result = self._run_dspy_cycle()
-                if dspy_result and dspy_result.get("status") == "success":
-                    return dspy_result
+                if dspy_result is not None:
+                    status = dspy_result.get("status")
+                    if status == "success":
+                        return dspy_result
+                    if self.backend == "dspy":
+                        return dspy_result
+                    if status == "skipped" and not self.dataset_path.exists():
+                        return dspy_result
+
+            if not self.dataset_path.exists():
+                return {"status": "skipped", "reason": "No dataset found"}
 
             dataset = self._load_dataset()
             good_examples = [item for item in dataset if item.get("category") in ("good", "corrected")]
 
             if not good_examples:
                 logger.info("No high-quality examples found for prompt compilation.")
-                os.remove(self.dataset_path)
+                self._cleanup_dataset()
                 return {"status": "skipped", "reason": "No valid examples"}
 
             ranked_examples = self._rank_examples(good_examples)
@@ -81,7 +90,7 @@ class NightTrainer:
                 json.dump(compiled_artifact, f, indent=2, ensure_ascii=False)
 
             logger.info("Night training artifact saved to %s", artifact_path)
-            os.remove(self.dataset_path)
+            self._cleanup_dataset()
             return {
                 "status": "success",
                 "examples_learned": len(ranked_examples),
@@ -95,22 +104,33 @@ class NightTrainer:
     def _run_dspy_cycle(self) -> dict[str, Any] | None:
         from calosum.adapters.night_trainer_dspy import DSPyNightTrainer
 
-        trainer = DSPyNightTrainer(
-            model_name=self.model_name,
-            dataset_path=self.dataset_path,
-            output_dir=self.output_dir,
-            api_url=self.api_url,
-            api_key=self.api_key,
-            provider=self.provider,
-            reasoning_effort=self.reasoning_effort,
-        )
-        result = trainer.run_training_cycle()
+        try:
+            trainer = DSPyNightTrainer(
+                model_name=self.model_name,
+                dataset_path=self.dataset_path,
+                output_dir=self.output_dir,
+                api_url=self.api_url,
+                api_key=self.api_key,
+                provider=self.provider,
+                reasoning_effort=self.reasoning_effort,
+            )
+            result = trainer.run_training_cycle()
+        except Exception as exc:
+            logger.warning("DSPy night training failed, falling back to OPRO-lite: %s", exc)
+            return None
+
         if result.get("status") == "success":
             logger.info("DSPy night trainer compiled a prompt artifact.")
+            return result
+        if result.get("status") == "skipped":
             return result
         if self.backend == "dspy":
             logger.warning("DSPy requested but unavailable; falling back to OPRO-lite: %s", result)
         return None
+
+    def _cleanup_dataset(self) -> None:
+        if self.dataset_path.exists():
+            os.remove(self.dataset_path)
 
     def _load_dataset(self) -> list[dict[str, Any]]:
         logger.info("Loading nightly dataset from %s", self.dataset_path)

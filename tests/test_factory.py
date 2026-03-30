@@ -43,7 +43,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
             self.assertIsInstance(agent.memory_system, PersistentDualMemorySystem)
             self.assertIsInstance(agent.telemetry_bus.sink, OTLPJsonlTelemetrySink)
-            self.assertEqual(description["pattern"], "ports_and_adapters_with_builder_factory")
+            self.assertEqual(description["pattern"], "v3_dual_hemisphere_factory")
             self.assertEqual(description["profile"], "persistent")
 
     def test_builder_falls_back_when_hf_right_hemisphere_is_unavailable(self) -> None:
@@ -72,8 +72,8 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
         self.assertEqual(description["memory_backend"], "qdrant_vector_memory")
         self.assertEqual(description["vector_db_url"], "http://qdrant:6333")
-        self.assertEqual(description["otel_collector_endpoint"], "http://otel-collector:4318")
-        self.assertEqual(description["jaeger_ui_url"], "http://jaeger:16686")
+        self.assertEqual(description["otel_endpoint"], "http://otel-collector:4318")
+        self.assertEqual(description["routing_resolution"]["reflection"]["shared"], True)
         self.assertIn(
             description["knowledge_graph_backend"],
             {"networkx_graph_rag_fallback", "nanorag_compatible_networkx"},
@@ -100,9 +100,9 @@ class InfrastructureBuilderTests(unittest.TestCase):
         builder = CalosumAgentBuilder(settings)
         description = builder.describe()
 
-        self.assertEqual(description["embedding_provider"], "openai")
-        self.assertEqual(description["embedding_model"], "text-embedding-3-small")
-        self.assertEqual(description["embedding_endpoint"], "https://api.openai.com/v1")
+        self.assertEqual(description["capabilities"]["embeddings"]["provider"], "openai")
+        self.assertEqual(description["capabilities"]["embeddings"]["model_name"], "text-embedding-3-small")
+        self.assertEqual(description["embedding_backend"], "openai")
 
     def test_builder_describes_failover_backend_when_fallback_endpoint_is_configured(self) -> None:
         settings = InfrastructureSettings(
@@ -114,12 +114,8 @@ class InfrastructureBuilderTests(unittest.TestCase):
         builder = CalosumAgentBuilder(settings)
         description = builder.describe()
 
-        self.assertEqual(description["left_hemisphere_backend"], "resilient_failover_adapter")
-        self.assertTrue(description["left_hemisphere_failover_enabled"])
-        self.assertEqual(
-            description["left_hemisphere_fallback_endpoint"],
-            "http://secondary.local/v1/chat/completions",
-        )
+        self.assertEqual(description["capabilities"]["left_hemisphere"]["backend"], "resilient_failover_adapter")
+        self.assertTrue(description["left_hemisphere_failover"])
 
     def test_builder_extracts_capability_snapshot(self) -> None:
         settings = InfrastructureSettings(
@@ -160,7 +156,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
         description = builder.describe(agent)
         self.assertEqual(agent.left_hemisphere.config.model_name, "gpt-4.1-mini")
         self.assertGreater(len(description["capabilities"]["tools"]), 0)
-        self.assertEqual(description["routing_resolution"]["reason"]["active_model"], "gpt-4.1-mini")
+        self.assertEqual(description["routing_resolution"]["reason"]["active"], "gpt-4.1-mini")
 
     def test_builder_honors_jepa_routing_policy_for_perception(self) -> None:
         settings = InfrastructureSettings(
@@ -173,7 +169,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
         self.assertIsInstance(agent.right_hemisphere.base_adapter, RightHemisphereJEPA)
         self.assertEqual(description["right_hemisphere_backend"], "active_inference_jepa_policy")
-        self.assertEqual(description["routing_resolution"]["perception"]["active_model"], "jepa")
+        self.assertEqual(description["routing_resolution"]["perception"]["active"], "jepa")
 
 
 if __name__ == "__main__":

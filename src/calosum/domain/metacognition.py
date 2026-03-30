@@ -353,21 +353,14 @@ class GEAReflectionController:
             "temperature_bias": proposed_temperature_bias,
         }
 
-    def _selected_metrics(
-        self,
-        selected_candidate: CognitiveCandidate,
-        winner_score: float,
-    ) -> dict[str, Any]:
-        turn_result = selected_candidate.turn_result
-        rejected_count = sum(1 for item in turn_result.execution_results if item.status == "rejected")
+    def _selected_metrics(self, cand: CognitiveCandidate, score: float) -> dict[str, Any]:
+        res = cand.turn_result
+        rejected = sum(1 for i in res.execution_results if i.status == "rejected")
         return {
-            "score": round(winner_score, 3),
-            "empathy_priority": turn_result.bridge_packet.control.empathy_priority,
-            "runtime_retry_count": turn_result.runtime_retry_count,
-            "runtime_rejected_count": rejected_count,
-            "semantic_rules": len(turn_result.memory_context.semantic_rules),
-            "action_count": len(turn_result.left_result.actions),
-            "calibrated_salience": turn_result.bridge_packet.salience,
+            "score": round(score, 3), "empathy_priority": res.bridge_packet.control.empathy_priority,
+            "runtime_retry_count": res.runtime_retry_count, "runtime_rejected_count": rejected,
+            "semantic_rules": len(res.memory_context.semantic_rules),
+            "action_count": len(res.left_result.actions), "calibrated_salience": res.bridge_packet.salience,
         }
 
     def strategy_registry_snapshot(self) -> dict[str, dict[str, dict[str, float]]]:
@@ -382,26 +375,17 @@ class GEAReflectionController:
         return snapshot
 
     def _infer_context_type(self, candidates: list[CognitiveCandidate]) -> str:
-        if not candidates:
-            return "factual"
+        if not candidates: return "factual"
         text = candidates[0].turn_result.user_turn.user_text.lower()
-        emotional_markers = {"ansioso", "triste", "medo", "frustrado", "urgent", "urgente"}
-        technical_markers = {"python", "api", "docker", "teste", "arquitetura", "bug"}
-        creative_markers = {"criativo", "historia", "poema", "brainstorm", "roteiro"}
-
-        if any(marker in text for marker in emotional_markers):
-            return "emotional"
-        if any(marker in text for marker in technical_markers):
-            return "technical"
-        if any(marker in text for marker in creative_markers):
-            return "creative"
+        markers = {"emotional": {"ansioso", "triste", "medo", "frustrado", "urgent", "urgente"},
+                   "technical": {"python", "api", "docker", "teste", "arquitetura", "bug"},
+                   "creative": {"criativo", "historia", "poema", "brainstorm", "roteiro"}}
+        for ctx, mks in markers.items():
+            if any(m in text for m in mks): return ctx
         return "factual"
 
-    def _compute_reward(self, selected_candidate: CognitiveCandidate, winner_score: float) -> float:
-        turn_result = selected_candidate.turn_result
-        rejected = sum(1 for item in turn_result.execution_results if item.status == "rejected")
-        reward = 0.55
-        reward += min(0.25, winner_score * 0.08)
-        reward -= min(0.2, turn_result.runtime_retry_count * 0.08)
-        reward -= min(0.2, rejected * 0.1)
-        return round(max(0.0, min(1.0, reward)), 4)
+    def _compute_reward(self, cand: CognitiveCandidate, score: float) -> float:
+        res = cand.turn_result
+        rejected = sum(1 for i in res.execution_results if i.status == "rejected")
+        r = 0.55 + min(0.25, score * 0.08) - min(0.2, res.runtime_retry_count * 0.08) - min(0.2, rejected * 0.1)
+        return round(max(0.0, min(1.0, r)), 4)

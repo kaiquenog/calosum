@@ -182,7 +182,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<string>('all');
   const [availableSessions, setAvailableSessions] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'architecture' | 'state' | 'awareness'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'architecture' | 'state' | 'awareness' | 'mente'>('chat');
   
   // Extra state
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -812,14 +812,15 @@ function App() {
             </button>
             <button 
               onClick={() => setActiveTab('history')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
-                activeTab === 'history' 
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
-                  : 'bg-gray-800/50 text-gray-400 hover:bg-gray-800 hover:text-gray-200'
-              }`}
+              className={`px-4 py-4 text-sm font-medium flex items-center gap-2 transition-colors relative ${activeTab === 'history' ? 'active-tab' : 'inactive-tab'}`}
             >
-              <History className="w-4 h-4" />
-              Session History
+              <History className="w-4 h-4" /> Histórico
+            </button>
+            <button 
+              onClick={() => setActiveTab('mente')}
+              className={`px-4 py-4 text-sm font-medium flex items-center gap-2 transition-colors relative ${activeTab === 'mente' ? 'active-tab' : 'inactive-tab'}`}
+            >
+              <Zap className="w-4 h-4" /> Mente (V3)
             </button>
             <button 
               onClick={() => setActiveTab('architecture')}
@@ -1465,9 +1466,100 @@ function App() {
         ) : activeTab !== 'history' ? (
           <div className="flex-1 overflow-y-auto bg-[#0a0a0c] p-8 flex items-center justify-center">
             <div className="text-gray-500 flex flex-col items-center gap-4">
-              {activeTab === 'architecture' && <Cpu className="w-12 h-12 opacity-50" />}
-              {activeTab === 'state' && <FileText className="w-12 h-12 opacity-50" />}
-              {activeTab === 'awareness' && <AlertTriangle className="w-12 h-12 opacity-50" />}
+              {activeTab === 'mente' ? (
+                <div className="fixed inset-0 top-[65px] left-[320px] p-6 h-[calc(100vh-65px)] overflow-y-auto bg-gray-950 z-10">
+                  <div className="max-w-5xl mx-auto space-y-8">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                          <Brain className="w-8 h-8 text-blue-400" /> Paisagem Cognitiva V3
+                        </h2>
+                        <p className="text-gray-400 mt-1">Sinalética de Inferência Ativa e Energia Livre Esperada (G).</p>
+                      </div>
+                      <div className="bg-blue-500/10 border border-blue-500/20 px-4 py-2 rounded-lg flex items-center gap-3">
+                        <span className="text-xs font-mono text-blue-300 uppercase">Estado Social:</span>
+                        <div className="flex gap-1">
+                          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                          <span className="text-xs text-emerald-400">Peer Sync Ativo</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-gray-900/50 border border-emerald-500/30 rounded-xl p-6 relative overflow-hidden backdrop-blur-sm">
+                        <div className="absolute top-0 right-0 p-4 opacity-10"><Zap className="w-16 h-16" /></div>
+                        <h3 className="text-sm font-mono text-emerald-400 uppercase tracking-widest mb-2">Entropy (Surprise)</h3>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-4xl font-bold text-white">
+                            {timelineEvents.find(e => e.type === 'felt')?.data.surprise_score?.toFixed(3) || '0.000'}
+                          </span>
+                          <span className="text-xs text-emerald-500/70">D_kl[Q||P]</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-gray-900/50 border border-blue-500/30 rounded-xl p-6 relative overflow-hidden backdrop-blur-sm">
+                        <div className="absolute top-0 right-0 p-4 opacity-10"><Cpu className="w-16 h-16" /></div>
+                        <h3 className="text-sm font-mono text-blue-400 uppercase tracking-widest mb-2">Expected Free Energy (G)</h3>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-4xl font-bold text-white">
+                            {timelineEvents.find(e => e.type === 'felt')?.data.expected_free_energy?.toFixed(3) || '0.000'}
+                          </span>
+                          <span className="text-xs text-blue-500/70">Epistemic Gain</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-gray-900/50 border border-amber-500/30 rounded-xl p-6 relative overflow-hidden backdrop-blur-sm">
+                        <div className="absolute top-0 right-0 p-4 opacity-10"><AlertTriangle className="w-16 h-16" /></div>
+                        <h3 className="text-sm font-mono text-amber-400 uppercase tracking-widest mb-2">Cognitive Dissonance</h3>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-4xl font-bold text-white">
+                            {timelineEvents.find(e => e.type === 'reflection')?.data.cognitive_dissonance?.toFixed(3) || '0.000'}
+                          </span>
+                          <span className="text-xs text-amber-500/70">Model Mismatch</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-900/40 border border-gray-800 rounded-xl p-8 backdrop-blur-md">
+                      <h3 className="text-lg font-medium text-gray-200 mb-6 flex items-center gap-2">
+                        <Activity className="w-5 h-5 text-blue-400" /> Fluxo de Ressonância Contextual
+                      </h3>
+                      <div className="h-64 flex items-end gap-2 px-2">
+                        {timelineEvents.filter(e => e.type === 'felt').slice(0, 15).reverse().map((e, i) => (
+                          <div key={i} className="flex-1 flex flex-col gap-2 group relative">
+                            <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-800 px-2 py-1 rounded text-[10px] opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-nowrap">
+                              EFE: {e.data.expected_free_energy?.toFixed(3) || '0.00'}
+                            </div>
+                            <div 
+                              className="w-full bg-blue-500/40 border-t-2 border-blue-400 rounded-t-sm transition-all hover:bg-blue-500/60" 
+                              style={{ height: `${(e.data.expected_free_energy || 0.1) * 100}%` }}
+                            ></div>
+                            <div 
+                              className="w-full bg-emerald-500/40 border-t-2 border-emerald-400 rounded-t-sm transition-all hover:bg-emerald-500/60" 
+                              style={{ height: `${(e.data.surprise_score || 0.1) * 100}%` }}
+                            ></div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between mt-4 text-[10px] text-gray-500 font-mono uppercase tracking-widest px-2">
+                        <span>Estado Mais Antigo</span>
+                        <div className="flex gap-6">
+                          <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-500/50 rounded-sm"></div> G (EFE)</div>
+                          <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500/50 rounded-sm"></div> Surpresa (VFE)</div>
+                        </div>
+                        <span>Real-time (Active Inference)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {activeTab === 'architecture' && <Cpu className="w-12 h-12 opacity-50" />}
+                  {activeTab === 'state' && <FileText className="w-12 h-12 opacity-50" />}
+                  {activeTab === 'awareness' && <AlertTriangle className="w-12 h-12 opacity-50" />}
+                  <p className="text-lg">Em desenvolvimento...</p>
+                </>
+              )}
               <p className="text-lg">Em desenvolvimento...</p>
             </div>
           </div>

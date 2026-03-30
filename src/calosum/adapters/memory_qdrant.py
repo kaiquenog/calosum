@@ -125,6 +125,13 @@ class QdrantDualMemoryAdapter:
             ],
         )
 
+    def episode_count(self) -> int:
+        return run_sync(self.aepisode_count())
+
+    async def aepisode_count(self) -> int:
+        result = await self.aclient.count(collection_name=self.config.episodes_collection, exact=True)
+        return int(getattr(result, "count", 0))
+
     def store_episode(self, episode: MemoryEpisode) -> None:
         run_sync(self.astore_episode(episode))
 

@@ -282,6 +282,12 @@ class DualMemorySystem:
     async def abuild_context(self, user_turn: UserTurn, episodic_limit: int = 5) -> MemoryContext:
         return self.build_context(user_turn, episodic_limit)
 
+    def episode_count(self) -> int:
+        return len(self.episodic_store.all())
+
+    async def aepisode_count(self) -> int:
+        return self.episode_count()
+
     def store_episode(self, episode: MemoryEpisode) -> None:
         self.episodic_store.add(episode)
 

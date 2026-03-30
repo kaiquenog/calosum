@@ -53,11 +53,13 @@ MODULE_RULES: dict[str, set[str]] = {
     "shared.tools": {"shared.types"},
 
     # DOMAIN
-    "domain.agent_execution": {"shared.async_utils", "shared.ports", "shared.types"},
+    "domain.agent_config": set(),
+    "domain.agent_execution": {"shared.async_utils", "shared.ports", "shared.types", "domain.execution_utils"},
     "domain.bridge": {"shared.types", "shared.ports"},
     "domain.event_bus": set(),
+    "domain.differentiable_logic": {"shared.types"},
     "domain.right_hemisphere": {"shared.types"},
-    "domain.left_hemisphere": {"shared.types"},
+    "domain.left_hemisphere": {"shared.types", "domain.differentiable_logic"},
     "domain.runtime": {"domain.runtime_dsl", "shared.types"},
     "domain.runtime_dsl": {"shared.types"},
     "domain.memory": {"shared.types", "shared.ports"},
@@ -66,15 +68,18 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.tool_registry": {"shared.types"},
     "domain.workspace": {"domain.orchestrator", "shared.types"},
     "domain.introspection": {"shared.types"},
-    "domain.evolution": {"shared.types"},
+    "domain.introspection_capabilities": {"domain.orchestrator", "bootstrap.factory", "shared.types"},
+    "domain.execution_utils": {"shared.types"},
+    "domain.evolution": {"shared.types", "domain.agent_config", "shared.ports", "domain.directive_guardrails"},
     "domain.directive_guardrails": set(),
     "domain.idle_foraging": {"shared.types"},
-    "domain.metacognition": {"domain.bridge", "shared.types"},
+    "domain.metacognition": {"domain.bridge", "shared.types", "domain.differentiable_logic"},
     "domain.multiagent": {"domain.event_bus", "shared.types"},
     "domain.self_model": {"domain.orchestrator", "shared.types"},
     "domain.verifier": {"shared.schemas", "shared.types"},
     "domain.orchestrator": {
         "shared.async_utils",
+        "domain.agent_config",
         "domain.bridge",
         "domain.event_bus",
         "domain.evolution",
@@ -102,21 +107,26 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.action_runtime", 
         "adapters.bridge_store",
         "adapters.knowledge_graph_nanorag",
+        "adapters.latent_exchange",
         "adapters.llm_failover",
         "adapters.llm_qwen", 
         "adapters.memory_qdrant",
+        "adapters.multimodal_perception",
         "adapters.night_trainer",
         "adapters.right_hemisphere_hf",
         "adapters.telemetry_otlp",
         "adapters.text_embeddings",
         "domain.bridge",
+        "domain.event_bus",
         "domain.evolution",
+        "domain.introspection_capabilities",
         "domain.memory",
         "domain.orchestrator",
         "domain.persistent_memory",
         "domain.right_hemisphere",
         "bootstrap.settings",
         "domain.telemetry",
+        "shared.ports",
         "shared.types"
     },
     "bootstrap.cli": {
@@ -128,18 +138,22 @@ MODULE_RULES: dict[str, set[str]] = {
         "shared.types",
     },
     "bootstrap.api": {
-        "adapters.channel_telegram",
-        "bootstrap.factory",
-        "bootstrap.settings",
-        "domain.introspection",
-        "shared.serialization",
-        "shared.types",
+        "adapters.channel_telegram", "bootstrap.factory", "bootstrap.settings", "domain.introspection",
+        "shared.serialization", "shared.types", "bootstrap.routers", "bootstrap.context",
+        "bootstrap.routers.system", "bootstrap.routers.chat", "bootstrap.routers.telemetry",
     },
+    "bootstrap.context": {"bootstrap.factory", "bootstrap.settings"},
+    "bootstrap.routers.system": {"bootstrap.context", "shared.serialization"},
+    "bootstrap.routers.telemetry": {"bootstrap.context"},
+    "bootstrap.routers.chat": {"bootstrap.context", "shared.types", "shared.serialization"},
     "bootstrap.__main__": {"bootstrap.cli"},
 
     # ADAPTERS
     "adapters.active_inference": {"shared.types", "domain.right_hemisphere"},
-    "adapters.action_runtime": {"adapters.tools", "shared.async_utils", "shared.tools", "shared.types", "bootstrap.api", "domain.introspection"},
+    "adapters.action_runtime": {
+        "adapters.tools.http_request", "adapters.tools.code_execution", "adapters.tools.introspection",
+        "shared.async_utils", "shared.tools", "shared.types",
+    },
     "adapters.bridge_store": {"shared.ports"},
     "adapters.channel_telegram": {"shared.types"},
     "adapters.knowledge_graph_nanorag": {"shared.types"},
@@ -149,15 +163,21 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.memory_qdrant": {"adapters.text_embeddings", "shared.async_utils", "shared.types", "domain.memory", "shared.ports"},
     "adapters.right_hemisphere_hf": {"shared.types", "domain.right_hemisphere"},
     "adapters.telemetry_otlp": {"domain.telemetry"},
+    "adapters.multimodal_perception": {"shared.ports"},
+    "adapters.latent_exchange": {"shared.ports", "domain.event_bus"},
     "adapters.text_embeddings": {"shared.async_utils"},
     "adapters.night_trainer": {"adapters.night_trainer_dspy"},
     "adapters.night_trainer_dspy": set(),
     "adapters.night_trainer_lora": set(),
+    "adapters.tools.introspection": {"shared.types"},
     "adapters.tools.code_execution": {"shared.tools"},
     "adapters.tools.http_request": {"shared.tools"},
 
     # ROOT
     "harness_checks": set(),
+    "final_prod_val": set(),
+    "verify_v3": set(),
+    "debug_numpy": set(),
     "__init__": {
         "adapters.active_inference",
         "adapters.knowledge_graph_nanorag",
@@ -184,7 +204,7 @@ MODULE_RULES: dict[str, set[str]] = {
     },
 }
 
-MAX_MODULE_LINES = 500
+MAX_MODULE_LINES = 400
 
 
 @dataclass(slots=True)
@@ -226,178 +246,81 @@ def main() -> int:
 
 
 def _check_required_paths(root: Path) -> list[HarnessIssue]:
-    issues: list[HarnessIssue] = []
-    for path in REQUIRED_PATHS:
-        if not (root / path.relative_to(REPO_ROOT)).exists():
-            issues.append(
-                HarnessIssue(
-                    code="missing_required_path",
-                    message="required harness artifact is missing",
-                    path=str(path.relative_to(REPO_ROOT)),
-                )
-            )
-    return issues
-
+    return [HarnessIssue("missing_required_path", "required harness artifact is missing", str(p.relative_to(REPO_ROOT)))
+            for p in REQUIRED_PATHS if not (root / p.relative_to(REPO_ROOT)).exists()]
 
 def _check_agents_map(root: Path) -> list[HarnessIssue]:
     path = root / "AGENTS.md"
+    if not path.exists(): return [HarnessIssue("missing_agents_map", "AGENTS.md map is missing from root")]
     text = path.read_text(encoding="utf-8")
-    issues: list[HarnessIssue] = []
-    if len(text.splitlines()) > 120:
-        issues.append(
-            HarnessIssue(
-                code="agents_too_long",
-                message="AGENTS.md should remain a short map, not a manual",
-                path="AGENTS.md",
-            )
-        )
+    issues = []
+    if len(text.splitlines()) > 120: issues.append(HarnessIssue("agents_too_long", "AGENTS.md should remain a short map", "AGENTS.md"))
     for link in REQUIRED_DOC_LINKS:
-        if link not in text:
-            issues.append(
-                HarnessIssue(
-                    code="agents_missing_link",
-                    message=f"missing required link to {link}",
-                    path="AGENTS.md",
-                )
-            )
+        if link not in text: issues.append(HarnessIssue("agents_missing_link", f"missing link to {link}", "AGENTS.md"))
     return issues
-
 
 def _check_docs_index(root: Path) -> list[HarnessIssue]:
     path = root / "docs" / "index.md"
+    if not path.exists(): return [HarnessIssue("missing_docs_index", "docs/index.md is missing")]
     text = path.read_text(encoding="utf-8")
-    required_refs = [
-        "ARCHITECTURE.md",
-        "PLANS.md",
-        "QUALITY_SCORE.md",
-        "RELIABILITY.md",
-        "INFRASTRUCTURE.md",
-        "production-roadmap.md",
-        "references/harness-engineering.md",
-    ]
-    issues: list[HarnessIssue] = []
-    for ref in required_refs:
-        if ref not in text:
-            issues.append(
-                HarnessIssue(
-                    code="docs_index_missing_ref",
-                    message=f"docs index is missing reference to {ref}",
-                    path="docs/index.md",
-                )
-            )
-    return issues
-
+    required = ["ARCHITECTURE.md", "PLANS.md", "QUALITY_SCORE.md", "RELIABILITY.md", "INFRASTRUCTURE.md", "production-roadmap.md", "references/harness-engineering.md"]
+    return [HarnessIssue("docs_index_missing_ref", f"missing reference to {ref}", "docs/index.md") for ref in required if ref not in text]
 
 def _check_plan_files(root: Path) -> list[HarnessIssue]:
-    issues: list[HarnessIssue] = []
-    plan_dirs = [
-        root / "docs" / "exec-plans" / "active",
-        root / "docs" / "exec-plans" / "completed",
-    ]
-    for plan_dir in plan_dirs:
-        if not plan_dir.exists():
-            issues.append(
-                HarnessIssue(
-                    code="missing_plan_directory",
-                    message="plan directory is missing",
-                    path=str(plan_dir.relative_to(root)),
-                )
-            )
-            continue
-        for plan_file in sorted(plan_dir.glob("*.md")):
-            if plan_file.name == "README.md":
-                continue
-            text = plan_file.read_text(encoding="utf-8")
-            for heading in PLAN_REQUIRED_HEADINGS:
-                if heading not in text:
-                    issues.append(
-                        HarnessIssue(
-                            code="plan_missing_heading",
-                            message=f"missing heading {heading}",
-                            path=str(plan_file.relative_to(root)),
-                        )
-                    )
+    issues = []
+    plan_dirs = [root / "docs" / "exec-plans" / "active", root / "docs" / "exec-plans" / "completed"]
+    for d in plan_dirs:
+        if not d.exists(): issues.append(HarnessIssue("missing_plan_directory", "plan directory is missing", str(d.relative_to(root)))); continue
+        for f in sorted(d.glob("*.md")):
+            if f.name == "README.md": continue
+            text = f.read_text(encoding="utf-8")
+            for h in PLAN_REQUIRED_HEADINGS:
+                if h not in text: issues.append(HarnessIssue("plan_missing_heading", f"missing heading {h}", str(f.relative_to(root))))
     return issues
 
-
 def _check_module_sizes(root: Path) -> list[HarnessIssue]:
-    issues: list[HarnessIssue] = []
-    for path in sorted((root / "src" / "calosum").rglob("*.py")):
-        if path.name in {"__init__.py"}:
-            continue
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if len(lines) > MAX_MODULE_LINES:
-            issues.append(
-                HarnessIssue(
-                    code="module_too_large",
-                    message=f"module has {len(lines)} lines; keep under {MAX_MODULE_LINES}",
-                    path=str(path.relative_to(root)),
-                )
-            )
+    issues = []
+    for p in sorted((root / "src" / "calosum").rglob("*.py")):
+        if p.name == "__init__.py": continue
+        lines = len(p.read_text(encoding="utf-8").splitlines())
+        if lines > MAX_MODULE_LINES:
+            issues.append(HarnessIssue("module_too_large", f"module has {lines} lines (max {MAX_MODULE_LINES})", str(p.relative_to(root))))
     return issues
 
 
 def _check_import_boundaries(root: Path) -> list[HarnessIssue]:
-    issues: list[HarnessIssue] = []
-    for path in sorted((root / "src" / "calosum").rglob("*.py")):
-        if path.name == "__init__.py":
-            if str(path.parent.name) != "calosum":
-                # Only check main __init__.py boundaries
-                continue
-
-        rel_path = path.relative_to(root / "src" / "calosum")
-        
-        if str(rel_path.parent) == ".":
-            module_name = path.stem
-        else:
-            module_name = f"{str(rel_path.parent).replace('/', '.')}.{path.stem}"
-
-        allowed = MODULE_RULES.get(module_name)
+    issues = []
+    for p in sorted((root / "src" / "calosum").rglob("*.py")):
+        if p.name == "__init__.py" and str(p.parent.name) != "calosum": continue
+        rel = p.relative_to(root / "src" / "calosum")
+        mod = p.stem if str(rel.parent) == "." else f"{str(rel.parent).replace('/', '.')}.{p.stem}"
+        allowed = MODULE_RULES.get(mod)
         if allowed is None:
-            issues.append(
-                HarnessIssue(
-                    code="missing_module_rule",
-                    message="module is not registered in harness boundary rules",
-                    path=str(path.relative_to(root)),
-                )
-            )
+            issues.append(HarnessIssue("missing_module_rule", f"module {mod} not registered", str(p.relative_to(root))))
             continue
-            
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for imported in _internal_imports(tree):
-            if imported not in allowed:
-                issues.append(
-                    HarnessIssue(
-                        code="forbidden_internal_import",
-                        message=f"{module_name} must not import {imported}",
-                        path=str(path.relative_to(root)),
-                    )
-                )
+        for imp in _internal_imports(ast.parse(p.read_text(encoding="utf-8"))):
+            if imp not in allowed:
+                issues.append(HarnessIssue("forbidden_internal_import", f"{mod} forbidden import: {imp}", str(p.relative_to(root))))
     return issues
 
-
 def _internal_imports(tree: ast.AST) -> set[str]:
-    imports: set[str] = set()
+    imps = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            if node.module and node.module.startswith("calosum."):
-                parts = node.module.split(".")
-                if len(parts) >= 3:
-                    imports.add(f"{parts[1]}.{parts[2]}")
-                elif len(parts) == 2:
-                    imports.add(parts[1])
-            elif node.level == 1 and node.module:
-                imports.add(node.module.split(".", 1)[0])
+        if isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("calosum."):
+                p = node.module.split(".")
+                if len(p) >= 4: imps.add(f"{p[1]}.{p[2]}.{p[3]}")
+                elif len(p) == 3: imps.add(f"{p[1]}.{p[2]}")
+                else: imps.add(p[1])
+            elif node.level == 1: imps.add(node.module.split(".", 1)[0])
         elif isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.startswith("calosum."):
-                    parts = alias.name.split(".")
-                    if len(parts) >= 3:
-                        imports.add(f"{parts[1]}.{parts[2]}")
-                    elif len(parts) == 2:
-                        imports.add(parts[1])
-    return imports
-
+            for a in node.names:
+                if a.name.startswith("calosum."):
+                    p = a.name.split(".")
+                    if len(p) >= 4: imps.add(f"{p[1]}.{p[2]}.{p[3]}")
+                    elif len(p) == 3: imps.add(f"{p[1]}.{p[2]}")
+                    else: imps.add(p[1])
+    return imps
 
 if __name__ == "__main__":
     raise SystemExit(main())

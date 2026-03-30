@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from calosum.shared.types import AgentTurnResult, utc_now
+from calosum.shared.serialization import to_primitive
 
 
 @dataclass(slots=True)
@@ -66,7 +67,7 @@ def event_to_otlp_trace_envelope(
                                 + [
                                     {
                                         "key": f"calosum.metric.{key}",
-                                        "value": {"doubleValue": float(value)},
+                                        "value": {"doubleValue": float(sum(value)) if isinstance(value, (list, tuple)) else float(value)},
                                     }
                                     for key, value in event.metrics.items()
                                 ],
@@ -255,10 +256,18 @@ class CognitiveTelemetryBus:
                 session_id=session_id,
                 turn_id=turn_id,
                 recorded_at=timestamp,
-                payload=result.telemetry.felt,
+                payload=to_primitive({
+                    **result.telemetry.felt,
+                    "expected_free_energy": result.right_state.world_hypotheses.get("expected_free_energy", 0.0),
+                    "peer_latents_count": result.telemetry.felt.get("peer_latents_count", 0),
+                }),
                 trace_id=trace_id,
                 span_id=self._span_id(trace_id, "felt"),
-                metrics={"latency_ms": result.latency_ms},
+                metrics=to_primitive({
+                    "latency_ms": result.latency_ms,
+                    "expected_free_energy": result.right_state.world_hypotheses.get("expected_free_energy", 0.0),
+                    "surprise_score": result.right_state.surprise_score,
+                }),
             )
         )
         self.sink.emit(
@@ -267,18 +276,18 @@ class CognitiveTelemetryBus:
                 session_id=session_id,
                 turn_id=turn_id,
                 recorded_at=timestamp,
-                payload={
+                payload=to_primitive({
                     **result.telemetry.thought,
                     "bridge_config": result.telemetry.bridge_config,
                     "active_variant": result.telemetry.active_variant,
-                },
+                }),
                 trace_id=trace_id,
                 span_id=self._span_id(trace_id, "thought"),
-                metrics={
+                metrics=to_primitive({
                     "latency_ms": result.latency_ms,
-                    "runtime_retry_count": float(result.runtime_retry_count),
-                    "critique_revision_count": float(result.critique_revision_count),
-                },
+                    "runtime_retry_count": result.runtime_retry_count,
+                    "critique_revision_count": result.critique_revision_count,
+                }),
             )
         )
         self.sink.emit(
@@ -287,17 +296,17 @@ class CognitiveTelemetryBus:
                 session_id=session_id,
                 turn_id=turn_id,
                 recorded_at=timestamp,
-                payload={
+                payload=to_primitive({
                     **result.telemetry.decision,
                     "capabilities": result.telemetry.capabilities,
-                },
+                }),
                 trace_id=trace_id,
                 span_id=self._span_id(trace_id, "decision"),
-                metrics={
+                metrics=to_primitive({
                     "latency_ms": result.latency_ms,
-                    "runtime_retry_count": float(result.runtime_retry_count),
-                    "tool_success_rate": float(result.telemetry.decision.get("tool_success_rate", 1.0)),
-                },
+                    "runtime_retry_count": result.runtime_retry_count,
+                    "tool_success_rate": result.telemetry.decision.get("tool_success_rate", 1.0),
+                }),
             )
         )
         self.sink.emit(
@@ -306,58 +315,43 @@ class CognitiveTelemetryBus:
                 session_id=session_id,
                 turn_id=turn_id,
                 recorded_at=timestamp,
-                payload={
+                payload=to_primitive({
                     "results": [asdict(item) for item in result.execution_results],
-                },
+                }),
                 trace_id=trace_id,
                 span_id=self._span_id(trace_id, "execution"),
-                metrics={
+                metrics=to_primitive({
                     "latency_ms": result.latency_ms,
-                    "runtime_retry_count": float(result.runtime_retry_count),
-                    "rejected_count": float(
-                        sum(1 for item in result.execution_results if item.status == "rejected")
-                    ),
-                    "tool_success_rate": float(result.telemetry.decision.get("tool_success_rate", 1.0)),
-                },
+                    "runtime_retry_count": result.runtime_retry_count,
+                    "rejected_count": sum(1 for item in result.execution_results if item.status == "rejected"),
+                    "tool_success_rate": result.telemetry.decision.get("tool_success_rate", 1.0),
+                }),
             )
         )
 
     async def arecord_turn(self, result: AgentTurnResult) -> None:
         self.record_turn(result)
 
-    def record_reflection(
-        self,
-        session_id: str,
-        turn_id: str,
-        payload: dict[str, Any],
-    ) -> None:
+    def record_reflection(self, session_id: str, turn_id: str, payload: dict[str, Any]) -> None:
         cost_metrics = payload.get("cost_metrics", {})
         self.sink.emit(
             TelemetryEvent(
-                channel="reflection",
-                session_id=session_id,
-                turn_id=turn_id,
-                recorded_at=utc_now().isoformat(),
-                payload=payload,
-                trace_id=hashlib.sha256(f"{session_id}:{turn_id}".encode("utf-8")).hexdigest()[:32],
+                channel="reflection", session_id=session_id, turn_id=turn_id,
+                recorded_at=utc_now().isoformat(), payload=to_primitive(payload),
+                trace_id=hashlib.sha256(f"{turn_id}:reflection".encode("utf-8")).hexdigest()[:32],
                 span_id=self._span_id(turn_id, "reflection"),
-                metrics={
-                    "branch_count": float(cost_metrics.get("branch_count", 0.0)),
-                    "total_latency_ms": float(cost_metrics.get("total_latency_ms", 0.0)),
-                },
+                metrics=to_primitive({
+                    "branch_count": cost_metrics.get("branch_count", 0.0),
+                    "total_latency_ms": cost_metrics.get("total_latency_ms", 0.0),
+                    "cognitive_dissonance": payload.get("cognitive_dissonance", 0.0),
+                }),
             )
         )
 
-    async def arecord_reflection(
-        self,
-        session_id: str,
-        turn_id: str,
-        payload: dict[str, Any],
-    ) -> None:
+    async def arecord_reflection(self, session_id: str, turn_id: str, payload: dict[str, Any]) -> None:
         self.record_reflection(session_id, turn_id, payload)
 
     def record_awareness(self, session_id: str, diagnostic: Any) -> None:
-        from calosum.shared.serialization import to_primitive
         self.sink.emit(
             TelemetryEvent(
                 channel="awareness",
@@ -367,29 +361,19 @@ class CognitiveTelemetryBus:
                 payload=to_primitive(diagnostic),
                 trace_id=hashlib.sha256(f"{session_id}:awareness".encode("utf-8")).hexdigest()[:32],
                 span_id=self._span_id("system-loop", "awareness"),
-                metrics={
-                    "bottlenecks_count": float(len(diagnostic.bottlenecks)),
-                    "tool_success_rate": float(diagnostic.tool_success_rate),
-                    "pending_approval_backlog": float(diagnostic.pending_approval_backlog),
-                    "pending_directive_count": float(diagnostic.pending_directive_count),
-                    "surprise_trend": float(diagnostic.surprise_trend),
-                    "dominant_variant_ratio": float(diagnostic.dominant_variant_ratio),
-                },
+                metrics=to_primitive({
+                    "bottlenecks_count": len(diagnostic.bottlenecks),
+                    "tool_success_rate": diagnostic.tool_success_rate,
+                    "pending_approval_backlog": diagnostic.pending_approval_backlog,
+                    "pending_directive_count": diagnostic.pending_directive_count,
+                    "surprise_trend": diagnostic.surprise_trend,
+                    "dominant_variant_ratio": diagnostic.dominant_variant_ratio,
+                }),
             )
         )
 
     def dashboard_for_session(self, session_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
-        if not hasattr(self.sink, "query"):
-            raise TypeError("dashboard_for_session requires a queryable telemetry sink")
-        channels = ("felt", "thought", "decision", "execution", "reflection", "awareness")
-        dashboard: dict[str, list[dict[str, Any]]] = {}
-        for channel in channels:
-            events = self.sink.query(session_id=session_id, channel=channel)
-            # Include session_id and recorded_at in the payload for UI filtering and timeline
-            dashboard[channel] = [
-                {**event.payload, "_session_id": event.session_id, "_recorded_at": event.recorded_at} for event in events
-            ]
-        return dashboard
+        if not hasattr(self.sink, "query"): raise TypeError("dashboard_for_session requires a queryable telemetry sink")
+        return {c: [{**e.payload, "_session_id": e.session_id, "_recorded_at": e.recorded_at} for e in self.sink.query(session_id=session_id, channel=c)] for c in ("felt", "thought", "decision", "execution", "reflection", "awareness")}
 
-    def _span_id(self, seed: str, channel: str) -> str:
-        return hashlib.sha256(f"{seed}:{channel}".encode("utf-8")).hexdigest()[:16]
+    def _span_id(self, seed: str, channel: str) -> str: return hashlib.sha256(f"{seed}:{channel}".encode("utf-8")).hexdigest()[:16]

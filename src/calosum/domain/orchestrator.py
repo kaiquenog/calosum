@@ -12,10 +12,16 @@ from calosum.domain.directive_guardrails import (
     apply_runtime_contract_audit_directive,
 )
 from calosum.domain.agent_execution import AgentExecutionEngine
+from calosum.domain.agent_config import CalosumAgentConfig, BranchingBudget
 from calosum.domain.bridge import CognitiveTokenizer
 from calosum.domain.event_bus import CognitiveEvent, InternalEventBus
 from calosum.domain.left_hemisphere import LeftHemisphereLogicalSLM
 from calosum.domain.memory import DualMemorySystem
+from calosum.domain.evolution import (
+    EvolutionManager,
+    JsonlEvolutionArchive,
+    EvolutionProposer,
+)
 from calosum.domain.metacognition import (
     CognitiveCandidate,
     CognitiveVariantSpec,
@@ -32,6 +38,8 @@ from calosum.shared.ports import (
     RightHemispherePort,
     TelemetryBusPort,
     VerifierPort,
+    LatentExchangePort,
+    VisionEmbeddingPort,
 )
 from calosum.domain.right_hemisphere import RightHemisphereJEPA
 from calosum.domain.runtime import StrictLambdaRuntime
@@ -51,24 +59,10 @@ from calosum.shared.types import (
     utc_now,
 )
 
-@dataclass(slots=True)
-class BranchingBudget:
-    max_width: int = 3
-    max_depth: int = 1
-
-@dataclass(slots=True)
-class CalosumAgentConfig:
-    max_runtime_retries: int = 2
-    surprise_threshold: float = 0.6
-    awareness_interval_turns: int = 1
-    branching_budget: BranchingBudget = field(default_factory=BranchingBudget)
 class CalosumAgent:
     """
-    Orquestrador do ciclo cognitivo.
-
-    O nucleo e assíncrono para suportar I/O concorrente e inferencia remota.
-    Os metodos sincronos existentes continuam disponiveis como wrappers para
-    facilitar CLI, scripts locais e testes unitarios.
+    Orquestrador do ciclo cognitivo (Dual-Hemisphere).
+    Suporta I/O concorrente e inferencia remota.
     """
 
     def __init__(
@@ -85,6 +79,7 @@ class CalosumAgent:
         capability_snapshot: CapabilityDescriptor | None = None,
         evolution_archive: "JsonlEvolutionArchive | None" = None,
         night_trainer: Any | None = None,
+        latent_exchange: LatentExchangePort | None = None,
     ) -> None:
         self.right_hemisphere = right_hemisphere or RightHemisphereJEPA()
         self.tokenizer = tokenizer or CognitiveTokenizer()
@@ -98,26 +93,21 @@ class CalosumAgent:
         self.capability_snapshot = capability_snapshot
         self.evolution_archive = evolution_archive
         self.night_trainer = night_trainer
+        self.latent_exchange = latent_exchange
         self.event_bus = InternalEventBus()
         self.execution_engine = AgentExecutionEngine(
             action_runtime=self.action_runtime,
             max_runtime_retries=self.config.max_runtime_retries,
             verifier=self.verifier,
         )
+        self.evolution_manager = EvolutionManager(
+            self.evolution_archive,
+            EvolutionProposer()
+        )
         # Último workspace por sessão
         self.last_workspace_by_session: dict[str, CognitiveWorkspace] = {}
         self.latest_awareness_by_session: dict[str, SessionDiagnostic] = {}
         self._awareness_turn_counts: dict[str, int] = {}
-        self.approved_prompt_directives: list[str] = (
-            self.evolution_archive.load_applied_prompt_directives()
-            if self.evolution_archive is not None
-            else []
-        )
-        self.pending_directives: list[EvolutionDirective] = (
-            self.evolution_archive.load_pending_directives()
-            if self.evolution_archive is not None
-            else []
-        )
 
         from calosum.domain.self_model import build_self_model
         self.self_model: CognitiveArchitectureMap = build_self_model(self)
@@ -150,21 +140,16 @@ class CalosumAgent:
         
         await self.event_bus.publish(CognitiveEvent("PerceptionEvent", right_state, user_turn.turn_id))
 
-        # Active Inference V2: Branching based on VFE (Surprise) and EFE (Expected Ambiguity)
+        # Active Inference V2/V3: Branching based on VFE/EFE
         surprise_score = getattr(right_state, "surprise_score", 0.0)
         ambiguity_score = right_state.world_hypotheses.get("interaction_complexity", 0.0)
         semantic_density = right_state.world_hypotheses.get("semantic_density", 0.5)
         
-        # Expected Free Energy (G) estimate: Risk + Ambiguity
-        # High density + high complexity = high expected information gain (epistemic value)
         expected_free_energy = (ambiguity_score * 0.6) + (semantic_density * 0.4)
         
         needs_branching = (
             self.config.branching_budget.max_depth > 0
-            and (
-                surprise_score > self.config.surprise_threshold
-                or expected_free_energy > 0.75
-            )
+            and (surprise_score > self.config.surprise_threshold or expected_free_energy > 0.75)
         )
 
         if needs_branching:
@@ -184,7 +169,7 @@ class CalosumAgent:
             right_state=right_state,
             tokenizer=self.tokenizer,
             left_hemisphere=self.left_hemisphere,
-            bridge_directives=self.approved_prompt_directives,
+            bridge_directives=self.evolution_manager.approved_prompt_directives,
             capabilities=capabilities_dict,
             workspace=workspace,
         )
@@ -201,6 +186,13 @@ class CalosumAgent:
         
         # Awareness loop for single turn (can be probabilistic or periodic)
         await self._awareness_loop(user_turn.session_id)
+
+        # V3 Collective Intelligence: Share latent state with peers
+        if self.latent_exchange:
+            await self.latent_exchange.broadcast_latent(
+                user_turn.session_id, 
+                result.right_state.latent_vector
+            )
         
         return result
 
@@ -254,8 +246,8 @@ class CalosumAgent:
 
         async def _run_variant(variant: CognitiveVariantSpec) -> CognitiveCandidate:
             variant_started_at = perf_counter()
-            tokenizer = self._build_variant_tokenizer(variant)
-            left_hemisphere = self._build_variant_left_hemisphere(variant)
+            tokenizer = self.execution_engine.clone_component_with_overrides(self.tokenizer, variant.tokenizer_overrides)
+            left_hemisphere = self.execution_engine.clone_component_with_overrides(self.left_hemisphere, variant.left_overrides)
             turn_result = await self.execution_engine.run_variant(
                 user_turn=user_turn,
                 memory_context=memory_context,
@@ -263,7 +255,7 @@ class CalosumAgent:
                 tokenizer=tokenizer,
                 left_hemisphere=left_hemisphere,
                 variant_label=variant.variant_id,
-                bridge_directives=self.approved_prompt_directives + list(variant.bridge_directives),
+                bridge_directives=self.evolution_manager.approved_prompt_directives + list(variant.bridge_directives),
                 capabilities=capabilities_dict,
                 workspace=workspace,
             )
@@ -308,7 +300,6 @@ class CalosumAgent:
             )
         )
         
-        # Awareness loop for group turn
         await self._awareness_loop(user_turn.session_id)
 
         return GroupTurnResult(
@@ -320,130 +311,64 @@ class CalosumAgent:
         )
 
     async def _awareness_loop(self, session_id: str) -> None:
-        """
-        Gera diagnósticos persistidos e aplica apenas diretivas paramétricas.
-        """
         self._awareness_turn_counts[session_id] = self._awareness_turn_counts.get(session_id, 0) + 1
         if self._awareness_turn_counts[session_id] % max(1, self.config.awareness_interval_turns) != 0:
             return
-
-        from calosum.domain.evolution import EvolutionProposer
 
         diagnostic = self.analyze_session(session_id, persist=True)
         if not diagnostic.bottlenecks:
             return
 
-        proposer = EvolutionProposer()
-        directives = proposer.propose(diagnostic)
-
-        for directive in directives:
+        for directive in self.evolution_manager.proposer.propose(diagnostic):
             if directive.directive_type == DirectiveType.PARAMETER:
-                self._apply_directive(directive)
-                self._record_directive_event(directive, event="auto_applied")
+                self.evolution_manager.apply_directive(directive, self)
+                if self.evolution_manager.archive:
+                    self.evolution_manager.archive.record_directive(directive, event="auto_applied")
                 continue
-            self._queue_directive(directive)
+            self.evolution_manager.queue_directive(directive)
 
     def analyze_session(self, session_id: str, *, persist: bool = False) -> SessionDiagnostic:
         dashboard = self.cognitive_dashboard(session_id)
         if not dashboard.get("decision"):
             diagnostic = SessionDiagnostic(
-                session_id=session_id,
-                analyzed_turns=0,
-                tool_success_rate=1.0,
-                average_retries=0.0,
-                average_surprise=0.0,
-                bottlenecks=[],
+                session_id=session_id, analyzed_turns=0, tool_success_rate=1.0,
+                average_retries=0.0, average_surprise=0.0, bottlenecks=[],
                 pending_approval_backlog=0,
-                pending_directive_count=len(self.pending_directives),
+                pending_directive_count=len(self.evolution_manager.pending_directives),
             )
         else:
             from calosum.domain.introspection import IntrospectionEngine
-
-            engine = IntrospectionEngine()
-            diagnostic = engine.analyze(
-                session_id,
-                dashboard,
-                pending_directive_count=len(self.pending_directives),
+            diagnostic = IntrospectionEngine().analyze(
+                session_id, dashboard, 
+                pending_directive_count=len(self.evolution_manager.pending_directives),
             )
 
         self.latest_awareness_by_session[session_id] = diagnostic
         if persist:
             if hasattr(self.telemetry_bus, "record_awareness"):
                 self.telemetry_bus.record_awareness(session_id, diagnostic)
-            if self.evolution_archive is not None:
+            if self.evolution_archive:
                 self.evolution_archive.record_diagnostic(diagnostic)
         return diagnostic
 
     def latest_awareness_for_session(self, session_id: str | None = None) -> SessionDiagnostic | None:
-        if session_id is not None: return self.latest_awareness_by_session.get(session_id)
-        if self.latest_awareness_by_session: return self.latest_awareness_by_session[list(self.latest_awareness_by_session.keys())[-1]]
-        return None
+        if session_id: return self.latest_awareness_by_session.get(session_id)
+        return list(self.latest_awareness_by_session.values())[-1] if self.latest_awareness_by_session else None
 
     def workspace_for_session(self, session_id: str | None = None) -> CognitiveWorkspace | None:
-        if session_id is not None: return self.last_workspace_by_session.get(session_id)
-        if self.last_workspace_by_session: return self.last_workspace_by_session[list(self.last_workspace_by_session.keys())[-1]]
-        return None
+        if session_id: return self.last_workspace_by_session.get(session_id)
+        return list(self.last_workspace_by_session.values())[-1] if self.last_workspace_by_session else None
+
+    @property
+    def pending_directives(self) -> list[EvolutionDirective]:
+        return self.evolution_manager.pending_directives
 
     def apply_pending_directive(self, directive_id: str) -> EvolutionDirective | None:
-        directive = next((item for item in self.pending_directives if item.directive_id == directive_id), None)
-        if directive is None: return None
-        self.pending_directives = [item for item in self.pending_directives if item.directive_id != directive_id]
-        self._apply_directive(directive)
-        self._record_directive_event(directive, event="manual_apply")
-        return directive
+        return self.evolution_manager.apply_pending_directive(directive_id, self)
 
     def _apply_directive(self, directive: EvolutionDirective) -> None:
-        target, changes = directive.target_component, directive.proposed_change
-        try:
-            if directive.directive_type in {DirectiveType.TOPOLOGY, DirectiveType.ARCHITECTURE}:
-                if apply_runtime_contract_audit_directive(self.action_runtime, directive):
-                    return
-                directive.status = "rejected_guardrail_topology_locked"
-                return
-
-            if directive.directive_type == DirectiveType.PARAMETER and target == "orchestrator":
-                for k, v in changes.items(): setattr(self.config, k, v) if hasattr(self.config, k) else None
-                directive.status = "applied"
-            elif directive.directive_type == DirectiveType.PARAMETER and target == "orchestrator.branching_budget":
-                for k, v in changes.items(): setattr(self.config.branching_budget, k, v) if hasattr(self.config.branching_budget, k) else None
-                directive.status = "applied"
-            elif directive.directive_type == DirectiveType.PARAMETER and target == "bridge":
-                if hasattr(self.tokenizer, "config"):
-                    for k, v in changes.items(): setattr(self.tokenizer.config, k, v) if hasattr(self.tokenizer.config, k) else None
-                    directive.status = "applied"
-            elif directive.directive_type == DirectiveType.PARAMETER and target == "right_hemisphere":
-                applied, rejected = apply_controlled_right_hemisphere_params(self.right_hemisphere, changes)
-                directive.proposed_change = {
-                    **changes,
-                    "_audit": {
-                        "applied": applied,
-                        "rejected": rejected,
-                    },
-                }
-                directive.status = "applied" if applied else "rejected_guardrail_no_safe_change"
-            elif directive.directive_type == DirectiveType.PROMPT and target in {"left_hemisphere", "reflection_controller"}:
-                instruction = str(changes.get("instruction", "")).strip()
-                if instruction and instruction not in self.approved_prompt_directives:
-                    self.approved_prompt_directives.append(instruction)
-                directive.status = "applied"
-            else:
-                directive.status = "rejected_guardrail_target_unknown"
-        except Exception:
-            directive.status = "failed"
-
-    def _queue_directive(self, directive: EvolutionDirective) -> None:
-        fingerprint = self._directive_fingerprint(directive)
-        existing = {self._directive_fingerprint(item) for item in self.pending_directives if item.status == "pending"}
-        if fingerprint in existing: return
-        directive.status = "pending"
-        self.pending_directives.append(directive)
-        self._record_directive_event(directive, event="queued")
-
-    def _record_directive_event(self, directive: EvolutionDirective, *, event: str) -> None:
-        if self.evolution_archive is not None: self.evolution_archive.record_directive(directive, event=event)
-
-    def _directive_fingerprint(self, directive: EvolutionDirective) -> str:
-        return json.dumps({"directive_type": directive.directive_type.value, "target_component": directive.target_component, "proposed_change": directive.proposed_change}, sort_keys=True)
+        """Compatibility method for tests."""
+        self.evolution_manager.apply_directive(directive, self)
 
     def sleep_mode(self): return run_sync(self.asleep_mode())
     async def asleep_mode(self):
@@ -456,40 +381,18 @@ class CalosumAgent:
 
     async def _store_selected_episode(self, result: AgentTurnResult) -> None:
         episode = MemoryEpisode(
-            episode_id=str(uuid4()),
-            recorded_at=utc_now(),
-            user_turn=result.user_turn,
-            right_state=result.right_state,
-            bridge_packet=result.bridge_packet,
-            left_result=result.left_result,
-            execution_results=result.execution_results,
-            runtime_retry_count=result.runtime_retry_count,
-            critique_revision_count=result.critique_revision_count,
+            episode_id=str(uuid4()), recorded_at=utc_now(), user_turn=result.user_turn,
+            right_state=result.right_state, bridge_packet=result.bridge_packet,
+            left_result=result.left_result, execution_results=result.execution_results,
+            runtime_retry_count=result.runtime_retry_count, critique_revision_count=result.critique_revision_count,
         )
-        await maybe_await(
-            self.execution_engine.call_component(
-                self.memory_system, "astore_episode", "store_episode", episode
-            )
-        )
-
-    def _build_variant_tokenizer(self, variant: CognitiveVariantSpec) -> CognitiveTokenizerPort:
-        return self.execution_engine.clone_component_with_overrides(
-            self.tokenizer, variant.tokenizer_overrides
-        )
-
-    def _build_variant_left_hemisphere(
-        self,
-        variant: CognitiveVariantSpec,
-    ) -> LeftHemispherePort:
-        return self.execution_engine.clone_component_with_overrides(
-            self.left_hemisphere, variant.left_overrides
-        )
+        await maybe_await(self.execution_engine.call_component(self.memory_system, "astore_episode", "store_episode", episode))
+        
+        if self.memory_system and self.config.episode_volume_threshold > 0:
+            count = await maybe_await(self.execution_engine.call_component(self.memory_system, "aepisode_count", "episode_count"))
+            if count % self.config.episode_volume_threshold == 0: await self.asleep_mode()
 
     def idle_foraging(self) -> AgentTurnResult | GroupTurnResult | None:
-        """
-        Endogenous Goal Generation (Active Inference):
-        Executes a background turn to actively explore epistemic gaps without user prompt.
-        """
         return run_sync(self.aidle_foraging())
 
     async def aidle_foraging(self) -> AgentTurnResult | GroupTurnResult | None:
