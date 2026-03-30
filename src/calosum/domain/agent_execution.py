@@ -77,6 +77,24 @@ class AgentExecutionEngine:
             left_result=left_result,
             workspace=workspace,
         )
+        
+        # Bidirectional Cognitive Bridge: System 2 overrides System 1
+        # Detect if the logical execution engine flagged a cognitive mismatch in its reasoning
+        mismatch_detected = any(
+            "mismatch" in text.lower() or "override" in text.lower() or "false alarm" in text.lower()
+            for text in left_result.reasoning_summary
+        )
+        if mismatch_detected and hasattr(tokenizer, "record_reflection_event"):
+            event_payload = {
+                "turn_id": getattr(user_turn, "turn_id", "unknown"),
+                "event": "cognitive_mismatch_override",
+                "right_salience": right_state.salience,
+                "right_emotional_labels": right_state.emotional_labels,
+                "left_reasoning": left_result.reasoning_summary,
+                "note": "System 2 logically overrode System 1's heuristic priming."
+            }
+            await maybe_await(self.call_component(tokenizer, "record_reflection_event", "record_reflection_event", event_payload))
+
         telemetry = self._build_telemetry(
             right_state=right_state,
             bridge_packet=bridge_packet,
