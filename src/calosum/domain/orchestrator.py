@@ -365,58 +365,37 @@ class CalosumAgent:
         return diagnostic
 
     def latest_awareness_for_session(self, session_id: str | None = None) -> SessionDiagnostic | None:
-        if session_id is not None:
-            return self.latest_awareness_by_session.get(session_id)
-        if self.latest_awareness_by_session:
-            last_key = list(self.latest_awareness_by_session.keys())[-1]
-            return self.latest_awareness_by_session[last_key]
+        if session_id is not None: return self.latest_awareness_by_session.get(session_id)
+        if self.latest_awareness_by_session: return self.latest_awareness_by_session[list(self.latest_awareness_by_session.keys())[-1]]
         return None
 
     def workspace_for_session(self, session_id: str | None = None) -> CognitiveWorkspace | None:
-        if session_id is not None:
-            return self.last_workspace_by_session.get(session_id)
-        if self.last_workspace_by_session:
-            last_key = list(self.last_workspace_by_session.keys())[-1]
-            return self.last_workspace_by_session[last_key]
+        if session_id is not None: return self.last_workspace_by_session.get(session_id)
+        if self.last_workspace_by_session: return self.last_workspace_by_session[list(self.last_workspace_by_session.keys())[-1]]
         return None
 
     def apply_pending_directive(self, directive_id: str) -> EvolutionDirective | None:
         directive = next((item for item in self.pending_directives if item.directive_id == directive_id), None)
-        if directive is None:
-            return None
-
-        self.pending_directives = [
-            item for item in self.pending_directives if item.directive_id != directive_id
-        ]
+        if directive is None: return None
+        self.pending_directives = [item for item in self.pending_directives if item.directive_id != directive_id]
         self._apply_directive(directive)
         self._record_directive_event(directive, event="manual_apply")
         return directive
 
     def _apply_directive(self, directive: EvolutionDirective) -> None:
-        target = directive.target_component
-        changes = directive.proposed_change
-        
+        target, changes = directive.target_component, directive.proposed_change
         try:
             if target == "orchestrator":
-                for k, v in changes.items():
-                    if hasattr(self.config, k):
-                        setattr(self.config, k, v)
+                for k, v in changes.items(): setattr(self.config, k, v) if hasattr(self.config, k) else None
                 directive.status = "applied"
             elif target == "orchestrator.branching_budget":
-                for k, v in changes.items():
-                    if hasattr(self.config.branching_budget, k):
-                        setattr(self.config.branching_budget, k, v)
+                for k, v in changes.items(): setattr(self.config.branching_budget, k, v) if hasattr(self.config.branching_budget, k) else None
                 directive.status = "applied"
             elif target == "bridge":
                 if hasattr(self.tokenizer, "config"):
-                    for k, v in changes.items():
-                        if hasattr(self.tokenizer.config, k):
-                            setattr(self.tokenizer.config, k, v)
+                    for k, v in changes.items(): setattr(self.tokenizer.config, k, v) if hasattr(self.tokenizer.config, k) else None
                     directive.status = "applied"
-            elif directive.directive_type == DirectiveType.PROMPT and target in {
-                "left_hemisphere",
-                "reflection_controller",
-            }:
+            elif directive.directive_type == DirectiveType.PROMPT and target in {"left_hemisphere", "reflection_controller"}:
                 instruction = str(changes.get("instruction", "")).strip()
                 if instruction and instruction not in self.approved_prompt_directives:
                     self.approved_prompt_directives.append(instruction)
@@ -428,43 +407,21 @@ class CalosumAgent:
 
     def _queue_directive(self, directive: EvolutionDirective) -> None:
         fingerprint = self._directive_fingerprint(directive)
-        existing = {
-            self._directive_fingerprint(item)
-            for item in self.pending_directives
-            if item.status == "pending"
-        }
-        if fingerprint in existing:
-            return
+        existing = {self._directive_fingerprint(item) for item in self.pending_directives if item.status == "pending"}
+        if fingerprint in existing: return
         directive.status = "pending"
         self.pending_directives.append(directive)
         self._record_directive_event(directive, event="queued")
 
     def _record_directive_event(self, directive: EvolutionDirective, *, event: str) -> None:
-        if self.evolution_archive is not None:
-            self.evolution_archive.record_directive(directive, event=event)
+        if self.evolution_archive is not None: self.evolution_archive.record_directive(directive, event=event)
 
     def _directive_fingerprint(self, directive: EvolutionDirective) -> str:
-        return json.dumps(
-            {
-                "directive_type": directive.directive_type.value,
-                "target_component": directive.target_component,
-                "proposed_change": directive.proposed_change,
-            },
-            sort_keys=True,
-        )
+        return json.dumps({"directive_type": directive.directive_type.value, "target_component": directive.target_component, "proposed_change": directive.proposed_change}, sort_keys=True)
 
-    def sleep_mode(self):
-        return run_sync(self.asleep_mode())
-
-    async def asleep_mode(self):
-        return await maybe_await(
-            self.execution_engine.call_component(
-                self.memory_system, "asleep_mode", "sleep_mode"
-            )
-        )
-
-    def cognitive_dashboard(self, session_id: str | None = None) -> dict[str, list[dict]]:
-        return self.telemetry_bus.dashboard_for_session(session_id)
+    def sleep_mode(self): return run_sync(self.asleep_mode())
+    async def asleep_mode(self): return await maybe_await(self.execution_engine.call_component(self.memory_system, "asleep_mode", "sleep_mode"))
+    def cognitive_dashboard(self, session_id: str | None = None) -> dict[str, list[dict]]: return self.telemetry_bus.dashboard_for_session(session_id)
 
     async def _store_selected_episode(self, result: AgentTurnResult) -> None:
         episode = MemoryEpisode(
@@ -496,3 +453,45 @@ class CalosumAgent:
         return self.execution_engine.clone_component_with_overrides(
             self.left_hemisphere, variant.left_overrides
         )
+
+    def idle_foraging(self) -> AgentTurnResult | GroupTurnResult | None:
+        """
+        Endogenous Goal Generation (Active Inference):
+        Executes a background turn to actively explore epistemic gaps without user prompt.
+        """
+        return run_sync(self.aidle_foraging())
+
+    async def aidle_foraging(self) -> AgentTurnResult | GroupTurnResult | None:
+        """
+        Background foraging loop. Constructs a synthetic self-prompt directing the agent
+        to resolve staleness/uncertainty in its knowledge graph.
+        """
+        session_id = f"idle-foraging-{utc_now().strftime('%Y%m%d%H%M%S')}"
+        
+        # Determine if we have any existing semantic context to ground the foraging
+        graph_data = ""
+        if hasattr(self.memory_system, "graph_store"):
+            try:
+                triples = self.memory_system.graph_store.all()
+                if triples:
+                    graph_data = " Here are your current top triples: " + "; ".join(
+                        f"({t.subject} -> {t.predicate} -> {t.object})" for t in triples[:5]
+                    )
+            except Exception:
+                pass
+                
+        prompt = (
+            "SYSTEM IDLE MODE. You are in an endogenous goal generation state. "
+            "Review your current knowledge and project context for gaps, staleness, or ambiguity."
+            f"{graph_data} "
+            "Actively use your tools (like search_web, execute_bash, read_file) to forage for new, relevant information "
+            "and propose plans or semantic rules to reduce future uncertainty."
+        )
+
+        synthetic_turn = UserTurn(
+            session_id=session_id,
+            user_text=prompt,
+            signals=[],
+        )
+        
+        return await self.aprocess_turn(synthetic_turn)

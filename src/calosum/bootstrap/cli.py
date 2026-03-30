@@ -61,6 +61,14 @@ def build_parser() -> argparse.ArgumentParser:
     sleep_cmd.add_argument("--memory-dir")
     sleep_cmd.add_argument("--otlp-jsonl")
 
+    idle_cmd = subparsers.add_parser("idle", help="Run endogenous goal generation (Background Foraging)")
+    idle_cmd.add_argument(
+        "--infra-profile",
+        choices=[profile.value for profile in InfrastructureProfile],
+    )
+    idle_cmd.add_argument("--memory-dir")
+    idle_cmd.add_argument("--otlp-jsonl")
+
     chat_cmd = subparsers.add_parser("chat", help="Start an interactive chat REPL")
     chat_cmd.add_argument("--session-id", default="terminal-session")
     chat_cmd.add_argument(
@@ -92,6 +100,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sleep":
         return _handle_sleep(agent, args, builder)
 
+    if args.command == "idle":
+        return _handle_idle(agent, args)
+
     if args.command == "run-scenario":
         result = _handle_run_scenario(agent, Path(args.scenario_path))
         result["infrastructure"] = builder.describe()
@@ -101,6 +112,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.error(f"unknown command: {args.command}")
     return 2
 
+
+def _handle_idle(agent, args: argparse.Namespace) -> int:
+    import sys
+    print("Initiating endogenous goal generation (Background Foraging Mode)...")
+    result = agent.idle_foraging()
+    
+    if hasattr(result, "selected_result"):
+        turn_result = result.selected_result
+    else:
+        turn_result = result
+        
+    print(f"Foraging Reasoning: {turn_result.left_result.reasoning_summary}")
+    for action in turn_result.left_result.actions:
+        print(f"Action Executed: {action.action_type} - {action.payload}")
+        
+    print("Foraging cycle completed and memory updated.")
+    return 0
 
 def _handle_sleep(agent, args: argparse.Namespace, builder: CalosumAgentBuilder) -> int:
     import sys
