@@ -256,6 +256,20 @@ async def system_introspect(request: Request) -> JSONResponse:
         return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
 
 
+@app.post("/v1/system/idle")
+async def trigger_idle_foraging() -> JSONResponse:
+    """
+    Triggers the endogenous goal generation (idle foraging) cycle.
+    """
+    try:
+        agent = get_agent()
+        result = await agent.aidle_foraging()
+        return JSONResponse({"status": "ok", "result": to_primitive(result)})
+    except Exception as e:
+        logger.error("Error running idle foraging", exc_info=True)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
 @app.get("/ready")
 async def readiness_check() -> JSONResponse:
     """

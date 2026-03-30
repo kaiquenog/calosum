@@ -195,8 +195,60 @@ function App() {
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isForaging, setIsForaging] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+
+  // Trigger idle foraging
+  const handleIdleForage = async () => {
+    if (isForaging) return;
+    setIsForaging(true);
+    
+    // Add a system message to chat to show it's foraging
+    const forageMessageId = `forage-${Date.now()}`;
+    setChatMessages(prev => [...prev, {
+      id: forageMessageId,
+      role: 'assistant',
+      content: '🧠 Iniciando Forrageamento Epistêmico (Goal Generation)...',
+      timestamp: new Date(),
+      status: 'processing'
+    }]);
+
+    try {
+      const response = await fetch(`${apiBase}/v1/system/idle`, { method: 'POST' });
+      const data = await response.json();
+      
+      let resultText = 'Forrageamento concluído.';
+      if (data.status === 'ok') {
+        const turnResult = data.result?.selected_result || data.result;
+        if (turnResult?.left_result?.reasoning_summary) {
+          resultText = `Forrageamento concluído.\n\n*Reflexões:* \n- ${turnResult.left_result.reasoning_summary.join('\n- ')}`;
+        }
+        
+        if (turnResult?.left_result?.actions?.length > 0) {
+          resultText += `\n\n*Ações Tomadas:* \n` + turnResult.left_result.actions.map((a: any) => `- ${a.action_type}`).join('\n');
+        }
+      } else {
+        resultText = `Erro no forrageamento: ${data.error}`;
+      }
+
+      setChatMessages(prev => prev.map(msg => 
+        msg.id === forageMessageId 
+          ? { ...msg, status: 'done', content: resultText } 
+          : msg
+      ));
+      
+      void fetchDashboard(true);
+    } catch {
+      setChatMessages(prev => prev.map(msg => 
+        msg.id === forageMessageId 
+          ? { ...msg, status: 'error', content: 'Erro ao tentar forragear.' } 
+          : msg
+      ));
+    } finally {
+      setIsForaging(false);
+    }
+  };
   
   // Use a fixed active session for the chat
   const activeSessionId = useMemo(() => {
@@ -479,8 +531,8 @@ function App() {
       // Force dashboard refresh to get the latest telemetry
       void fetchDashboard(true);
 
-    } catch (err) {
-      console.error('Chat error:', err);
+    } catch (_err) {
+      console.error('Chat error:', _err);
       setChatMessages(prev => prev.map(msg => 
         msg.id === botMessageId 
           ? { ...msg, status: 'error', content: 'Erro de conexão com o agente.' } 
@@ -837,9 +889,20 @@ function App() {
                     <MessageSquare className="w-4 h-4 text-blue-400" />
                     Interaction
                   </h2>
-                  <span className="text-[10px] font-mono text-gray-500 bg-gray-800 px-2 py-0.5 rounded border border-gray-700 truncate max-w-[150px]">
-                    {activeSessionId}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleIdleForage}
+                      disabled={isForaging}
+                      className="text-xs bg-purple-600/20 text-purple-300 hover:bg-purple-600/30 border border-purple-500/30 px-3 py-1 rounded transition-colors flex items-center gap-2"
+                      title="Endogenous Goal Generation"
+                    >
+                      {isForaging ? <Activity className="w-3 h-3 animate-spin" /> : <Brain className="w-3 h-3" />}
+                      Idle Foraging
+                    </button>
+                    <span className="text-[10px] font-mono text-gray-500 bg-gray-800 px-2 py-0.5 rounded border border-gray-700 truncate max-w-[150px]">
+                      {activeSessionId}
+                    </span>
+                  </div>
                 </div>
                 <div className="p-4 border-b border-gray-800">
                   <form onSubmit={handleSendMessage} className="relative">
