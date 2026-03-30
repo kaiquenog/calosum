@@ -1,0 +1,207 @@
+{
+  "generated_at": "2026-03-30T14:31:20Z",
+  "target_threshold": 0.7,
+  "dataset_size": 8,
+  "results": [
+    {
+      "adapter": "RightHemisphereJEPA",
+      "mode": "heuristic",
+      "target_threshold": 0.7,
+      "samples": 8,
+      "accuracy": 1.0,
+      "false_positive_rate": 0.0,
+      "avg_salience": 0.531,
+      "avg_confidence": 0.72,
+      "avg_latency_ms": 0.051,
+      "p95_latency_ms": 0.117,
+      "peak_memory_kb": 6.372,
+      "notes": ""
+    },
+    {
+      "adapter": "HuggingFaceRightHemisphereAdapter",
+      "mode": "embedding_simulated_offline",
+      "target_threshold": 0.7,
+      "samples": 8,
+      "accuracy": 1.0,
+      "false_positive_rate": 0.0,
+      "avg_salience": 0.531,
+      "avg_confidence": 0.701,
+      "avg_latency_ms": 0.199,
+      "p95_latency_ms": 0.346,
+      "peak_memory_kb": 6.494,
+      "notes": "simulation used because offline environment cannot download HF checkpoints"
+    }
+  ],
+  "samples": {
+    "heuristic": [
+      {
+        "text": "Estou em emergência, preciso de ajuda urgente agora.",
+        "target": "high",
+        "salience": 1.0,
+        "confidence": 0.72,
+        "labels": [
+          "urgente"
+        ],
+        "latency_ms": 0.117
+      },
+      {
+        "text": "Sinto desespero e muita dor, preciso de suporte.",
+        "target": "high",
+        "salience": 0.95,
+        "confidence": 0.72,
+        "labels": [
+          "desespero",
+          "dor"
+        ],
+        "latency_ms": 0.058
+      },
+      {
+        "text": "Estou ansioso e frustrado, sem saber por onde começar.",
+        "target": "high",
+        "salience": 0.8,
+        "confidence": 0.72,
+        "labels": [
+          "ansioso",
+          "frustrado"
+        ],
+        "latency_ms": 0.044
+      },
+      {
+        "text": "Tenho medo de errar e estou preocupado com o prazo.",
+        "target": "high",
+        "salience": 0.9,
+        "confidence": 0.72,
+        "labels": [
+          "medo",
+          "preocupado"
+        ],
+        "latency_ms": 0.039
+      },
+      {
+        "text": "Hoje foi um dia normal, sem novidades importantes.",
+        "target": "neutral",
+        "salience": 0.15,
+        "confidence": 0.72,
+        "labels": [
+          "neutral"
+        ],
+        "latency_ms": 0.038
+      },
+      {
+        "text": "Quero revisar um documento técnico em passos simples.",
+        "target": "neutral",
+        "salience": 0.15,
+        "confidence": 0.72,
+        "labels": [
+          "neutral"
+        ],
+        "latency_ms": 0.038
+      },
+      {
+        "text": "Obrigado pela ajuda anterior, vamos seguir com calma.",
+        "target": "neutral",
+        "salience": 0.15,
+        "confidence": 0.72,
+        "labels": [
+          "neutral"
+        ],
+        "latency_ms": 0.036
+      },
+      {
+        "text": "Preciso de um resumo curto da reunião de ontem.",
+        "target": "neutral",
+        "salience": 0.15,
+        "confidence": 0.72,
+        "labels": [
+          "neutral"
+        ],
+        "latency_ms": 0.038
+      }
+    ],
+    "embedding_simulated_offline": [
+      {
+        "text": "Estou em emergência, preciso de ajuda urgente agora.",
+        "target": "high",
+        "salience": 1.0,
+        "confidence": 0.78,
+        "labels": [
+          "urgente"
+        ],
+        "latency_ms": 0.346
+      },
+      {
+        "text": "Sinto desespero e muita dor, preciso de suporte.",
+        "target": "high",
+        "salience": 0.95,
+        "confidence": 0.85,
+        "labels": [
+          "desespero",
+          "dor"
+        ],
+        "latency_ms": 0.202
+      },
+      {
+        "text": "Estou ansioso e frustrado, sem saber por onde começar.",
+        "target": "high",
+        "salience": 0.8,
+        "confidence": 0.85,
+        "labels": [
+          "ansioso",
+          "frustrado"
+        ],
+        "latency_ms": 0.184
+      },
+      {
+        "text": "Tenho medo de errar e estou preocupado com o prazo.",
+        "target": "high",
+        "salience": 0.9,
+        "confidence": 0.85,
+        "labels": [
+          "medo",
+          "preocupado"
+        ],
+        "latency_ms": 0.173
+      },
+      {
+        "text": "Hoje foi um dia normal, sem novidades importantes.",
+        "target": "neutral",
+        "salience": 0.15,
+        "confidence": 0.57,
+        "labels": [
+          "neutral"
+        ],
+        "latency_ms": 0.173
+      },
+      {
+        "text": "Quero revisar um documento técnico em passos simples.",
+        "target": "neutral",
+        "salience": 0.15,
+        "confidence": 0.57,
+        "labels": [
+          "neutral"
+        ],
+        "latency_ms": 0.172
+      },
+      {
+        "text": "Obrigado pela ajuda anterior, vamos seguir com calma.",
+        "target": "neutral",
+        "salience": 0.15,
+        "confidence": 0.57,
+        "labels": [
+          "neutral"
+        ],
+        "latency_ms": 0.173
+      },
+      {
+        "text": "Preciso de um resumo curto da reunião de ontem.",
+        "target": "neutral",
+        "salience": 0.15,
+        "confidence": 0.57,
+        "labels": [
+          "neutral"
+        ],
+        "latency_ms": 0.173
+      }
+    ]
+  }
+}

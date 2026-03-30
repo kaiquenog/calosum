@@ -18,10 +18,18 @@ class TelegramChannelAdapter:
     Utiliza polling para receber mensagens.
     """
 
-    def __init__(self, token: str) -> None:
+    def __init__(
+        self,
+        token: str,
+        *,
+        dm_policy: str = "open",
+        allowlist_ids: list[str] | None = None,
+    ) -> None:
         self.token = token
         self.app = ApplicationBuilder().token(self.token).build()
         self._on_message_callback: Callable[[UserTurn], Awaitable[None]] | None = None
+        self.dm_policy = (dm_policy or "open").strip().lower()
+        self.allowlist_ids = set(allowlist_ids or [])
 
     async def listen(self, on_message: Callable[[UserTurn], Awaitable[None]]) -> None:
         self._on_message_callback = on_message
@@ -60,7 +68,17 @@ class TelegramChannelAdapter:
             return
 
         chat_id = str(update.message.chat_id)
+        sender_id = str(update.effective_user.id) if update.effective_user else chat_id
         text = update.message.text
+
+        if not self._is_sender_allowed(sender_id):
+            logger.warning(
+                "Telegram message rejected by dm_policy policy=%s sender_id=%s chat_id=%s",
+                self.dm_policy,
+                sender_id,
+                chat_id,
+            )
+            return
 
         user_turn = UserTurn(
             session_id=chat_id,
@@ -73,3 +91,8 @@ class TelegramChannelAdapter:
         except Exception as e:
             logger.error(f"Erro no callback de processamento do Telegram: {e}")
             await self.send(chat_id, "Desculpe, ocorreu um erro interno ao processar sua mensagem.")
+
+    def _is_sender_allowed(self, sender_id: str) -> bool:
+        if self.dm_policy == "allowlist":
+            return sender_id in self.allowlist_ids
+        return True

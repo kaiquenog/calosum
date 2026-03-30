@@ -60,6 +60,10 @@ class InfrastructureBuilderTests(unittest.TestCase):
         self.assertIsInstance(agent.right_hemisphere, ActiveInferenceRightHemisphereAdapter)
         self.assertIsInstance(agent.right_hemisphere.base_adapter, RightHemisphereJEPA)
         self.assertEqual(description["right_hemisphere_backend"], "active_inference_heuristic_fallback")
+        self.assertEqual(
+            getattr(agent.right_hemisphere.base_adapter, "degraded_reason", None),
+            "hf_stack_unavailable:RuntimeError",
+        )
 
     def test_docker_profile_resolves_infra_defaults(self) -> None:
         settings = InfrastructureSettings(profile=InfrastructureProfile.DOCKER).with_profile_defaults()

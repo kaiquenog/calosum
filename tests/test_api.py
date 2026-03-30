@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 import unittest
@@ -114,6 +115,50 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(missing.status_code, 404)
         self.assertEqual(missing.json()["status"], "error")
 
+    def test_workspace_carries_previous_runtime_feedback_across_turns(self) -> None:
+        session_id = "runtime-feedback-session"
+        first = self.client.post(
+            "/v1/chat/completions",
+            json={"text": "Primeiro turno para gerar execucao.", "session_id": session_id},
+        )
+        self.assertEqual(first.status_code, 200)
+
+        second = self.client.post(
+            "/v1/chat/completions",
+            json={"text": "Segundo turno para reutilizar contexto operacional.", "session_id": session_id},
+        )
+        self.assertEqual(second.status_code, 200)
+
+        state_response = self.client.get("/v1/system/state", params={"session_id": session_id})
+        self.assertEqual(state_response.status_code, 200)
+        state = state_response.json()["state"]
+
+        self.assertIn("previous_runtime_feedback", state["task_frame"])
+        self.assertGreater(len(state["task_frame"]["previous_runtime_feedback"]), 0)
+        self.assertIn("runtime_feedback_bias", state["right_notes"])
+
+    def test_dashboard_felt_exposes_right_hemisphere_runtime_telemetry_contract(self) -> None:
+        session_id = "telemetry-contract-session"
+        post_response = self.client.post(
+            "/v1/chat/completions",
+            json={"text": "Preciso de ajuda urgente", "session_id": session_id},
+        )
+        self.assertEqual(post_response.status_code, 200)
+
+        dashboard_response = self.client.get(f"/v1/telemetry/dashboard/{session_id}")
+        self.assertEqual(dashboard_response.status_code, 200)
+        dashboard = dashboard_response.json()["dashboard"]
+        self.assertGreater(len(dashboard["felt"]), 0)
+
+        latest_felt = dashboard["felt"][-1]
+        telemetry = latest_felt["telemetry"]
+        self.assertIn("right_backend", telemetry)
+        self.assertIn("right_model_name", telemetry)
+        self.assertIn("right_mode", telemetry)
+        self.assertIn("degraded_reason", telemetry)
+        self.assertIn("runtime_feedback_bias", telemetry)
+        self.assertEqual(telemetry["right_mode"], "heuristic")
+
     def test_system_awareness_generates_extended_diagnostic(self) -> None:
         self.client.post("/v1/chat/completions", json={"text": "Quero uma resposta com ação externa e aprovação."})
 
@@ -157,6 +202,28 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("reason=", data["response"])
         self.assertIn("memory=", data["response"])
         self.assertIn("telemetry=", data["response"])
+
+    def test_chat_completions_serializes_turns_with_same_session_lane(self) -> None:
+        active = 0
+        max_active = 0
+
+        async def tracked_operation():
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            try:
+                await asyncio.sleep(0.05)
+            finally:
+                active -= 1
+
+        async def run_pair():
+            await asyncio.gather(
+                api_module._run_in_session_lane("lane-session", tracked_operation),
+                api_module._run_in_session_lane("lane-session", tracked_operation),
+            )
+
+        asyncio.run(run_pair())
+        self.assertEqual(max_active, 1)
 
 
 if __name__ == "__main__":

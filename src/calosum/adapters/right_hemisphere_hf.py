@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from collections import defaultdict
 from typing import Any
 
 from calosum.shared.types import MemoryContext, Modality, RightHemisphereState, UserTurn, CognitiveWorkspace
@@ -29,6 +30,24 @@ class HuggingFaceRightHemisphereConfig:
             "desespero": 0.95
         }
     )
+    emotion_similarity_thresholds: dict[str, float] = field(
+        default_factory=lambda: {
+            "urgente": 0.42,
+            "emergencia": 0.42,
+            "triste": 0.46,
+            "ansioso": 0.46,
+            "feliz": 0.5,
+            "frustrado": 0.44,
+            "raiva": 0.44,
+            "medo": 0.44,
+            "preocupado": 0.46,
+            "dor": 0.44,
+            "desespero": 0.42,
+        }
+    )
+    salience_window_size: int = 6
+    salience_smoothing_alpha: float = 0.45
+    salience_max_step: float = 0.22
 
 
 class HuggingFaceRightHemisphereAdapter:
@@ -48,6 +67,7 @@ class HuggingFaceRightHemisphereAdapter:
 
     def __init__(self, config: HuggingFaceRightHemisphereConfig | None = None) -> None:
         self.config = config or HuggingFaceRightHemisphereConfig()
+        self._salience_history_by_session: dict[str, list[float]] = defaultdict(list)
         
         try:
             # O import é feito aqui para evitar lentidão de importação no bootstrap
@@ -87,11 +107,13 @@ class HuggingFaceRightHemisphereAdapter:
             # Em caso de mock retornar lista pura
             latent_vector = embeddings[0] if isinstance(embeddings[0], list) else embeddings
 
-        # 2. Extrai rótulos emocionais reais (via similaridade vetorial leve)
-        emotional_labels = self._extract_emotional_labels(text, latent_vector)
+        # 2. Extrai rótulos emocionais reais (keywords + similaridade vetorial calibrada)
+        emotional_labels, emotion_meta = self._extract_emotional_labels(text, latent_vector)
         
         # 3. Estima a saliência (intensidade emocional)
-        salience = self._estimate_salience(text, emotional_labels)
+        raw_salience = self._estimate_salience(text, emotional_labels)
+        runtime_feedback_bias = self._runtime_feedback_bias(workspace)
+        salience = self._calibrate_salience(user_turn.session_id, min(1.0, raw_salience + runtime_feedback_bias))
         
         # 4. Constrói hipóteses de mundo
         import numpy as np
@@ -106,10 +128,13 @@ class HuggingFaceRightHemisphereAdapter:
             "interaction_complexity": min(1.0, len(text) / 240.0),
             "sensor_diversity": min(1.0, len(user_turn.signals) / 6.0),
             "urgency": salience,
-            "semantic_density": round(semantic_density, 3)
+            "semantic_density": round(semantic_density, 3),
+            "operational_risk": runtime_feedback_bias,
         }
 
         surprise_score = self._calculate_surprise(latent_vector, memory_context)
+        confidence = self._estimate_confidence(user_turn, emotional_labels, emotion_meta)
+        modalities_seen = [signal.modality.value for signal in user_turn.signals] if user_turn.signals else ["text"]
 
         state = RightHemisphereState(
             context_id=user_turn.turn_id,
@@ -117,12 +142,21 @@ class HuggingFaceRightHemisphereAdapter:
             salience=salience,
             emotional_labels=emotional_labels or ["neutral"],
             world_hypotheses=world_hypotheses,
-            confidence=0.85,
+            confidence=confidence,
             surprise_score=surprise_score,
             telemetry={
                 "model_name": self.config.embedding_model_name,
-                "modalities_seen": [signal.modality.value for signal in user_turn.signals] if user_turn.signals else ["text"],
-                "vector_dimension": len(latent_vector)
+                "right_backend": "huggingface_sentence_transformers",
+                "right_model_name": self.config.embedding_model_name,
+                "right_mode": "embedding",
+                "degraded_reason": None,
+                "modalities_seen": modalities_seen,
+                "vector_dimension": len(latent_vector),
+                "emotion_keyword_hits": emotion_meta["keyword_hits"],
+                "emotion_vector_hits": emotion_meta["vector_hits"],
+                "emotion_peak_similarity": emotion_meta["peak_similarity"],
+                "raw_salience": raw_salience,
+                "runtime_feedback_bias": runtime_feedback_bias,
             },
         )
         
@@ -131,7 +165,10 @@ class HuggingFaceRightHemisphereAdapter:
                 "backend": "huggingface",
                 "surprise_score": surprise_score,
                 "salience": salience,
+                "raw_salience": raw_salience,
+                "runtime_feedback_bias": runtime_feedback_bias,
                 "emotional_labels": emotional_labels or ["neutral"],
+                "confidence": confidence,
             })
             
         return state
@@ -168,14 +205,18 @@ class HuggingFaceRightHemisphereAdapter:
         except Exception:
             return 0.5
 
-    def _extract_emotional_labels(self, text: str, latent_vector: list[float]) -> list[str]:
-        labels: list[str] = []
+    def _extract_emotional_labels(self, text: str, latent_vector: list[float]) -> tuple[list[str], dict[str, Any]]:
+        labels: set[str] = set()
         lowered_text = text.lower()
+        keyword_hits = 0
+        vector_hits = 0
+        peak_similarity = 0.0
         
         # 1. Heurística rápida baseada em palavras chave para match exato
         for keyword in self.config.salience_keywords:
             if keyword in lowered_text:
-                labels.append(keyword)
+                labels.add(keyword)
+                keyword_hits += 1
                 
         # 2. Similaridade de Cosseno com os embeddings dos labels emocionais
         import numpy as np
@@ -184,11 +225,18 @@ class HuggingFaceRightHemisphereAdapter:
         if norm_vec > 0:
             for idx, label_emb in enumerate(self._emotion_embeddings):
                 sim = np.dot(vec, label_emb) / (norm_vec * np.linalg.norm(label_emb))
-                # Threshold calibrado para o modelo multilingual
-                if sim > 0.35:
-                    labels.append(self._emotion_labels[idx])
-        
-        return sorted(set(labels))
+                peak_similarity = max(peak_similarity, float(sim))
+                label = self._emotion_labels[idx]
+                threshold = self.config.emotion_similarity_thresholds.get(label, 0.46)
+                if sim >= threshold:
+                    labels.add(label)
+                    vector_hits += 1
+
+        return sorted(labels), {
+            "keyword_hits": keyword_hits,
+            "vector_hits": vector_hits,
+            "peak_similarity": round(float(peak_similarity), 4),
+        }
 
     def _estimate_salience(self, text: str, emotional_labels: list[str]) -> float:
         lowered_text = text.lower()
@@ -203,3 +251,69 @@ class HuggingFaceRightHemisphereAdapter:
             salience = min(1.0, salience + 0.20)
             
         return round(min(1.0, salience), 3)
+
+    def _calibrate_salience(self, session_id: str, raw_salience: float) -> float:
+        history = self._salience_history_by_session[session_id]
+        if not history:
+            history.append(raw_salience)
+            return round(raw_salience, 3)
+
+        moving_avg = sum(history) / len(history)
+        alpha = min(1.0, max(0.0, self.config.salience_smoothing_alpha))
+        blended = (alpha * raw_salience) + ((1.0 - alpha) * moving_avg)
+
+        previous = history[-1]
+        max_step = max(0.01, self.config.salience_max_step)
+        lower_bound = max(0.0, previous - max_step)
+        upper_bound = min(1.0, previous + max_step)
+        calibrated = min(upper_bound, max(lower_bound, blended))
+
+        history.append(calibrated)
+        max_window = max(2, self.config.salience_window_size)
+        if len(history) > max_window:
+            del history[:-max_window]
+        return round(calibrated, 3)
+
+    def _runtime_feedback_bias(self, workspace: CognitiveWorkspace | None) -> float:
+        if workspace is None:
+            return 0.0
+        previous_feedback = workspace.task_frame.get("previous_runtime_feedback", [])
+        if not isinstance(previous_feedback, list) or not previous_feedback:
+            return 0.0
+        rejected = sum(int(item.get("rejected_count", 0)) for item in previous_feedback if isinstance(item, dict))
+        executed = sum(int(item.get("executed_count", 0)) for item in previous_feedback if isinstance(item, dict))
+        attempts = max(1, len(previous_feedback))
+        rejection_rate = rejected / max(1, rejected + executed)
+        intensity = min(0.15, (rejection_rate * 0.12) + (attempts * 0.01))
+        return round(max(0.0, intensity), 3)
+
+    def _estimate_confidence(
+        self,
+        user_turn: UserTurn,
+        emotional_labels: list[str],
+        emotion_meta: dict[str, Any],
+    ) -> float:
+        # Confidence sobe quando ha evidencia convergente (keyword/similaridade/sinais)
+        # e cai quando apenas sinais fracos sao encontrados.
+        base = 0.55
+        text_len = len(user_turn.user_text.strip())
+        if text_len >= 20:
+            base += 0.08
+        elif text_len >= 8:
+            base += 0.04
+
+        signal_bonus = min(0.12, len(user_turn.signals) * 0.04)
+        base += signal_bonus
+        base += min(0.1, float(emotion_meta.get("keyword_hits", 0)) * 0.04)
+        base += min(0.08, float(emotion_meta.get("vector_hits", 0)) * 0.03)
+
+        peak_similarity = float(emotion_meta.get("peak_similarity", 0.0))
+        if peak_similarity >= 0.6:
+            base += 0.08
+        elif peak_similarity >= 0.5:
+            base += 0.04
+
+        if not emotional_labels:
+            base -= 0.06
+
+        return round(max(0.35, min(0.95, base)), 3)

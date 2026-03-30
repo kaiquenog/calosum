@@ -42,8 +42,14 @@ class InMemoryEpisodicStore:
 
     def query(self, user_turn: UserTurn, limit: int = 5) -> list[MemoryEpisode]:
         query_terms = set(user_turn.user_text.lower().split())
+        session_episodes = [
+            episode
+            for episode in self.episodes
+            if episode.user_turn.session_id == user_turn.session_id
+        ]
+        pool = session_episodes or self.episodes
         ranked = sorted(
-            self.episodes,
+            pool,
             key=lambda episode: (
                 len(query_terms.intersection(episode.user_turn.user_text.lower().split())),
                 episode.recorded_at,

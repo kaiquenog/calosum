@@ -50,6 +50,7 @@ class CalosumAgentBuilder:
         memory_system = self.build_memory_system()
         telemetry_bus = self.build_telemetry_bus()
         capability_snapshot = self.build_capability_snapshot(action_runtime)
+        night_trainer = self.build_night_trainer()
         return CalosumAgent(
             right_hemisphere=right_hemisphere,
             tokenizer=tokenizer,
@@ -60,6 +61,7 @@ class CalosumAgentBuilder:
             config=self._build_agent_config(),
             capability_snapshot=capability_snapshot,
             evolution_archive=JsonlEvolutionArchive(self.settings.evolution_archive_path),
+            night_trainer=night_trainer,
         )
 
     def build_left_hemisphere(self):
@@ -91,7 +93,9 @@ class CalosumAgentBuilder:
         if requested_model and requested_model.lower() == "jepa":
             self._last_right_hemisphere_backend = "active_inference_jepa_policy"
             self._last_right_hemisphere_model_name = "jepa"
-            return ActiveInferenceRightHemisphereAdapter(RightHemisphereJEPA())
+            base_adapter = RightHemisphereJEPA()
+            setattr(base_adapter, "degraded_reason", None)
+            return ActiveInferenceRightHemisphereAdapter(base_adapter)
 
         try:
             from calosum.adapters.right_hemisphere_hf import (
@@ -111,7 +115,9 @@ class CalosumAgentBuilder:
             )
             self._last_right_hemisphere_backend = "active_inference_heuristic_fallback"
             self._last_right_hemisphere_model_name = "jepa"
-            return ActiveInferenceRightHemisphereAdapter(RightHemisphereJEPA())
+            base_adapter = RightHemisphereJEPA()
+            setattr(base_adapter, "degraded_reason", f"hf_stack_unavailable:{exc.__class__.__name__}")
+            return ActiveInferenceRightHemisphereAdapter(base_adapter)
 
         self._last_right_hemisphere_backend = "active_inference_huggingface"
         if self._last_right_hemisphere_model_name is None:

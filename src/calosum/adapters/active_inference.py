@@ -7,13 +7,14 @@ from typing import Any
 
 import numpy as np
 
-from calosum.shared.types import MemoryContext, RightHemisphereState, UserTurn
+from calosum.shared.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
 
 
 @dataclass(slots=True)
 class ActiveInferenceConfig:
     distance_temperature: float = 4.0
     recency_bias: float = 0.18
+    novelty_weight: float = 0.25
 
 
 class ActiveInferenceRightHemisphereAdapter:
@@ -35,24 +36,36 @@ class ActiveInferenceRightHemisphereAdapter:
         self,
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> RightHemisphereState:
-        base_state = self.base_adapter.perceive(user_turn, memory_context)
+        base_state = self._invoke_sync_perception(user_turn, memory_context, workspace)
         return self._attach_active_inference(base_state, memory_context)
 
     async def aperceive(
         self,
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
+        workspace: CognitiveWorkspace | None = None,
     ) -> RightHemisphereState:
         if hasattr(self.base_adapter, "aperceive"):
-            base_state = await self.base_adapter.aperceive(user_turn, memory_context)
+            try:
+                base_state = await self.base_adapter.aperceive(user_turn, memory_context, workspace)
+            except TypeError:
+                base_state = await self.base_adapter.aperceive(user_turn, memory_context)
         else:
-            base_state = await asyncio.to_thread(
-                self.base_adapter.perceive,
-                user_turn,
-                memory_context,
-            )
+            base_state = await asyncio.to_thread(self._invoke_sync_perception, user_turn, memory_context, workspace)
         return self._attach_active_inference(base_state, memory_context)
+
+    def _invoke_sync_perception(
+        self,
+        user_turn: UserTurn,
+        memory_context: MemoryContext | None = None,
+        workspace: CognitiveWorkspace | None = None,
+    ) -> RightHemisphereState:
+        try:
+            return self.base_adapter.perceive(user_turn, memory_context, workspace)
+        except TypeError:
+            return self.base_adapter.perceive(user_turn, memory_context)
 
     def _attach_active_inference(
         self,
@@ -66,6 +79,7 @@ class ActiveInferenceRightHemisphereAdapter:
         )
         merged_telemetry = dict(base_state.telemetry)
         merged_telemetry.update(telemetry)
+        merged_telemetry.update(self._describe_base_adapter(base_state))
 
         return RightHemisphereState(
             context_id=base_state.context_id,
@@ -77,6 +91,37 @@ class ActiveInferenceRightHemisphereAdapter:
             surprise_score=score,
             telemetry=merged_telemetry,
         )
+
+    def _describe_base_adapter(self, base_state: RightHemisphereState) -> dict[str, Any]:
+        model_name = str(
+            base_state.telemetry.get("model_name")
+            or getattr(getattr(self.base_adapter, "config", None), "model_name", "")
+            or getattr(getattr(self.base_adapter, "config", None), "embedding_model_name", "")
+            or self.base_adapter.__class__.__name__
+        )
+        backend = str(base_state.telemetry.get("right_backend") or self._base_backend_name())
+        mode = str(base_state.telemetry.get("right_mode") or self._base_mode(backend))
+        degraded_reason = base_state.telemetry.get("degraded_reason") or getattr(self.base_adapter, "degraded_reason", None)
+        return {
+            "right_backend": backend,
+            "right_model_name": model_name,
+            "right_mode": mode,
+            "degraded_reason": degraded_reason,
+        }
+
+    def _base_backend_name(self) -> str:
+        module_name = self.base_adapter.__class__.__module__
+        if "right_hemisphere_hf" in module_name:
+            return "huggingface_sentence_transformers"
+        if "right_hemisphere" in module_name:
+            return "heuristic_jepa"
+        return self.base_adapter.__class__.__name__.lower()
+
+    def _base_mode(self, backend: str) -> str:
+        lowered = backend.lower()
+        if "huggingface" in lowered or "embedding" in lowered:
+            return "embedding"
+        return "heuristic"
 
     def _free_energy_surprise(
         self,
@@ -111,7 +156,8 @@ class ActiveInferenceRightHemisphereAdapter:
             complexity = float(np.sum(posterior * (_safe_log(posterior) - _safe_log(prior))))
 
         ambiguity = float(np.sum(posterior * distances))
-        free_energy = max(0.0, complexity + ambiguity)
+        novelty = float(np.min(distances) / 2.0)
+        free_energy = max(0.0, complexity + ambiguity + (self.config.novelty_weight * novelty))
         scale = max(1.0, 1.0 + np.log(len(distances) + 1))
         normalized = round(float(min(1.0, free_energy / scale)), 3)
 
@@ -122,6 +168,7 @@ class ActiveInferenceRightHemisphereAdapter:
             "free_energy": round(free_energy, 4),
             "free_energy_complexity": round(complexity, 4),
             "free_energy_ambiguity": round(ambiguity, 4),
+            "free_energy_novelty": round(novelty, 4),
             "posterior_peak": round(float(np.max(posterior)), 4),
             "memory_alignment": round(float(1.0 - (np.min(distances) / 2.0)), 4),
         }

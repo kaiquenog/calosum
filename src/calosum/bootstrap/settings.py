@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Mapping
@@ -51,6 +51,8 @@ class InfrastructureSettings:
     embedding_model: str | None = None
     embedding_provider: str | None = None
     telegram_bot_token: str | None = None
+    telegram_dm_policy: str = "open"
+    telegram_allowlist_ids: list[str] = field(default_factory=list)
     vault: dict[str, str] | None = None
 
     @classmethod
@@ -131,6 +133,8 @@ class InfrastructureSettings:
             embedding_model=env.get("CALOSUM_EMBEDDING_MODEL"),
             embedding_provider=env.get("CALOSUM_EMBEDDING_PROVIDER"),
             telegram_bot_token=env.get("TELEGRAM_BOT_TOKEN"),
+            telegram_dm_policy=env.get("CALOSUM_TELEGRAM_DM_POLICY", "open"),
+            telegram_allowlist_ids=_parse_csv_list(env.get("CALOSUM_TELEGRAM_ALLOWLIST")),
             vault=vault if vault else None,
         )
         return settings.with_profile_defaults()
@@ -169,6 +173,8 @@ class InfrastructureSettings:
                 embedding_model=self.embedding_model,
                 embedding_provider=self.embedding_provider,
                 telegram_bot_token=self.telegram_bot_token,
+                telegram_dm_policy=self.telegram_dm_policy,
+                telegram_allowlist_ids=list(self.telegram_allowlist_ids or []),
                 vault=self.vault,
             )
 
@@ -207,16 +213,29 @@ class InfrastructureSettings:
                 embedding_model=self.embedding_model,
                 embedding_provider=self.embedding_provider,
                 telegram_bot_token=self.telegram_bot_token,
+                telegram_dm_policy=self.telegram_dm_policy,
+                telegram_allowlist_ids=list(self.telegram_allowlist_ids or []),
                 vault=self.vault,
             )
 
-        return replace(self, awareness_interval_turns=max(1, self.awareness_interval_turns))
+        return replace(
+            self,
+            awareness_interval_turns=max(1, self.awareness_interval_turns),
+            telegram_dm_policy=self.telegram_dm_policy or "open",
+            telegram_allowlist_ids=list(self.telegram_allowlist_ids or []),
+        )
 
 
 def _path(value: str | os.PathLike[str] | None) -> Path | None:
     if value is None or value == "":
         return None
     return Path(value)
+
+
+def _parse_csv_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def should_enable_local_persistence_defaults(

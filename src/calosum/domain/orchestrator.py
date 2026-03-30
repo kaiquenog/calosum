@@ -6,6 +6,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from calosum.shared.async_utils import maybe_await, run_sync
+from calosum.domain.directive_guardrails import apply_controlled_right_hemisphere_params
 from calosum.domain.agent_execution import AgentExecutionEngine
 from calosum.domain.bridge import CognitiveTokenizer
 from calosum.domain.event_bus import CognitiveEvent, InternalEventBus
@@ -32,6 +33,7 @@ from calosum.domain.right_hemisphere import RightHemisphereJEPA
 from calosum.domain.runtime import StrictLambdaRuntime
 from calosum.domain.telemetry import CognitiveTelemetryBus
 from calosum.domain.verifier import HeuristicVerifier
+from calosum.domain.idle_foraging import build_idle_foraging_turn
 from calosum.shared.types import (
     AgentTurnResult,
     CapabilityDescriptor,
@@ -45,7 +47,6 @@ from calosum.shared.types import (
     utc_now,
 )
 
-
 @dataclass(slots=True)
 class BranchingBudget:
     max_width: int = 3
@@ -57,8 +58,6 @@ class CalosumAgentConfig:
     surprise_threshold: float = 0.6
     awareness_interval_turns: int = 1
     branching_budget: BranchingBudget = field(default_factory=BranchingBudget)
-
-
 class CalosumAgent:
     """
     Orquestrador do ciclo cognitivo.
@@ -81,6 +80,7 @@ class CalosumAgent:
         config: CalosumAgentConfig | None = None,
         capability_snapshot: CapabilityDescriptor | None = None,
         evolution_archive: "JsonlEvolutionArchive | None" = None,
+        night_trainer: Any | None = None,
     ) -> None:
         self.right_hemisphere = right_hemisphere or RightHemisphereJEPA()
         self.tokenizer = tokenizer or CognitiveTokenizer()
@@ -93,13 +93,13 @@ class CalosumAgent:
         self.config = config or CalosumAgentConfig()
         self.capability_snapshot = capability_snapshot
         self.evolution_archive = evolution_archive
+        self.night_trainer = night_trainer
         self.event_bus = InternalEventBus()
         self.execution_engine = AgentExecutionEngine(
             action_runtime=self.action_runtime,
             max_runtime_retries=self.config.max_runtime_retries,
             verifier=self.verifier,
         )
-        
         # Último workspace por sessão
         self.last_workspace_by_session: dict[str, CognitiveWorkspace] = {}
         self.latest_awareness_by_session: dict[str, SessionDiagnostic] = {}
@@ -109,7 +109,6 @@ class CalosumAgent:
             if self.evolution_archive is not None
             else []
         )
-        
         self.pending_directives: list[EvolutionDirective] = (
             self.evolution_archive.load_pending_directives()
             if self.evolution_archive is not None
@@ -385,23 +384,37 @@ class CalosumAgent:
     def _apply_directive(self, directive: EvolutionDirective) -> None:
         target, changes = directive.target_component, directive.proposed_change
         try:
-            if target == "orchestrator":
+            if directive.directive_type in {DirectiveType.TOPOLOGY, DirectiveType.ARCHITECTURE}:
+                directive.status = "rejected_guardrail_topology_locked"
+                return
+
+            if directive.directive_type == DirectiveType.PARAMETER and target == "orchestrator":
                 for k, v in changes.items(): setattr(self.config, k, v) if hasattr(self.config, k) else None
                 directive.status = "applied"
-            elif target == "orchestrator.branching_budget":
+            elif directive.directive_type == DirectiveType.PARAMETER and target == "orchestrator.branching_budget":
                 for k, v in changes.items(): setattr(self.config.branching_budget, k, v) if hasattr(self.config.branching_budget, k) else None
                 directive.status = "applied"
-            elif target == "bridge":
+            elif directive.directive_type == DirectiveType.PARAMETER and target == "bridge":
                 if hasattr(self.tokenizer, "config"):
                     for k, v in changes.items(): setattr(self.tokenizer.config, k, v) if hasattr(self.tokenizer.config, k) else None
                     directive.status = "applied"
+            elif directive.directive_type == DirectiveType.PARAMETER and target == "right_hemisphere":
+                applied, rejected = apply_controlled_right_hemisphere_params(self.right_hemisphere, changes)
+                directive.proposed_change = {
+                    **changes,
+                    "_audit": {
+                        "applied": applied,
+                        "rejected": rejected,
+                    },
+                }
+                directive.status = "applied" if applied else "rejected_guardrail_no_safe_change"
             elif directive.directive_type == DirectiveType.PROMPT and target in {"left_hemisphere", "reflection_controller"}:
                 instruction = str(changes.get("instruction", "")).strip()
                 if instruction and instruction not in self.approved_prompt_directives:
                     self.approved_prompt_directives.append(instruction)
                 directive.status = "applied"
             else:
-                directive.status = "rejected_target_unknown"
+                directive.status = "rejected_guardrail_target_unknown"
         except Exception:
             directive.status = "failed"
 
@@ -420,7 +433,12 @@ class CalosumAgent:
         return json.dumps({"directive_type": directive.directive_type.value, "target_component": directive.target_component, "proposed_change": directive.proposed_change}, sort_keys=True)
 
     def sleep_mode(self): return run_sync(self.asleep_mode())
-    async def asleep_mode(self): return await maybe_await(self.execution_engine.call_component(self.memory_system, "asleep_mode", "sleep_mode"))
+    async def asleep_mode(self):
+        report = await maybe_await(self.execution_engine.call_component(self.memory_system, "asleep_mode", "sleep_mode"))
+        await self.event_bus.publish(CognitiveEvent("SleepModeCompletedEvent", report, "system-loop"))
+        if self.night_trainer is not None:
+            await maybe_await(self.execution_engine.call_component(self.night_trainer, "arun_training_cycle", "run_training_cycle"))
+        return report
     def cognitive_dashboard(self, session_id: str | None = None) -> dict[str, list[dict]]: return self.telemetry_bus.dashboard_for_session(session_id)
 
     async def _store_selected_episode(self, result: AgentTurnResult) -> None:
@@ -462,36 +480,5 @@ class CalosumAgent:
         return run_sync(self.aidle_foraging())
 
     async def aidle_foraging(self) -> AgentTurnResult | GroupTurnResult | None:
-        """
-        Background foraging loop. Constructs a synthetic self-prompt directing the agent
-        to resolve staleness/uncertainty in its knowledge graph.
-        """
-        session_id = f"idle-foraging-{utc_now().strftime('%Y%m%d%H%M%S')}"
-        
-        # Determine if we have any existing semantic context to ground the foraging
-        graph_data = ""
-        if hasattr(self.memory_system, "graph_store"):
-            try:
-                triples = self.memory_system.graph_store.all()
-                if triples:
-                    graph_data = " Here are your current top triples: " + "; ".join(
-                        f"({t.subject} -> {t.predicate} -> {t.object})" for t in triples[:5]
-                    )
-            except Exception:
-                pass
-                
-        prompt = (
-            "SYSTEM IDLE MODE. You are in an endogenous goal generation state. "
-            "Review your current knowledge and project context for gaps, staleness, or ambiguity."
-            f"{graph_data} "
-            "Actively use your tools (like search_web, execute_bash, read_file) to forage for new, relevant information "
-            "and propose plans or semantic rules to reduce future uncertainty."
-        )
-
-        synthetic_turn = UserTurn(
-            session_id=session_id,
-            user_text=prompt,
-            signals=[],
-        )
-        
+        synthetic_turn = build_idle_foraging_turn(self.memory_system)
         return await self.aprocess_turn(synthetic_turn)

@@ -73,15 +73,15 @@ class EvolutionProposer:
             directives.append(
                 EvolutionDirective(
                     directive_id=str(uuid.uuid4()),
-                    directive_type=DirectiveType.PROMPT,
-                    target_component="left_hemisphere",
+                    directive_type=DirectiveType.PARAMETER,
+                    target_component="right_hemisphere",
                     proposed_change={
-                        "instruction": "ask a clarifying question when uncertainty keeps increasing across turns",
-                        "surprise_trend": diagnostic.surprise_trend,
+                        "salience_smoothing_alpha": 0.35,
+                        "salience_max_step": 0.16,
                     },
                     reasoning=(
                         f"A surpresa está em tendência de alta ({diagnostic.surprise_trend:+.3f}). "
-                        "O agente deve reduzir compromisso prematuro e pedir clarificação."
+                        "Aplicar amortecimento controlado de salience no hemisfério direito reduz reatividade sem trocar topologia."
                     ),
                 )
             )

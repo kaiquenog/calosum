@@ -167,6 +167,31 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(rule.rule_id == "emotion::urgente" for rule in context.semantic_rules))
         self.assertTrue(any(triple.predicate == "biases_response_toward" for triple in context.knowledge_triples))
 
+    async def test_build_context_scopes_episodes_to_same_session_when_available(self) -> None:
+        with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
+            "calosum.adapters.memory_qdrant.AsyncQdrantClient",
+            FakeAsyncQdrantClient,
+        ):
+            adapter = QdrantDualMemoryAdapter(
+                QdrantAdapterConfig(url="http://fake-qdrant"),
+                embedder=FakeEmbedder(),
+            )
+            await adapter.astore_episode(
+                _episode("session-a", "Projeto urgente com escopo grande.", ["urgente"])
+            )
+            await adapter.astore_episode(
+                _episode("session-b", "Projeto urgente com riscos similares.", ["urgente"])
+            )
+
+            context = await adapter.abuild_context(
+                UserTurn(session_id="session-a", user_text="Preciso de ajuda com esse projeto urgente.")
+            )
+
+        self.assertGreaterEqual(len(context.recent_episodes), 1)
+        self.assertTrue(
+            all(episode.user_turn.session_id == "session-a" for episode in context.recent_episodes)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

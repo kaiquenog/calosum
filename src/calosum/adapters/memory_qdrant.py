@@ -94,7 +94,17 @@ class QdrantDualMemoryAdapter:
             10,
         )
 
-        episodes = [self._episode_from_point(point) for point in episode_points if getattr(point, "payload", None)]
+        episodes = [
+            self._episode_from_point(point)
+            for point in episode_points
+            if getattr(point, "payload", None)
+        ]
+        session_episodes = [
+            episode
+            for episode in episodes
+            if episode.user_turn.session_id == user_turn.session_id
+        ]
+        episodes = session_episodes or episodes
         rules = [self._rule_from_point(point) for point in rule_points if getattr(point, "payload", None)]
         if not rules:
             rules = [

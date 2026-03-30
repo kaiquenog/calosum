@@ -1,6 +1,6 @@
 # Quality Score
 
-Data de referencia: 2026-03-29
+Data de referencia: 2026-03-30
 
 ## Score Atual
 
@@ -9,6 +9,7 @@ Data de referencia: 2026-03-29
 - Observabilidade: B
 - Harness de governanca: B+
 - Integracoes externas reais: B-
+- Percepcao do Hemisferio Direito: B
 
 ## Critérios
 
@@ -24,6 +25,7 @@ Data de referencia: 2026-03-29
 - **Observabilidade (B):** Telemetria por turno captura `felt`, `thought`, `decision`, `capabilities` e `bridge_config`. `capability_snapshot` passado pelo builder reflete backends e health ao vivo. Ainda falta exportador OTLP direto para collector.
 - **Harness de governanca (B+):** `harness_checks.py` valida artefatos obrigatórios, links em AGENTS.md, refs em docs/index.md, headings de planos, tamanho de módulos (<400 linhas) e fronteiras de importação via AST em todos os módulos registrados em `MODULE_RULES`. Limite: não valida docstrings de `__init__.py`.
 - **Integracoes externas reais (B-):** Qdrant, HuggingFace (right hemisphere), nano-graphrag, DSPy (night trainer), LoRA (night trainer), DuckDuckGo (search_web), Telegram. Fallback gracioso em cada um. Falta CI remota para verificação contínua.
+- **Percepcao do Hemisferio Direito (B):** Sprint 0-3 concluídas com contrato estável de telemetria (`right_backend`, `right_model_name`, `right_mode`, `degraded_reason`), calibracao afetiva por threshold de label, confidence dinâmica, componente de novidade (`free_energy_novelty`) e loop bidirecional de feedback operacional via workspace. Sprint 4 adicionou benchmark local reproduzível e relatório em `docs/reports/2026-03-30-right-hemisphere-benchmark.md`. Limite atual: comparativo de embedding ainda em modo simulado offline, sem checkpoint HF real carregado localmente.
 
 ## Gaps Prioritarios
 
@@ -31,3 +33,4 @@ Data de referencia: 2026-03-29
 - Testes de fronteira arquitetural automatizados (regressao de imports)
 - Exportador OTLP direto para collector externo
 - Validacao de docstrings de `__init__.py` no harness
+- Benchmark do hemisferio direito com checkpoint HF real pre-carregado e dataset ampliado

@@ -84,6 +84,8 @@ class AgentExecutionEngine:
             "mismatch" in text.lower() or "override" in text.lower() or "false alarm" in text.lower()
             for text in left_result.reasoning_summary
         )
+        if workspace is not None:
+            workspace.left_notes["cognitive_override_detected"] = mismatch_detected
         if mismatch_detected and hasattr(tokenizer, "record_reflection_event"):
             event_payload = {
                 "turn_id": getattr(user_turn, "turn_id", "unknown"),
@@ -176,6 +178,20 @@ class AgentExecutionEngine:
             if self.verifier:
                 critique_verdict = await maybe_await(
                     self.call_component(self.verifier, "averify", "verify", user_turn, current_result, execution_results, workspace)
+                )
+
+            if workspace is not None:
+                workspace.runtime_feedback.append(
+                    {
+                        "attempt": retry_count,
+                        "executed_count": len(executed_results),
+                        "rejected_count": len(rejected_results),
+                        "tool_success_rate": round(
+                            len(executed_results) / max(1, len(execution_results)),
+                            3,
+                        ),
+                        "critique_valid": critique_verdict.is_valid if critique_verdict else None,
+                    }
                 )
 
             is_valid = critique_verdict.is_valid if critique_verdict else not rejected_results
@@ -295,6 +311,7 @@ class AgentExecutionEngine:
                 "salience": right_state.salience,
                 "world_hypotheses": right_state.world_hypotheses,
                 "surprise_score": right_state.surprise_score,
+                "telemetry": right_state.telemetry,
             },
             thought={
                 "lambda_signature": left_result.lambda_program.signature,
@@ -302,6 +319,10 @@ class AgentExecutionEngine:
                 "system_directives": left_result.telemetry.get("system_directives", []),
                 "runtime_retry_count": retry_count,
                 "critique_revision_count": critique_revision_count,
+                "cognitive_override_detected": any(
+                    "mismatch" in text.lower() or "override" in text.lower() or "false alarm" in text.lower()
+                    for text in left_result.reasoning_summary
+                ),
             },
             decision={
                 "response_text": left_result.response_text,

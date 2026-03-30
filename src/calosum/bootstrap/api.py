@@ -46,6 +46,21 @@ def get_agent():
 
 # Inicialização global dos adaptadores de canais
 _active_channels = []
+_session_locks: dict[str, asyncio.Lock] = {}
+
+
+def _session_lock(session_id: str) -> asyncio.Lock:
+    lock = _session_locks.get(session_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _session_locks[session_id] = lock
+    return lock
+
+
+async def _run_in_session_lane(session_id: str, operation):
+    lock = _session_lock(session_id)
+    async with lock:
+        return await operation()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -53,7 +68,11 @@ async def lifespan(_: FastAPI):
     if settings.telegram_bot_token:
         from calosum.adapters.channel_telegram import TelegramChannelAdapter
         logger.info("Inicializando Telegram Channel Adapter...")
-        telegram_adapter = TelegramChannelAdapter(settings.telegram_bot_token)
+        telegram_adapter = TelegramChannelAdapter(
+            settings.telegram_bot_token,
+            dm_policy=settings.telegram_dm_policy,
+            allowlist_ids=settings.telegram_allowlist_ids,
+        )
 
         async def on_telegram_message(user_turn: UserTurn):
             agent = get_agent()
@@ -65,7 +84,10 @@ async def lifespan(_: FastAPI):
 
         async def _process_and_reply(agent, adapter, user_turn):
             try:
-                result = await agent.aprocess_turn(user_turn)
+                result = await _run_in_session_lane(
+                    user_turn.session_id,
+                    lambda: agent.aprocess_turn(user_turn),
+                )
                 if hasattr(result, "selected_result"):
                     response_text = result.selected_result.left_result.response_text
                 else:
@@ -88,6 +110,7 @@ async def lifespan(_: FastAPI):
                 await adapter.app.stop()
                 await adapter.app.shutdown()
         _active_channels.clear()
+        _session_locks.clear()
 
 
 app = FastAPI(
@@ -304,7 +327,10 @@ async def chat_completions(request: Request) -> JSONResponse:
     agent = get_agent()
     
     try:
-        result = await agent.aprocess_turn(user_turn)
+        result = await _run_in_session_lane(
+            user_turn.session_id,
+            lambda: agent.aprocess_turn(user_turn),
+        )
         return JSONResponse({"status": "ok", "result": to_primitive(result)})
     except Exception as e:
         logger.error("Error processing turn", exc_info=True)
@@ -361,7 +387,10 @@ async def chat_sse(request: Request, text: str, session_id: str = "api-session")
         
         try:
             # Processa o turno de forma assíncrona
-            result = await agent.aprocess_turn(user_turn)
+            result = await _run_in_session_lane(
+                user_turn.session_id,
+                lambda: agent.aprocess_turn(user_turn),
+            )
             
             if hasattr(result, "selected_result"):
                 turn_result = result.selected_result

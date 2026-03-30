@@ -70,9 +70,15 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertIn("bridge_config", thought_event)
         self.assertIn("target_temperature", thought_event["bridge_config"])
         self.assertIn("active_variant", thought_event)
+        self.assertIn("cognitive_override_detected", thought_event)
 
         decision_event = dashboard["decision"][0]
         self.assertIn("capabilities", decision_event)
+
+        workspace = agent.workspace_for_session(turn.session_id)
+        self.assertIsNotNone(workspace)
+        assert workspace is not None
+        self.assertGreater(len(workspace.runtime_feedback), 0)
 
 if __name__ == "__main__":
     unittest.main()

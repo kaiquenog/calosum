@@ -77,6 +77,41 @@ class DualMemoryTests(unittest.TestCase):
             self.assertEqual(episode.bridge_packet.context_id, episode.right_state.context_id)
             self.assertEqual(episode.left_result.lambda_program.signature, "Placeholder")
 
+    def test_recent_episode_context_is_scoped_to_same_session(self) -> None:
+        agent = CalosumAgent()
+        agent.process_turn(UserTurn(session_id="session-a", user_text="Preciso de um plano para bolo."))
+        agent.process_turn(UserTurn(session_id="session-b", user_text="Preciso de um plano para projeto urgente."))
+
+        result = agent.process_turn(
+            UserTurn(session_id="session-a", user_text="Quero revisar o plano do bolo.")
+        )
+
+        self.assertGreaterEqual(len(result.memory_context.recent_episodes), 1)
+        self.assertTrue(
+            all(
+                episode.user_turn.session_id == "session-a"
+                for episode in result.memory_context.recent_episodes
+            )
+        )
+
+    def test_sleep_mode_runs_night_trainer_automatically(self) -> None:
+        class FakeNightTrainer:
+            def __init__(self) -> None:
+                self.invocations = 0
+
+            def run_training_cycle(self):
+                self.invocations += 1
+                return {"status": "skipped", "reason": "test"}
+
+        trainer = FakeNightTrainer()
+        agent = CalosumAgent(night_trainer=trainer)
+        agent.process_turn(UserTurn(session_id="session-trainer", user_text="Prefiro respostas curtas."))
+
+        report = agent.sleep_mode()
+
+        self.assertGreaterEqual(report.episodes_considered, 1)
+        self.assertEqual(trainer.invocations, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

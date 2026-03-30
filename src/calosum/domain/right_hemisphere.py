@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from collections import defaultdict
 from typing import Any
 
 from calosum.shared.types import MemoryContext, Modality, RightHemisphereState, UserTurn, CognitiveWorkspace
@@ -26,6 +27,9 @@ class RightHemisphereJEPAConfig:
             "desespero": 0.95
         }
     )
+    salience_window_size: int = 6
+    salience_smoothing_alpha: float = 0.5
+    salience_max_step: float = 0.22
 
 
 class RightHemisphereJEPA:
@@ -40,16 +44,20 @@ class RightHemisphereJEPA:
 
     def __init__(self, config: RightHemisphereJEPAConfig | None = None) -> None:
         self.config = config or RightHemisphereJEPAConfig()
+        self._salience_history_by_session: dict[str, list[float]] = defaultdict(list)
 
     def perceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
         seed = self._build_seed(user_turn)
         latent_vector = self._latent_from_seed(seed, self.config.latent_size)
         emotional_labels = self._extract_emotional_labels(user_turn)
-        salience = self._estimate_salience(user_turn, emotional_labels)
+        raw_salience = self._estimate_salience(user_turn, emotional_labels)
+        runtime_feedback_bias = self._runtime_feedback_bias(workspace)
+        salience = self._calibrate_salience(user_turn.session_id, min(1.0, raw_salience + runtime_feedback_bias))
         world_hypotheses = {
             "interaction_complexity": min(1.0, len(user_turn.user_text) / 240.0),
             "sensor_diversity": min(1.0, len(user_turn.signals) / 6.0),
             "urgency": salience,
+            "operational_risk": runtime_feedback_bias,
         }
 
         surprise_score = self._calculate_surprise(latent_vector, memory_context)
@@ -64,14 +72,22 @@ class RightHemisphereJEPA:
             surprise_score=surprise_score,
             telemetry={
                 "model_name": self.config.model_name,
+                "right_backend": "heuristic_jepa",
+                "right_model_name": self.config.model_name,
+                "right_mode": "heuristic",
+                "degraded_reason": None,
                 "modalities_seen": [signal.modality.value for signal in user_turn.signals],
                 "seed_fingerprint": seed[:12],
+                "raw_salience": raw_salience,
+                "runtime_feedback_bias": runtime_feedback_bias,
             },
         )
         
         if workspace is not None:
             workspace.right_notes.update({
                 "salience": salience,
+                "raw_salience": raw_salience,
+                "runtime_feedback_bias": runtime_feedback_bias,
                 "surprise_score": surprise_score,
                 "emotional_labels": emotional_labels or ["neutral"],
             })
@@ -148,3 +164,38 @@ class RightHemisphereJEPA:
         if "!" in text:
             salience = min(1.0, salience + 0.1)
         return round(min(1.0, salience), 3)
+
+    def _calibrate_salience(self, session_id: str, raw_salience: float) -> float:
+        history = self._salience_history_by_session[session_id]
+        if not history:
+            history.append(raw_salience)
+            return round(raw_salience, 3)
+
+        moving_avg = sum(history) / len(history)
+        alpha = min(1.0, max(0.0, self.config.salience_smoothing_alpha))
+        blended = (alpha * raw_salience) + ((1.0 - alpha) * moving_avg)
+
+        previous = history[-1]
+        max_step = max(0.01, self.config.salience_max_step)
+        lower_bound = max(0.0, previous - max_step)
+        upper_bound = min(1.0, previous + max_step)
+        calibrated = min(upper_bound, max(lower_bound, blended))
+
+        history.append(calibrated)
+        max_window = max(2, self.config.salience_window_size)
+        if len(history) > max_window:
+            del history[:-max_window]
+        return round(calibrated, 3)
+
+    def _runtime_feedback_bias(self, workspace: CognitiveWorkspace | None) -> float:
+        if workspace is None:
+            return 0.0
+        previous_feedback = workspace.task_frame.get("previous_runtime_feedback", [])
+        if not isinstance(previous_feedback, list) or not previous_feedback:
+            return 0.0
+        rejected = sum(int(item.get("rejected_count", 0)) for item in previous_feedback if isinstance(item, dict))
+        executed = sum(int(item.get("executed_count", 0)) for item in previous_feedback if isinstance(item, dict))
+        attempts = max(1, len(previous_feedback))
+        rejection_rate = rejected / max(1, rejected + executed)
+        intensity = min(0.15, (rejection_rate * 0.12) + (attempts * 0.01))
+        return round(max(0.0, intensity), 3)
