@@ -57,9 +57,12 @@ class RightHemisphereJEPA:
             "interaction_complexity": min(1.0, len(user_turn.user_text) / 240.0),
             "sensor_diversity": min(1.0, len(user_turn.signals) / 6.0),
             "urgency": salience,
+            "semantic_density": 0.5,  # Placeholder for V2 latents density
             "operational_risk": runtime_feedback_bias,
         }
 
+        # V2 Vision: Surprise is calculated via KL-Divergence between predicted and actual latents.
+        # In the domain layer, we represent the intent; the adapter implements the math.
         surprise_score = self._calculate_surprise(latent_vector, memory_context)
 
         state = RightHemisphereState(

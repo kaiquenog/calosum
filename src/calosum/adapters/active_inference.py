@@ -5,7 +5,10 @@ import importlib
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore
 
 from calosum.shared.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
 
@@ -138,27 +141,41 @@ class ActiveInferenceRightHemisphereAdapter:
                 "active_inference_states": len(vectors),
             }
 
-        current = np.asarray(latent_vector, dtype=float)
-        distances = np.asarray([_cosine_distance(current, past) for past in vectors], dtype=float)
-        prior = _recency_prior(len(distances), self.config.recency_bias)
+        if np is not None:
+            current = np.asarray(latent_vector, dtype=float)
+            distances = np.asarray([_cosine_distance_np(current, past) for past in vectors], dtype=float)
+            prior = _recency_prior_np(len(distances), self.config.recency_bias)
 
-        backend = "numpy_vfe_fallback"
-        maths = _load_pymdp_math()
-        if maths is not None:
-            softmax, log_stable = maths
-            posterior = np.asarray(softmax(-self.config.distance_temperature * distances), dtype=float)
-            posterior = _normalize_distribution(posterior)
-            complexity = float(np.sum(posterior * (log_stable(posterior) - log_stable(prior))))
-            backend = "pymdp_vfe"
+            backend = "numpy_vfe"
+            maths = _load_pymdp_math()
+            if maths is not None:
+                softmax, log_stable = maths
+                posterior = np.asarray(softmax(-self.config.distance_temperature * distances), dtype=float)
+                posterior = _normalize_distribution_np(posterior)
+                complexity = float(np.sum(posterior * (log_stable(posterior) - log_stable(prior))))
+                backend = "pymdp_vfe"
+            else:
+                posterior = _softmax_np(-self.config.distance_temperature * distances)
+                posterior = _normalize_distribution_np(posterior)
+                complexity = float(np.sum(posterior * (_safe_log_np(posterior) - _safe_log_np(prior))))
+
+            ambiguity = float(np.sum(posterior * distances))
+            novelty = float(np.min(distances) / 2.0)
         else:
-            posterior = _softmax(-self.config.distance_temperature * distances)
-            posterior = _normalize_distribution(posterior)
-            complexity = float(np.sum(posterior * (_safe_log(posterior) - _safe_log(prior))))
+            # Heuristic Fallback with Pure Python
+            backend = "pure_python_vfe_fallback"
+            current_vec = list(latent_vector)
+            distances_list = [_cosine_distance_py(current_vec, past) for past in vectors]
+            prior = _recency_prior_py(len(distances_list), self.config.recency_bias)
+            
+            # Simple Softmax
+            posterior = _softmax_py([-self.config.distance_temperature * d for d in distances_list])
+            complexity = sum(p * (math.log(p or 1e-9) - math.log(pr or 1e-9)) for p, pr in zip(posterior, prior))
+            ambiguity = sum(p * d for p, d in zip(posterior, distances_list))
+            novelty = min(distances_list) / 2.0
 
-        ambiguity = float(np.sum(posterior * distances))
-        novelty = float(np.min(distances) / 2.0)
         free_energy = max(0.0, complexity + ambiguity + (self.config.novelty_weight * novelty))
-        scale = max(1.0, 1.0 + np.log(len(distances) + 1))
+        scale = max(1.0, 1.0 + math.log(len(vectors) + 1))
         normalized = round(float(min(1.0, free_energy / scale)), 3)
 
         return normalized, {
@@ -178,20 +195,23 @@ def _recent_vectors(
     memory_context: MemoryContext | None,
     *,
     expected_size: int,
-) -> list[np.ndarray]:
+) -> list[Any]:
     if expected_size <= 0 or memory_context is None:
         return []
 
-    vectors: list[np.ndarray] = []
+    vectors: list[Any] = []
     for episode in memory_context.recent_episodes:
         candidate = getattr(episode.right_state, "latent_vector", [])
         if len(candidate) != expected_size:
             continue
-        vectors.append(np.asarray(candidate, dtype=float))
+        if np is not None:
+            vectors.append(np.asarray(candidate, dtype=float))
+        else:
+            vectors.append(list(candidate))
     return vectors
 
 
-def _cosine_distance(current: np.ndarray, past: np.ndarray) -> float:
+def _cosine_distance_np(current: np.ndarray, past: np.ndarray) -> float:
     current_norm = np.linalg.norm(current)
     past_norm = np.linalg.norm(past)
     if current_norm == 0 or past_norm == 0:
@@ -201,28 +221,53 @@ def _cosine_distance(current: np.ndarray, past: np.ndarray) -> float:
     return 1.0 - similarity
 
 
-def _recency_prior(size: int, recency_bias: float) -> np.ndarray:
+def _cosine_distance_py(current: list[float], past: list[float]) -> float:
+    dot = sum(c * p for c, p in zip(current, past))
+    norm_c = math.sqrt(sum(c * c for c in current))
+    norm_p = math.sqrt(sum(p * p for p in past))
+    if norm_c == 0 or norm_p == 0:
+        return 1.0
+    similarity = dot / (norm_c * norm_p)
+    return 1.0 - max(-1.0, min(1.0, similarity))
+
+
+def _recency_prior_np(size: int, recency_bias: float) -> np.ndarray:
     weights = np.asarray(
         [1.0 + recency_bias * (size - index - 1) for index in range(size)],
         dtype=float,
     )
-    return _normalize_distribution(weights)
+    return _normalize_distribution_np(weights)
 
 
-def _softmax(values: np.ndarray) -> np.ndarray:
+def _recency_prior_py(size: int, recency_bias: float) -> list[float]:
+    weights = [1.0 + recency_bias * (size - index - 1) for index in range(size)]
+    total = sum(weights)
+    return [w / total if total > 0 else 1.0 / size for w in weights]
+
+
+def _softmax_np(values: np.ndarray) -> np.ndarray:
     shifted = values - np.max(values)
     exps = np.exp(shifted)
-    return _normalize_distribution(exps)
+    return _normalize_distribution_np(exps)
 
 
-def _normalize_distribution(values: np.ndarray) -> np.ndarray:
+def _softmax_py(values: list[float]) -> list[float]:
+    if not values:
+        return []
+    max_val = max(values)
+    exps = [math.exp(v - max_val) for v in values]
+    total = sum(exps)
+    return [e / total for e in exps]
+
+
+def _normalize_distribution_np(values: np.ndarray) -> np.ndarray:
     total = float(np.sum(values))
     if total <= 0:
         return np.full_like(values, 1.0 / len(values))
     return values / total
 
 
-def _safe_log(values: np.ndarray) -> np.ndarray:
+def _safe_log_np(values: np.ndarray) -> np.ndarray:
     return np.log(np.clip(values, 1e-9, 1.0))
 
 

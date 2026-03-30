@@ -150,15 +150,20 @@ class CalosumAgent:
         
         await self.event_bus.publish(CognitiveEvent("PerceptionEvent", right_state, user_turn.turn_id))
 
-        # Active Inference: High surprise triggers Metacognition (Group Turn)
+        # Active Inference V2: Branching based on VFE (Surprise) and EFE (Expected Ambiguity)
         surprise_score = getattr(right_state, "surprise_score", 0.0)
         ambiguity_score = right_state.world_hypotheses.get("interaction_complexity", 0.0)
+        semantic_density = right_state.world_hypotheses.get("semantic_density", 0.5)
+        
+        # Expected Free Energy (G) estimate: Risk + Ambiguity
+        # High density + high complexity = high expected information gain (epistemic value)
+        expected_free_energy = (ambiguity_score * 0.6) + (semantic_density * 0.4)
         
         needs_branching = (
             self.config.branching_budget.max_depth > 0
             and (
                 surprise_score > self.config.surprise_threshold
-                or ambiguity_score > 0.8
+                or expected_free_energy > 0.75
             )
         )
 

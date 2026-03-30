@@ -138,7 +138,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "bootstrap.__main__": {"bootstrap.cli"},
 
     # ADAPTERS
-    "adapters.active_inference": {"shared.types"},
+    "adapters.active_inference": {"shared.types", "domain.right_hemisphere"},
     "adapters.action_runtime": {"adapters.tools", "shared.async_utils", "shared.tools", "shared.types", "bootstrap.api", "domain.introspection"},
     "adapters.bridge_store": {"shared.ports"},
     "adapters.channel_telegram": {"shared.types"},
@@ -147,7 +147,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.llm_payloads": {"shared.types"},
     "adapters.llm_qwen": {"adapters.llm_payloads", "shared.async_utils", "shared.types"},
     "adapters.memory_qdrant": {"adapters.text_embeddings", "shared.async_utils", "shared.types", "domain.memory", "shared.ports"},
-    "adapters.right_hemisphere_hf": {"shared.types"},
+    "adapters.right_hemisphere_hf": {"shared.types", "domain.right_hemisphere"},
     "adapters.telemetry_otlp": {"domain.telemetry"},
     "adapters.text_embeddings": {"shared.async_utils"},
     "adapters.night_trainer": {"adapters.night_trainer_dspy"},

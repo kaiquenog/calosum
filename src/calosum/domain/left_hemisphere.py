@@ -44,6 +44,15 @@ class LeftHemisphereLogicalSLM:
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
     ) -> LeftHemisphereResult:
+        # Ground reasoning in differentiable logic (V2)
+        from calosum.domain.differentiable_logic import LogicTensorNetwork
+        ltn = LogicTensorNetwork()
+        grounding_scores = [
+            ltn.ground_rule(rule.statement, bridge_packet.latent_vector)
+            for rule in memory_context.semantic_rules
+        ]
+        avg_grounding = sum(grounding_scores) / max(1, len(grounding_scores))
+
         rules = [rule.statement for rule in memory_context.semantic_rules[:2]]
         knowledge_facts = memory_context.knowledge_triples[:3]
         empathy_priority = bridge_packet.control.empathy_priority
@@ -58,11 +67,10 @@ class LeftHemisphereLogicalSLM:
             plan_steps=plan_steps,
         )
 
-        # Injetando uma instrução que simula o uso de um "prompt otimizado"
-        # Na versão real, o DSPy carregaria este prompt dinamicamente.
+        # DSPy Integration: Inject optimized prompts from persistent evolution
         optimized_system_prompt = self._load_optimized_prompt()
         if optimized_system_prompt:
-            bridge_packet.control.system_directives.insert(0, f"[DSPy Optimized]: {optimized_system_prompt}")
+            bridge_packet.control.system_directives.insert(0, f"[DSPy Cognitive Model]: {optimized_system_prompt}")
 
         actions = [
             PrimitiveAction(
@@ -72,6 +80,7 @@ class LeftHemisphereLogicalSLM:
                     "text": response_text,
                     "temperature": bridge_packet.control.target_temperature,
                     "soft_prompts": [token.token for token in bridge_packet.soft_prompts],
+                    "grounding_confidence": avg_grounding,
                 },
                 safety_invariants=[
                     "never execute external side effects without explicit tool approval",

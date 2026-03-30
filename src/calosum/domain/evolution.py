@@ -86,38 +86,19 @@ class EvolutionProposer:
                 )
             )
 
-        runtime_failures = sum(
-            diagnostic.failure_types.get(name, 0)
-            for name in ("runtime_crash", "tool_not_found", "validation_failed")
-        )
-        if runtime_failures > 0:
-            directives.append(
-                EvolutionDirective(
-                    directive_id=str(uuid.uuid4()),
-                    directive_type=DirectiveType.TOPOLOGY,
-                    target_component="action_runtime",
-                    proposed_change={
-                        "action": "audit_runtime_contracts",
-                        "failure_types": diagnostic.failure_types,
-                    },
-                    reasoning=(
-                        "Falhas estruturais do runtime foram observadas recentemente. "
-                        "O fluxo precisa de auditoria explícita de tools e contratos."
-                    ),
-                )
-            )
-
-        if diagnostic.average_surprise < 0.1 and diagnostic.analyzed_turns > 5:
+        # V2 Bayesian Optimization Hook: Tuning Active Inference Thresholds
+        if diagnostic.average_surprise > 0.6 and diagnostic.tool_success_rate < 0.8:
+            # Evidence of 'Under-branching': High surprise but low success 
+            # implies we should branch more often to find better policies.
             directives.append(
                 EvolutionDirective(
                     directive_id=str(uuid.uuid4()),
                     directive_type=DirectiveType.PARAMETER,
                     target_component="orchestrator",
-                    proposed_change={"surprise_threshold": 0.4},
-                    reasoning=(
-                        f"A surpresa média está muito baixa ({diagnostic.average_surprise:.2f}) por "
-                        f"{diagnostic.analyzed_turns} turnos. Reduzir o threshold reativa a metacognição."
-                    ),
+                    proposed_change={
+                        "surprise_threshold": max(0.3, diagnostic.average_surprise - 0.15),
+                    },
+                    reasoning="High average surprise coupled with low success indicates insufficient metacognitive intervention. Lowering surprise_threshold to trigger GEA more frequently.",
                 )
             )
 

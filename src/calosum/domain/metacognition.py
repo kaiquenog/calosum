@@ -266,6 +266,23 @@ class GEAReflectionController:
         score += max(0.0, 0.15 - salience_gap * 0.1)
         reasons.append(f"salience_gap={salience_gap:.2f}")
 
+        # V2 Dissonance Check: Aligning salience with logical grounding
+        # We look for 'grounding_confidence' injected by the Left Hemisphere (Sprint 2)
+        grounding_conf = 0.5
+        for action in turn_result.left_result.actions:
+            if action.action_type == "respond_text":
+                grounding_conf = action.payload.get("grounding_confidence", 0.5)
+                break
+        
+        from calosum.domain.differentiable_logic import CognitiveDissonanceMetric
+        dissonance = CognitiveDissonanceMetric().calculate(turn_result.right_state, grounding_conf)
+        if dissonance > 0.4:
+            score -= 0.3
+            reasons.append(f"high_cognitive_dissonance={dissonance:.2f}")
+        else:
+            score += 0.1
+            reasons.append(f"cognitive_alignment={1.0 - dissonance:.2f}")
+
         return score, reasons
 
     def _propose_bridge_adjustments(
