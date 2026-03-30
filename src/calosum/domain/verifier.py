@@ -114,9 +114,12 @@ class HeuristicVerifier:
         fixes: list[str],
         failure_types: list[FailureType],
     ) -> None:
-        if not left_result.response_text.strip():
-            issues.append("Incomplete result: response_text is empty.")
-            fixes.append("Produce a user-facing response_text before finalizing the turn.")
+        epistemic_actions = {"search_web", "read_file", "execute_bash", "introspect_self", "code_execution", "http_request"}
+        is_foraging = any(action.action_type in epistemic_actions for action in left_result.actions)
+
+        if not is_foraging and not left_result.response_text.strip():
+            issues.append("Incomplete result: response_text is empty and no epistemic foraging action was detected.")
+            fixes.append("Produce a user-facing response_text before finalizing the turn or use an epistemic tool to gather data.")
             failure_types.append(FailureType.INCOMPLETE_RESULT)
 
         if not left_result.lambda_program.expression.strip():

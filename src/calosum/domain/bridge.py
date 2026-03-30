@@ -186,7 +186,7 @@ class CognitiveTokenizer:
         surprise_score = getattr(right_state, "surprise_score", 0.0)
         ambiguity_score = getattr(right_state, "world_hypotheses", {}).get("interaction_complexity", 0.0)
         if surprise_score >= 0.3 or ambiguity_score >= 0.5:
-            directives.append("HIGH SURPRISE DETECTED: you MUST prioritize epistemic foraging using tools (search_web, execute_bash, read_file, introspect_self) to gather context and reduce uncertainty BEFORE providing a final answer.")
+            directives.insert(0, "HIGH SURPRISE DETECTED: you MUST prioritize epistemic foraging using tools (search_web, execute_bash, read_file, introspect_self) to gather context and reduce uncertainty BEFORE providing a final answer.")
 
         # Modulação Dinâmica de Temperatura via Surpresa
         # Entradas surpreendentes (alto surprise_score) baixam a temperatura para forçar foco e analítica

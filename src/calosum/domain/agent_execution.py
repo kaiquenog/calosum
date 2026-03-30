@@ -153,6 +153,7 @@ class AgentExecutionEngine:
         workspace: CognitiveWorkspace | None = None,
     ) -> tuple[LeftHemisphereResult, list[ActionExecutionResult], int, int]:
         retry_count = 0
+        foraging_steps = 0
         critique_revision_count = 0
         current_result = left_result
         all_execution_results = []
@@ -179,22 +180,19 @@ class AgentExecutionEngine:
 
             is_valid = critique_verdict.is_valid if critique_verdict else not rejected_results
 
-            # Check if we executed tools that produce observations (epistemic tools)
-            # We want to feed these back and prompt the LLM again, forming a ReAct loop.
             epistemic_actions = {"search_web", "read_file", "execute_bash", "introspect_self", "code_execution", "http_request"}
             has_observations = any(res.action_type in epistemic_actions for res in executed_results)
             
-            # If the LLM ALSO output a respond_text, we assume it's a final answer or intermediate chat
-            # To ensure it finishes the thought after observing, if it has observations it MUST loop
-            # unless we reached the retry limit.
             needs_observation_loop = is_valid and has_observations
 
-            if (is_valid and not needs_observation_loop) or retry_count >= self.max_runtime_retries:
-                # Build final left result combining the latest response but ALL actions
-                final_result = replace(current_result, actions=current_result.actions) # keep current actions or all? The caller inspects final_result.actions for telemetry. Let's just return current_result.
+            if (is_valid and not needs_observation_loop) or retry_count >= self.max_runtime_retries or foraging_steps >= 5:
                 return current_result, all_execution_results, retry_count, critique_revision_count
 
-            retry_count += 1
+            if not is_valid:
+                retry_count += 1
+            if needs_observation_loop:
+                foraging_steps += 1
+
             if critique_verdict and not critique_verdict.is_valid:
                 critique_revision_count += 1
 

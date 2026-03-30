@@ -21,29 +21,37 @@ def build_left_hemisphere_prompt(
         f"{item.subject} {item.predicate} {item.object}"
         for item in memory_context.knowledge_triples[:5]
     ]
+    knowledge_block = "\n".join(triples) or "None"
+    feedback_block = "\n".join(feedback) if feedback else "None"
+
     return f"""
 Analyze the input and generate a JSON object.
 
 Input: {user_turn.user_text}
 Soft Prompts (Bridge): {[token.token for token in bridge_packet.soft_prompts]}
 System Directives: {bridge_packet.control.system_directives}
+
+# MEMORY & CONTEXT
 Semantic Rules: {rules}
-Knowledge Triples: {triples}
-Runtime Feedback (Observations): {feedback or []}
+Knowledge Triples: {knowledge_block}
 
-IMPORTANT - MULTI-STEP REASONING: You are an autonomous agent. If you need to gather information, output actions like "execute_bash", "search_web", "read_file", or "introspect_self". The system will execute them and provide the output back to you as "Runtime Feedback" in a loop. Do NOT include a "respond_text" action if you are just exploring; wait until you have gathered all data, then use "respond_text" to give the final answer.
+# RUNTIME OBSERVATIONS (Tool Outputs)
+{feedback_block}
 
-Available Action Types (Use exactly these action_type values):
-- "respond_text": {{ "text": "your response here" }}
+IMPORTANT - MULTI-STEP REASONING:
+1. If you need more information, output actions like "execute_bash", "search_web", "read_file", or "introspect_self".
+2. Leave 'response_text' empty ("") while gathering data.
+3. Once the '# RUNTIME OBSERVATIONS' section contains the facts you need, you MUST PROVIDE THE FINAL ANSWER in 'response_text' and stop calling tools.
+4. Do not repeat the same tool call if the observation already contains the answer.
+5. Synthesize facts into a helpful response.
+
+Available Action Types:
+- "respond_text": {{ "text": "your final answer" }}
 - "propose_plan": {{ "steps": ["step1", "step2"] }}
-- "load_semantic_rules": {{ "rules": ["grounding rule 1", "grounding rule 2"] }}
 - "search_web": {{ "query": "search keywords" }}
-- "write_file": {{ "path": "file/path.txt", "content": "file content" }}
 - "read_file": {{ "path": "file/path.txt" }}
 - "execute_bash": {{ "command": "ls -la" }}
-- "introspect_self": {{ "query": "status" }}
-- "code_execution": {{ "code": "print(sum(range(5)))", "approved": true }}
-- "http_request": {{ "method": "GET", "url": "https://example.com/api" }}
+- "introspect_self": {{ "query": "arquitetura" }}
 """.strip()
 
 
@@ -143,7 +151,10 @@ def left_hemisphere_result_schema() -> dict[str, Any]:
             "reasoning_summary",
         ],
         "properties": {
-            "response_text": {"type": "string"},
+            "response_text": {
+                "type": "string",
+                "description": "The final synthesized text response to the user. MUST be empty (\"\") if you are still gathering data via epistemic tools (like introspect_self or execute_bash). Only fill this when you are providing the final answer based on the 'Runtime Feedback' observations."
+            },
             "lambda_program": {
                 "type": "object",
                 "additionalProperties": False,
