@@ -68,6 +68,11 @@ class InfrastructureSettings:
     telegram_allowlist_ids: list[str] = field(default_factory=list)
     vault: dict[str, str] | None = None
 
+    # Vector quantization (TurboQuant)
+    vector_quantization: str = "none"   # "none" | "turboquant"
+    turboquant_bits: int = 4
+    qdrant_scalar_quantization: bool = False
+
     @classmethod
     def from_sources(
         cls,
@@ -161,6 +166,9 @@ class InfrastructureSettings:
             telegram_dm_policy=env.get("CALOSUM_TELEGRAM_DM_POLICY", "open"),
             telegram_allowlist_ids=_parse_csv_list(env.get("CALOSUM_TELEGRAM_ALLOWLIST")),
             vault=vault if vault else None,
+            vector_quantization=env.get("CALOSUM_VECTOR_QUANTIZATION", "none"),
+            turboquant_bits=max(1, int(env.get("CALOSUM_TURBOQUANT_BITS", 4))),
+            qdrant_scalar_quantization=_parse_bool(env.get("CALOSUM_QDRANT_SCALAR_QUANTIZATION"), False),
         )
         return settings.with_profile_defaults()
 

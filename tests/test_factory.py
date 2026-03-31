@@ -174,6 +174,30 @@ class InfrastructureBuilderTests(unittest.TestCase):
         self.assertEqual(description["right_hemisphere_backend"], "active_inference_jepa_policy")
         self.assertEqual(description["routing_resolution"]["perception"]["active"], "jepa")
 
+    def test_factory_turboquant_flag(self) -> None:
+        """CALOSUM_VECTOR_QUANTIZATION=turboquant causes _build_codec to return TurboQuantVectorCodec."""
+        import os
+        from calosum.bootstrap.factory import _build_codec
+        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+
+        settings = InfrastructureSettings.from_sources(
+            environ={**os.environ, "CALOSUM_VECTOR_QUANTIZATION": "turboquant", "CALOSUM_TURBOQUANT_BITS": "3"}
+        )
+        codec = _build_codec(settings)
+        self.assertIsNotNone(codec)
+        self.assertIsInstance(codec, TurboQuantVectorCodec)
+        self.assertEqual(codec.bits_per_dim, 4)  # 3 + 1
+
+    def test_factory_no_codec_when_flag_none(self) -> None:
+        """Default settings produce no codec (vector_quantization=none)."""
+        import os
+        from calosum.bootstrap.factory import _build_codec
+
+        env = {k: v for k, v in os.environ.items() if "CALOSUM_VECTOR_QUANTIZATION" not in k}
+        settings = InfrastructureSettings.from_sources(environ=env)
+        codec = _build_codec(settings)
+        self.assertIsNone(codec)
+
 
 if __name__ == "__main__":
     unittest.main()

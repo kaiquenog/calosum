@@ -5,10 +5,13 @@ import logging
 import math
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
+
+if TYPE_CHECKING:
+    from calosum.shared.ports import VectorCodecPort
 
 from calosum.shared.async_utils import run_sync
 
@@ -39,6 +42,7 @@ class TextEmbeddingAdapter:
         self,
         config: TextEmbeddingAdapterConfig | None = None,
         client: httpx.AsyncClient | None = None,
+        codec: VectorCodecPort | None = None,
     ) -> None:
         self.config = config or TextEmbeddingAdapterConfig()
         headers: dict[str, str] = {}
@@ -46,6 +50,7 @@ class TextEmbeddingAdapter:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
         self.client = client or httpx.AsyncClient(headers=headers, timeout=self.config.timeout_s)
         self._sentence_transformer: Any | None = None
+        self.codec: VectorCodecPort | None = codec
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return run_sync(self.aembed_texts(texts))
@@ -67,6 +72,19 @@ class TextEmbeddingAdapter:
             )
 
         return [self._lexical_vector_for_text(text) for text in normalized]
+
+    async def embed_texts_compressed(self, texts: list[str]) -> list[bytes]:
+        """Embed texts and compress each vector with the injected codec.
+
+        Falls back to raw float32 serialization when no codec is configured.
+        """
+        vectors = await self.aembed_texts(texts)
+        if self.codec is None:
+            import struct
+            return [
+                b"".join(struct.pack(">f", v) for v in vec) for vec in vectors
+            ]
+        return [self.codec.encode(vec) for vec in vectors]
 
     def backend_name(self) -> str:
         try:

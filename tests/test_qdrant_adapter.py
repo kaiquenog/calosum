@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import base64
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from calosum.adapters.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
+from calosum.adapters.memory_qdrant_serializers import (
+    episode_from_point,
+    episode_payload,
+)
 from calosum.shared.types import (
     BridgeControlSignal,
     CognitiveBridgePacket,
@@ -19,6 +24,7 @@ from calosum.shared.types import (
 
 class _FakeQdrantState:
     collections: dict[str, list[SimpleNamespace]] = {}
+    created_configs: dict[str, object] = {}
 
 
 class FakeQdrantClient:
@@ -28,8 +34,9 @@ class FakeQdrantClient:
     def collection_exists(self, name: str) -> bool:
         return name in _FakeQdrantState.collections
 
-    def create_collection(self, collection_name: str, vectors_config) -> None:
+    def create_collection(self, collection_name: str, vectors_config, **kwargs) -> None:
         _FakeQdrantState.collections.setdefault(collection_name, [])
+        _FakeQdrantState.created_configs[collection_name] = kwargs.get("quantization_config")
 
 
 class FakeAsyncQdrantClient:
@@ -118,6 +125,7 @@ def _episode(session_id: str, text: str, labels: list[str]) -> MemoryEpisode:
 class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         _FakeQdrantState.collections = {}
+        _FakeQdrantState.created_configs = {}
 
     async def test_build_context_prefers_semantically_similar_episode(self) -> None:
         with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
@@ -191,6 +199,77 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             all(episode.user_turn.session_id == "session-a" for episode in context.recent_episodes)
         )
+
+    # -------------------------------------------------------------------
+    # Sprint 1.5 — serializers roundtrip (no regression after extraction)
+    # -------------------------------------------------------------------
+
+    def test_serializers_roundtrip(self) -> None:
+        """episode_from_point(point_from_episode(ep)) preserves critical fields."""
+        ep = _episode("roundtrip-session", "Texto de teste para serializer.", ["neutral"])
+        payload = episode_payload(ep)
+        point = SimpleNamespace(id="fake-id-123", payload=payload)
+        recovered = episode_from_point(point)
+        self.assertEqual(recovered.user_turn.user_text, ep.user_turn.user_text)
+        self.assertEqual(recovered.user_turn.session_id, ep.user_turn.session_id)
+        self.assertEqual(recovered.right_state.emotional_labels, ep.right_state.emotional_labels)
+
+    def test_no_regression_after_extraction(self) -> None:
+        """episode_payload returns non-empty dict for a valid episode."""
+        ep = _episode("reg-session", "Regression test.", ["neutral"])
+        payload = episode_payload(ep)
+        self.assertIn("text", payload)
+        self.assertIn("session", payload)
+        self.assertIn("emotional_labels", payload)
+        self.assertIn("latent_vector", payload)
+
+    # -------------------------------------------------------------------
+    # Sprint 2 — store_with_codec_payload
+    # -------------------------------------------------------------------
+
+    async def test_store_with_codec_payload(self) -> None:
+        """When codec is set, astore_episode adds latent_vector_compressed to payload."""
+        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+
+        codec = TurboQuantVectorCodec(bits=3)
+
+        with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
+            "calosum.adapters.memory_qdrant.AsyncQdrantClient", FakeAsyncQdrantClient,
+        ):
+            adapter = QdrantDualMemoryAdapter(
+                QdrantAdapterConfig(url="http://fake-qdrant"),
+                embedder=FakeEmbedder(),
+                codec=codec,
+            )
+            ep = _episode("codec-session", "Projeto urgente com codec.", ["urgente"])
+            await adapter.astore_episode(ep)
+
+        stored = _FakeQdrantState.collections["episodes"][0]
+        self.assertIn("latent_vector_compressed", stored.payload)
+        compressed_b64 = stored.payload["latent_vector_compressed"]
+        compressed = base64.b64decode(compressed_b64)
+        self.assertIsInstance(compressed, bytes)
+        self.assertGreater(len(compressed), 0)
+
+    # -------------------------------------------------------------------
+    # Sprint 0 — scalar quantization flag
+    # -------------------------------------------------------------------
+
+    def test_qdrant_scalar_quantization_flag(self) -> None:
+        """When scalar_quantization=True, create_collection is called with a quantization_config."""
+        with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
+            "calosum.adapters.memory_qdrant.AsyncQdrantClient", FakeAsyncQdrantClient,
+        ):
+            QdrantDualMemoryAdapter(
+                QdrantAdapterConfig(url="http://fake-qdrant", scalar_quantization=True),
+                embedder=FakeEmbedder(),
+            )
+
+        for col in ["episodes", "semantic_rules"]:
+            self.assertIsNotNone(
+                _FakeQdrantState.created_configs.get(col),
+                f"quantization_config not set for collection {col}",
+            )
 
 
 if __name__ == "__main__":

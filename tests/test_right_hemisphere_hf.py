@@ -144,5 +144,52 @@ class TestHuggingFaceRightHemisphere(unittest.TestCase):
             else:
                 del sys.modules['sentence_transformers']
 
+    def test_surprise_with_codec(self) -> None:
+        """When codec is set, _calculate_surprise uses inner_product_approx."""
+        import types
+        from unittest.mock import MagicMock
+        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+
+        fake_transformers = types.ModuleType("transformers")
+        fake_transformers.logging = types.SimpleNamespace(set_verbosity_error=lambda: None)
+        fake_transformers.utils = types.SimpleNamespace(
+            logging=types.SimpleNamespace(disable_progress_bar=lambda: None)
+        )
+        fake_sentence_transformers = types.ModuleType("sentence_transformers")
+        mock_emb = MagicMock()
+        mock_emb.encode.side_effect = lambda x: [[0.1] * 8] * (len(x) if isinstance(x, list) else 1)
+        fake_sentence_transformers.SentenceTransformer = MagicMock(return_value=mock_emb)
+
+        codec = TurboQuantVectorCodec(bits=3)
+
+        with patch.dict(
+            "sys.modules",
+            {"transformers": fake_transformers, "sentence_transformers": fake_sentence_transformers},
+        ):
+            adapter = HuggingFaceRightHemisphereAdapter(
+                HuggingFaceRightHemisphereConfig(latent_size=8), codec=codec
+            )
+
+        fake_vec = [0.5] * 8
+
+        class _FakeRight:
+            latent_vector = fake_vec
+
+        class _FakeEp:
+            right_state = _FakeRight()
+
+        class _FakeCtx:
+            recent_episodes = [_FakeEp()]
+
+        surprise = adapter._calculate_surprise([0.5] * 8, _FakeCtx())
+        self.assertIsInstance(surprise, float)
+        self.assertGreaterEqual(surprise, 0.0)
+        self.assertLessEqual(surprise, 1.0)
+
+        turn = UserTurn(session_id="codec-test", user_text="test")
+        state = adapter.perceive(turn)
+        self.assertTrue(state.telemetry.get("codec_used"))
+
+
 if __name__ == "__main__":
     unittest.main()

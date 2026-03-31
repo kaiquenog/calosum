@@ -1,37 +1,49 @@
 from __future__ import annotations
 
+import base64
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from typing import TYPE_CHECKING
+
 import logging
 
 from qdrant_client import AsyncQdrantClient, QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    PointStruct,
+    ScalarQuantization,
+    ScalarQuantizationConfig,
+    ScalarType,
+    VectorParams,
+)
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from calosum.adapters.memory_qdrant_serializers import (
+    episode_document,
+    episode_from_point,
+    episode_payload,
+    rule_document,
+    rule_from_point,
+)
 from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 from calosum.domain.memory import InMemorySemanticGraphStore
 from calosum.shared.async_utils import run_sync
 from calosum.shared.types import (
-    BridgeControlSignal,
     ConsolidationReport,
-    CognitiveBridgePacket,
     KnowledgeTriple,
-    LeftHemisphereResult,
     MemoryContext,
     MemoryEpisode,
-    PrimitiveAction,
-    RightHemisphereState,
     SemanticRule,
-    TypedLambdaProgram,
     UserTurn,
-    utc_now,
 )
 
+if TYPE_CHECKING:
+    from calosum.shared.ports import VectorCodecPort
 
 from calosum.shared.ports import DatasetExporterPort
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class QdrantAdapterConfig:
@@ -39,6 +51,7 @@ class QdrantAdapterConfig:
     episodes_collection: str = "episodes"
     rules_collection: str = "semantic_rules"
     vector_size: int = 384
+    scalar_quantization: bool = False
 
 
 class QdrantDualMemoryAdapter:
@@ -47,6 +60,8 @@ class QdrantDualMemoryAdapter:
 
     O adapter faz indexacao semantica para episodios e regras, mas mantem
     fallback explicito quando o backend de embeddings nao esta disponivel.
+    Suporta opcionalmente scalar quantization no Qdrant (4× compressão de disco)
+    e um VectorCodecPort (TurboQuant) para compressão adicional no payload.
     """
 
     def __init__(
@@ -56,6 +71,7 @@ class QdrantDualMemoryAdapter:
         embedder: TextEmbeddingAdapter | None = None,
         exporter: DatasetExporterPort | None = None,
         graph_store=None,
+        codec: VectorCodecPort | None = None,
     ) -> None:
         self.config = config or QdrantAdapterConfig()
         self.client = QdrantClient(url=self.config.url)
@@ -65,9 +81,15 @@ class QdrantDualMemoryAdapter:
         )
         self.exporter = exporter
         self.graph_store = graph_store or InMemorySemanticGraphStore()
+        self.codec: VectorCodecPort | None = codec
         self._ensure_collections()
 
     def _ensure_collections(self) -> None:
+        quant_cfg = None
+        if self.config.scalar_quantization:
+            quant_cfg = ScalarQuantization(
+                scalar=ScalarQuantizationConfig(type=ScalarType.INT8)
+            )
         for col_name in [self.config.episodes_collection, self.config.rules_collection]:
             if not self.client.collection_exists(col_name):
                 self.client.create_collection(
@@ -76,6 +98,7 @@ class QdrantDualMemoryAdapter:
                         size=self.config.vector_size,
                         distance=Distance.COSINE,
                     ),
+                    quantization_config=quant_cfg,
                 )
 
     def build_context(self, user_turn: UserTurn, episodic_limit: int = 5) -> MemoryContext:
@@ -95,17 +118,15 @@ class QdrantDualMemoryAdapter:
         )
 
         episodes = [
-            self._episode_from_point(point)
+            episode_from_point(point)
             for point in episode_points
             if getattr(point, "payload", None)
         ]
         session_episodes = [
-            episode
-            for episode in episodes
-            if episode.user_turn.session_id == user_turn.session_id
+            ep for ep in episodes if ep.user_turn.session_id == user_turn.session_id
         ]
         episodes = session_episodes or episodes
-        rules = [self._rule_from_point(point) for point in rule_points if getattr(point, "payload", None)]
+        rules = [rule_from_point(point) for point in rule_points if getattr(point, "payload", None)]
         if not rules:
             rules = [
                 SemanticRule(
@@ -138,18 +159,18 @@ class QdrantDualMemoryAdapter:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
     async def astore_episode(self, episode: MemoryEpisode) -> None:
         point_id = str(uuid.uuid4())
-        payload = self._episode_payload(episode)
-        vector = await self._embed_text(self._episode_document(episode))
+        payload = episode_payload(episode)
+        vector = await self._embed_text(episode_document(episode))
+
+        if self.codec is not None:
+            latent = payload.get("latent_vector", [])
+            if latent:
+                compressed = self.codec.encode(list(latent))
+                payload["latent_vector_compressed"] = base64.b64encode(compressed).decode("ascii")
 
         await self.aclient.upsert(
             collection_name=self.config.episodes_collection,
-            points=[
-                PointStruct(
-                    id=point_id,
-                    vector=vector,
-                    payload=payload,
-                )
-            ],
+            points=[PointStruct(id=point_id, vector=vector, payload=payload)],
         )
 
     def sleep_mode(self) -> ConsolidationReport:
@@ -163,14 +184,13 @@ class QdrantDualMemoryAdapter:
             limit=100,
             with_payload=True,
         )
-        episodes = [self._episode_from_point(point) for point in points if getattr(point, "payload", None)]
-
+        episodes = [episode_from_point(p) for p in points if getattr(p, "payload", None)]
         consolidator = SleepModeConsolidator(exporter=self.exporter, minimum_frequency=1)
         report = consolidator.consolidate(episodes)
 
         if report.promoted_rules:
             vectors = await self.embedder.aembed_texts(
-                [self._rule_document(rule) for rule in report.promoted_rules]
+                [rule_document(rule) for rule in report.promoted_rules]
             )
             points_to_upsert = []
             for rule, vector in zip(report.promoted_rules, vectors):
@@ -237,157 +257,3 @@ class QdrantDualMemoryAdapter:
     def _query_text(self, user_turn: UserTurn) -> str:
         signal_terms = " ".join(signal.modality.value for signal in user_turn.signals)
         return " ".join(part for part in [user_turn.user_text, signal_terms] if part).strip()
-
-    def _episode_document(self, episode: MemoryEpisode) -> str:
-        parts = [
-            episode.user_turn.user_text,
-            " ".join(episode.right_state.emotional_labels),
-            episode.left_result.response_text,
-            " ".join(action.action_type for action in episode.left_result.actions),
-            " ".join(episode.left_result.reasoning_summary),
-        ]
-        return " ".join(part for part in parts if part).strip()
-
-    def _rule_document(self, rule: SemanticRule) -> str:
-        return " ".join(
-            part
-            for part in [
-                rule.statement,
-                " ".join(rule.tags),
-                " ".join(rule.supporting_episodes),
-            ]
-            if part
-        ).strip()
-
-    def _episode_payload(self, episode: MemoryEpisode) -> dict:
-        return {
-            "text": episode.user_turn.user_text,
-            "session": episode.user_turn.session_id,
-            "observed_at": episode.user_turn.observed_at.isoformat(),
-            "recorded_at": episode.recorded_at.isoformat(),
-            "emotional_labels": episode.right_state.emotional_labels if episode.right_state else [],
-            "latent_vector": episode.right_state.latent_vector if episode.right_state else [],
-            "salience": episode.right_state.salience if episode.right_state else 0.15,
-            "confidence": episode.right_state.confidence if episode.right_state else 0.0,
-            "surprise_score": episode.right_state.surprise_score if episode.right_state else 0.0,
-            "world_hypotheses": episode.right_state.world_hypotheses if episode.right_state else {},
-            "response_text": episode.left_result.response_text if episode.left_result else "",
-            "action_types": [action.action_type for action in episode.left_result.actions] if episode.left_result else [],
-            "reasoning_summary": episode.left_result.reasoning_summary if episode.left_result else [],
-        }
-
-    def _episode_from_point(self, point) -> MemoryEpisode:
-        payload = point.payload or {}
-        user_turn = UserTurn(
-            session_id=payload.get("session", "*"),
-            user_text=payload.get("text", ""),
-            signals=[],
-            observed_at=_parse_datetime(payload.get("observed_at")),
-        )
-        right_state = _placeholder_right_state(
-            user_turn,
-            latent_vector=list(payload.get("latent_vector", [])),
-            emotional_labels=list(payload.get("emotional_labels", [])),
-            salience=float(payload.get("salience", 0.5 if payload.get("emotional_labels") else 0.15)),
-            confidence=float(payload.get("confidence", 0.0)),
-            surprise_score=float(payload.get("surprise_score", 0.0)),
-            world_hypotheses=dict(payload.get("world_hypotheses", {})),
-        )
-        return MemoryEpisode(
-            episode_id=str(point.id),
-            recorded_at=_parse_datetime(payload.get("recorded_at")),
-            user_turn=user_turn,
-            right_state=right_state,
-            bridge_packet=_placeholder_bridge_packet(right_state),
-            left_result=_placeholder_left_result(
-                response_text=payload.get("response_text", ""),
-                action_types=list(payload.get("action_types", [])),
-                reasoning_summary=list(payload.get("reasoning_summary", [])),
-            ),
-        )
-
-    def _rule_from_point(self, point) -> SemanticRule:
-        payload = point.payload or {}
-        return SemanticRule(
-            rule_id=payload.get("rule_id", str(point.id)),
-            statement=payload.get("statement", ""),
-            strength=float(payload.get("strength", 1.0)),
-            supporting_episodes=list(payload.get("supporting_episodes", [])),
-            tags=list(payload.get("tags", [])),
-        )
-
-
-def _parse_datetime(value: str | None) -> datetime:
-    if not value:
-        return utc_now()
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return utc_now()
-
-
-def _placeholder_right_state(
-    user_turn: UserTurn,
-    *,
-    latent_vector: list[float] | None = None,
-    emotional_labels: list[str] | None = None,
-    salience: float = 0.15,
-    confidence: float = 0.0,
-    surprise_score: float = 0.0,
-    world_hypotheses: dict | None = None,
-) -> RightHemisphereState:
-    return RightHemisphereState(
-        context_id=user_turn.turn_id,
-        latent_vector=latent_vector or [],
-        salience=salience,
-        emotional_labels=emotional_labels or ["neutral"],
-        world_hypotheses=world_hypotheses or {},
-        confidence=confidence,
-        surprise_score=surprise_score,
-        telemetry={"source": "qdrant_placeholder"},
-    )
-
-
-def _placeholder_bridge_packet(right_state: RightHemisphereState) -> CognitiveBridgePacket:
-    return CognitiveBridgePacket(
-        context_id=right_state.context_id,
-        soft_prompts=[],
-        control=BridgeControlSignal(
-            target_temperature=0.25,
-            empathy_priority=right_state.salience >= 0.7,
-            system_directives=[],
-            annotations={"source": "qdrant_placeholder"},
-        ),
-        salience=right_state.salience,
-        bridge_metadata={"source": "qdrant_placeholder"},
-    )
-
-
-def _placeholder_left_result(
-    *,
-    response_text: str = "",
-    action_types: list[str] | None = None,
-    reasoning_summary: list[str] | None = None,
-) -> LeftHemisphereResult:
-    actions = []
-    for action_type in action_types or []:
-        actions.append(
-            PrimitiveAction(
-                action_type=action_type,
-                typed_signature="Placeholder -> Placeholder",
-                payload={},
-                safety_invariants=["placeholder reconstructed from qdrant payload"],
-            )
-        )
-
-    return LeftHemisphereResult(
-        response_text=response_text,
-        lambda_program=TypedLambdaProgram(
-            signature="Placeholder",
-            expression="",
-            expected_effect="hydrate memory episode without executable actions",
-        ),
-        actions=actions,
-        reasoning_summary=reasoning_summary or ["placeholder_memory_episode"],
-        telemetry={"source": "qdrant_placeholder"},
-    )

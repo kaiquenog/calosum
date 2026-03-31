@@ -58,6 +58,22 @@ class TextEmbeddingAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(math.sqrt(sum(value * value for value in vectors[0])), 1.0, places=5)
         self.assertAlmostEqual(math.sqrt(sum(value * value for value in vectors[1])), 1.0, places=5)
 
+    async def test_embed_with_codec(self) -> None:
+        """embed_texts_compressed uses codec to compress each vector."""
+        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+
+        codec = TurboQuantVectorCodec(bits=3)
+        adapter = TextEmbeddingAdapter(
+            TextEmbeddingAdapterConfig(provider="lexical", vector_size=32),
+            codec=codec,
+        )
+        compressed_list = await adapter.embed_texts_compressed(["hello world", "test"])
+        self.assertEqual(len(compressed_list), 2)
+        for compressed in compressed_list:
+            self.assertIsInstance(compressed, bytes)
+            # Should be smaller than float32 storage (32 dims * 4 bytes = 128 bytes)
+            self.assertLess(len(compressed), 128)
+
 
 if __name__ == "__main__":
     unittest.main()

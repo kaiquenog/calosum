@@ -34,6 +34,14 @@ from calosum.shared.types import CapabilityDescriptor, ComponentHealth
 logger = logging.getLogger(__name__)
 
 
+def _build_codec(settings: InfrastructureSettings):
+    """Instantiate a VectorCodecPort if vector_quantization flag is set."""
+    if settings.vector_quantization == "turboquant":
+        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+        return TurboQuantVectorCodec(bits=settings.turboquant_bits)
+    return None
+
+
 @dataclass(slots=True)
 class CalosumAgentBuilder:
     settings: InfrastructureSettings
@@ -123,11 +131,16 @@ class CalosumAgentBuilder:
             try:
                 from calosum.adapters.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
                 embedder = self.build_text_embedder()
+                codec = _build_codec(self.settings)
                 return QdrantDualMemoryAdapter(
-                    QdrantAdapterConfig(url=self.settings.vector_db_url),
+                    QdrantAdapterConfig(
+                        url=self.settings.vector_db_url,
+                        scalar_quantization=self.settings.qdrant_scalar_quantization,
+                    ),
                     embedder=embedder,
                     exporter=exporter,
                     graph_store=graph_store,
+                    codec=codec,
                 )
             except Exception as exc:
                 logger.warning(

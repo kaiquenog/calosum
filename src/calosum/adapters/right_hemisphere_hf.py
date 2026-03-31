@@ -3,9 +3,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from collections import defaultdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from calosum.shared.types import MemoryContext, Modality, RightHemisphereState, UserTurn, CognitiveWorkspace
+
+if TYPE_CHECKING:
+    from calosum.shared.ports import VectorCodecPort
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +68,10 @@ class HuggingFaceRightHemisphereAdapter:
     com os rótulos de emoção pré-computados, que se provou eficaz e rápida.
     """
 
-    def __init__(self, config: HuggingFaceRightHemisphereConfig | None = None) -> None:
+    def __init__(self, config: HuggingFaceRightHemisphereConfig | None = None, codec: VectorCodecPort | None = None) -> None:
         self.config = config or HuggingFaceRightHemisphereConfig()
         self._salience_history_by_session: dict[str, list[float]] = defaultdict(list)
+        self.codec: VectorCodecPort | None = codec
         
         try:
             # O import é feito aqui para evitar lentidão de importação no bootstrap
@@ -157,6 +161,7 @@ class HuggingFaceRightHemisphereAdapter:
                 "emotion_peak_similarity": emotion_meta["peak_similarity"],
                 "raw_salience": raw_salience,
                 "runtime_feedback_bias": runtime_feedback_bias,
+                "codec_used": self.codec is not None,
             },
         )
         
@@ -183,23 +188,34 @@ class HuggingFaceRightHemisphereAdapter:
     def _calculate_surprise(self, latent_vector: list[float], memory_context: Any | None) -> float:
         if not memory_context or not memory_context.recent_episodes:
             return 0.5
-            
+
         try:
             import numpy as np
-            recent_vectors = [ep.right_state.latent_vector for ep in memory_context.recent_episodes if len(ep.right_state.latent_vector) == len(latent_vector)]
+            recent_vectors = [
+                ep.right_state.latent_vector
+                for ep in memory_context.recent_episodes
+                if len(ep.right_state.latent_vector) == len(latent_vector)
+            ]
             if not recent_vectors:
                 return 0.5
-                
-            avg_vector = np.mean(recent_vectors, axis=0)
+
+            avg_vector = np.mean(recent_vectors, axis=0).tolist()
+
+            if self.codec is not None:
+                # Use approximate inner product for speed
+                compressed_avg = self.codec.encode(avg_vector)
+                ip = self.codec.inner_product_approx(latent_vector, compressed_avg)
+                # ip ≈ cosine similarity when vectors are unit-normalized
+                distance = 1.0 - max(-1.0, min(1.0, ip))
+                return round(float(distance / 2.0), 3)
+
             vec = np.array(latent_vector)
-            
+            avg = np.array(avg_vector)
             norm_vec = np.linalg.norm(vec)
-            norm_avg = np.linalg.norm(avg_vector)
-            
+            norm_avg = np.linalg.norm(avg)
             if norm_vec == 0 or norm_avg == 0:
                 return 0.5
-                
-            sim = np.dot(vec, avg_vector) / (norm_vec * norm_avg)
+            sim = np.dot(vec, avg) / (norm_vec * norm_avg)
             distance = 1.0 - sim
             return round(float(distance / 2.0), 3)
         except Exception:
