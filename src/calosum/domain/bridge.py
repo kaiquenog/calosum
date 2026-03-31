@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from calosum.shared.types import BridgeControlSignal, CognitiveBridgePacket, RightHemisphereState, SoftPromptToken, CognitiveWorkspace
-from calosum.shared.ports import BridgeStateStorePort
+from calosum.shared.ports import BridgeFusionPort, BridgeStateStorePort
 
 
 @dataclass(slots=True)
@@ -31,9 +31,15 @@ class CognitiveTokenizer:
     - metadados suficientes para observabilidade e auditoria.
     """
 
-    def __init__(self, config: CognitiveTokenizerConfig | None = None, store: BridgeStateStorePort | None = None) -> None:
+    def __init__(
+        self,
+        config: CognitiveTokenizerConfig | None = None,
+        store: BridgeStateStorePort | None = None,
+        fusion: BridgeFusionPort | None = None,
+    ) -> None:
         self.config = config or CognitiveTokenizerConfig()
         self.store = store
+        self.fusion = fusion
         self._load_adaptation_state()
         self._init_neural_bridge()
 
@@ -106,10 +112,11 @@ class CognitiveTokenizer:
             self.store.record_reflection_event(payload)
 
     def translate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket:
-        if self.use_neural and len(right_state.latent_vector) == self.latent_dim:
-            packet = self._neural_translate(right_state)
+        state = self._apply_fusion(right_state)
+        if self.use_neural and len(state.latent_vector) == self.latent_dim:
+            packet = self._neural_translate(state)
         else:
-            packet = self._heuristic_translate(right_state)
+            packet = self._heuristic_translate(state)
             
         if workspace is not None:
             workspace.bridge_state.update({
@@ -120,6 +127,29 @@ class CognitiveTokenizer:
             })
             
         return packet
+
+    def _apply_fusion(self, right_state: RightHemisphereState) -> RightHemisphereState:
+        if self.fusion is None:
+            return right_state
+        try:
+            fused_latent, meta = self.fusion.fuse_latent(
+                latent_vector=right_state.latent_vector,
+                emotional_labels=right_state.emotional_labels,
+            )
+            telemetry = dict(right_state.telemetry)
+            telemetry.update(meta)
+            return RightHemisphereState(
+                context_id=right_state.context_id,
+                latent_vector=fused_latent,
+                salience=right_state.salience,
+                emotional_labels=right_state.emotional_labels,
+                world_hypotheses=right_state.world_hypotheses,
+                confidence=right_state.confidence,
+                surprise_score=right_state.surprise_score,
+                telemetry=telemetry,
+            )
+        except Exception:
+            return right_state
 
     def _neural_translate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket:
         import torch

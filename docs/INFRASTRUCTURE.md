@@ -17,6 +17,18 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - `CALOSUM_LEFT_FALLBACK_PROVIDER`: Opcional. Provider do endpoint de fallback.
 - `CALOSUM_LEFT_FALLBACK_REASONING_EFFORT`: Opcional. `reasoning.effort` do endpoint de fallback.
 - `CALOSUM_LEFT_FALLBACK_API_KEY`: Opcional. Chave especifica do endpoint de fallback.
+- `CALOSUM_LEFT_BACKEND`: Opcional. Forca o backend do hemisferio esquerdo (`rlm` ou `qwen`).
+- `CALOSUM_LEFT_RLM_RUNTIME_COMMAND`: Opcional. Comando local para executar o runtime RLM oficial.
+- `CALOSUM_LEFT_RLM_PATH`: Opcional. Caminho do modelo/artefato RLM local.
+- `CALOSUM_LEFT_RLM_MAX_DEPTH`: Opcional. Profundidade maxima de recursao do backend RLM.
+- `CALOSUM_RIGHT_BACKEND`: Opcional. Seleciona backend do hemisferio direito (`auto`, `vjepa21`, `vljepa`, `jepars`, `huggingface`).
+- `CALOSUM_RIGHT_MODEL_PATH`: Opcional. Caminho para artefatos locais JEPA/ONNX.
+- `CALOSUM_RIGHT_ACTION_CONDITIONED`: Opcional. Liga/desliga condicionamento por acao no preditor direito.
+- `CALOSUM_RIGHT_HORIZON`: Opcional. Horizonte de predicao do hemisferio direito.
+- `CALOSUM_RIGHT_JEPARS_BINARY`: Opcional. Binario do backend Rust `jepa-rs`.
+- `CALOSUM_BRIDGE_BACKEND`: Opcional. Seleciona a fusao do corpus caloso (`heuristic` ou `cross_attention`).
+- `CALOSUM_GEA_SHARING_ENABLED`: Opcional. Ativa experience sharing persistente no ReflectionController.
+- `CALOSUM_GEA_EXPERIENCE_STORE_PATH`: Opcional. Caminho do banco SQLite de experiencias do GEA.
 - `CALOSUM_NIGHT_TRAINER_BACKEND`: Opcional. Seleciona o backend do ciclo noturno (`auto`, `dspy`, `opro_lite`).
 - `CALOSUM_EMBEDDING_ENDPOINT`: Opcional. Endpoint para embeddings usados pelo adapter Qdrant.
 - `CALOSUM_EMBEDDING_MODEL`: Opcional. Modelo de embedding. Em OpenAI oficial, o default e `text-embedding-3-small`.

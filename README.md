@@ -722,6 +722,23 @@ LLM:              endpoint principal → endpoint fallback (com cooldown automá
 | `CALOSUM_REFLECTION_MODEL` | GEA reflection scoring |
 | `CALOSUM_VERIFIER_MODEL` | Verificador (critique) |
 
+### Backends 2026 (dual-hemisphere)
+
+| Variável | Descrição |
+|----------|-----------|
+| `CALOSUM_RIGHT_BACKEND` | `auto` / `vjepa21` / `vljepa` / `jepars` / `huggingface` |
+| `CALOSUM_RIGHT_MODEL_PATH` | Diretório local com artefatos do hemisfério direito |
+| `CALOSUM_RIGHT_ACTION_CONDITIONED` | `true`/`false` para predição condicionada por ação |
+| `CALOSUM_RIGHT_HORIZON` | Horizonte preditivo do world model |
+| `CALOSUM_RIGHT_JEPARS_BINARY` | Binário local do backend Rust `jepa-rs` |
+| `CALOSUM_LEFT_BACKEND` | `rlm` / `qwen` (default legado) |
+| `CALOSUM_LEFT_RLM_RUNTIME_COMMAND` | Comando do runtime RLM local |
+| `CALOSUM_LEFT_RLM_PATH` | Caminho local do modelo/artefato RLM |
+| `CALOSUM_LEFT_RLM_MAX_DEPTH` | Profundidade máxima de recursão do RLM |
+| `CALOSUM_BRIDGE_BACKEND` | `heuristic` / `cross_attention` |
+| `CALOSUM_GEA_SHARING_ENABLED` | Habilita experience sharing persistente no GEA |
+| `CALOSUM_GEA_EXPERIENCE_STORE_PATH` | Caminho do SQLite de experiência do GEA |
+
 ### Infraestrutura
 
 | Variável | Descrição |

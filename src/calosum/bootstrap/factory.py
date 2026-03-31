@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 import importlib.util
 from pathlib import Path
 from typing import Any
 
-from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
 from calosum.adapters.action_runtime import ConcreteActionRuntime
-from calosum.adapters.llm_failover import ResilientLeftHemisphereAdapter
-from calosum.adapters.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.adapters.telemetry_otlp import OTLPHTTPTraceSink
 from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 from calosum.domain.event_bus import InternalEventBus
@@ -22,11 +19,15 @@ from calosum.domain.persistent_memory import (
     JsonlSemanticStore,
     PersistentDualMemorySystem,
 )
-from calosum.domain.right_hemisphere import RightHemisphereJEPA
 from calosum.bootstrap.settings import InfrastructureProfile, InfrastructureSettings
+from calosum.bootstrap.backend_resolvers import (
+    resolve_bridge_fusion,
+    resolve_left_hemisphere,
+    resolve_reflection_controller,
+    resolve_right_hemisphere,
+    resolve_vision_adapter,
+)
 from calosum.domain.telemetry import CognitiveTelemetryBus, CompositeTelemetrySink, InMemoryTelemetrySink, OTLPJsonlTelemetrySink
-from calosum.shared.ports import LatentExchangePort, VisionEmbeddingPort
-from calosum.adapters.multimodal_perception import MockVisionAdapter
 from calosum.adapters.latent_exchange import InternalLatentExchangeAdapter
 from calosum.shared.types import CapabilityDescriptor, ComponentHealth
 
@@ -50,7 +51,10 @@ class CalosumAgentBuilder:
         bridge_store = None
         if self.settings.bridge_state_dir is not None:
             bridge_store = LocalBridgeStateStore(base_dir=self.settings.bridge_state_dir)
-        tokenizer = CognitiveTokenizer(store=bridge_store)
+        tokenizer = CognitiveTokenizer(
+            store=bridge_store,
+            fusion=resolve_bridge_fusion(self.settings),
+        )
         action_runtime = ConcreteActionRuntime(
             vault=self.settings.vault,
             agent_accessor=agent_accessor
@@ -59,15 +63,9 @@ class CalosumAgentBuilder:
         telemetry_bus = self.build_telemetry_bus()
         capability_snapshot = self.build_capability_snapshot(action_runtime)
         night_trainer = self.build_night_trainer()
-        
-        # V3: Latent Exchange & Vision
+
         latent_exchange = InternalLatentExchangeAdapter(event_bus=self.settings.event_bus or InternalEventBus())
-        vision_adapter = MockVisionAdapter()
-        
-        # Inject vision into right hemisphere if it's the JEPA one
-        if isinstance(right_hemisphere, ActiveInferenceRightHemisphereAdapter):
-            if hasattr(right_hemisphere.base_adapter, "vision_adapter"):
-                right_hemisphere.base_adapter.vision_adapter = vision_adapter
+        reflection_controller = resolve_reflection_controller(self.settings)
         return CalosumAgent(
             right_hemisphere=right_hemisphere,
             tokenizer=tokenizer,
@@ -80,71 +78,41 @@ class CalosumAgentBuilder:
             evolution_archive=JsonlEvolutionArchive(self.settings.evolution_archive_path),
             night_trainer=night_trainer,
             latent_exchange=latent_exchange,
+            reflection_controller=reflection_controller,
         )
 
     def build_left_hemisphere(self):
-        primary = self._build_single_left_hemisphere(
-            endpoint=self.settings.left_hemisphere_endpoint,
-            api_key=self.settings.left_hemisphere_api_key,
-            model=self._reason_model_name(),
-            provider=self.settings.left_hemisphere_provider,
-            reasoning_effort=self.settings.left_hemisphere_reasoning_effort,
-        )
-        if self.settings.left_hemisphere_fallback_endpoint:
-            fallback = self._build_single_left_hemisphere(
-                endpoint=self.settings.left_hemisphere_fallback_endpoint,
-                api_key=self.settings.left_hemisphere_fallback_api_key,
-                model=self.settings.left_hemisphere_fallback_model or self._reason_model_name(),
-                provider=self.settings.left_hemisphere_fallback_provider,
-                reasoning_effort=(
-                    self.settings.left_hemisphere_fallback_reasoning_effort
-                    or self.settings.left_hemisphere_reasoning_effort
-                ),
-            )
-            self._last_left_hemisphere_backend = "resilient_failover_adapter"
-            return ResilientLeftHemisphereAdapter([primary, fallback])
-        self._last_left_hemisphere_backend = self._left_hemisphere_backend_name_from_settings()
-        return primary
+        try:
+            adapter, backend = resolve_left_hemisphere(self.settings, self._reason_model_name())
+            self._last_left_hemisphere_backend = backend
+            return adapter
+        except Exception as exc:
+            logger.warning("Falling back to default left hemisphere adapter: %s", exc)
+            from calosum.adapters.llm_qwen import QwenLeftHemisphereAdapter
+
+            self._last_left_hemisphere_backend = "openai_compatible_chat_adapter_default"
+            return QwenLeftHemisphereAdapter()
 
     def build_right_hemisphere(self):
-        requested_model = self.settings.perception_model
-        if requested_model and requested_model.lower() == "jepa":
-            self._last_right_hemisphere_backend = "active_inference_jepa_policy"
-            self._last_right_hemisphere_model_name = "jepa"
-            base_adapter = RightHemisphereJEPA()
-            setattr(base_adapter, "degraded_reason", None)
-            return ActiveInferenceRightHemisphereAdapter(base_adapter)
-
+        vision_adapter = resolve_vision_adapter()
         try:
-            from calosum.adapters.right_hemisphere_hf import (
-                HuggingFaceRightHemisphereAdapter,
-                HuggingFaceRightHemisphereConfig,
+            adapter, backend, model_name = resolve_right_hemisphere(
+                self.settings,
+                vision_adapter=vision_adapter,
             )
-            config = None
-            if requested_model and requested_model.lower() != "jepa":
-                config = HuggingFaceRightHemisphereConfig(embedding_model_name=requested_model)
-                self._last_right_hemisphere_model_name = requested_model
-            base_adapter = HuggingFaceRightHemisphereAdapter(config)
+            self._last_right_hemisphere_backend = backend
+            self._last_right_hemisphere_model_name = model_name
+            return adapter
         except Exception as exc:
-            logger.warning(
-                "Falling back to heuristic right hemisphere adapter because the optional "
-                "HuggingFace stack is unavailable: %s",
-                exc,
-            )
+            logger.warning("Falling back to heuristic right hemisphere adapter: %s", exc)
+            from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
+            from calosum.domain.right_hemisphere import RightHemisphereJEPA
+
+            base_adapter = RightHemisphereJEPA(vision_adapter=vision_adapter)
+            setattr(base_adapter, "degraded_reason", f"resolver_fallback:{exc.__class__.__name__}")
             self._last_right_hemisphere_backend = "active_inference_heuristic_fallback"
             self._last_right_hemisphere_model_name = "jepa"
-            base_adapter = RightHemisphereJEPA()
-            setattr(base_adapter, "degraded_reason", f"hf_stack_unavailable:{exc.__class__.__name__}")
             return ActiveInferenceRightHemisphereAdapter(base_adapter)
-
-        self._last_right_hemisphere_backend = "active_inference_huggingface"
-        if self._last_right_hemisphere_model_name is None:
-            self._last_right_hemisphere_model_name = getattr(
-                getattr(base_adapter, "config", None),
-                "embedding_model_name",
-                requested_model or "paraphrase-multilingual-MiniLM-L12-v2",
-            )
-        return ActiveInferenceRightHemisphereAdapter(base_adapter)
 
     def build_memory_system(self):
         from calosum.adapters.night_trainer import LocalDatasetExporter
@@ -239,27 +207,6 @@ class CalosumAgentBuilder:
             episode_volume_threshold=50 # V3 Default
         )
 
-    def _build_single_left_hemisphere(
-        self,
-        *,
-        endpoint: str | None,
-        api_key: str | None,
-        model: str | None,
-        provider: str | None,
-        reasoning_effort: str | None,
-    ) -> QwenLeftHemisphereAdapter:
-        if endpoint:
-            return QwenLeftHemisphereAdapter(
-                QwenAdapterConfig(
-                    api_url=endpoint,
-                    api_key=api_key or "empty",
-                    model_name=model or "Qwen/Qwen-3.5-9B-Instruct",
-                    provider=provider or "auto",
-                    reasoning_effort=reasoning_effort,
-                )
-            )
-        return QwenLeftHemisphereAdapter()
-
     def build_capability_snapshot(self, action_runtime: Any | None = None) -> CapabilityDescriptor:
         return CalosumSystemIntrospector.build_capability_snapshot(self, action_runtime)
 
@@ -297,7 +244,11 @@ class CalosumAgentBuilder:
         return "in_memory"
 
     def _right_hemisphere_health(self) -> ComponentHealth:
-        return ComponentHealth.DEGRADED if self._last_right_hemisphere_backend == "active_inference_heuristic_fallback" else ComponentHealth.HEALTHY
+        return (
+            ComponentHealth.DEGRADED
+            if self._last_right_hemisphere_backend in {"active_inference_heuristic_fallback"}
+            else ComponentHealth.HEALTHY
+        )
 
     def _right_hemisphere_backend_name(self) -> str:
         return self._last_right_hemisphere_backend or "active_inference_with_optional_huggingface"
@@ -350,6 +301,8 @@ class CalosumAgentBuilder:
         }
 
     def _left_hemisphere_backend_name_from_settings(self) -> str:
+        if (self.settings.left_hemisphere_backend or "").lower() == "rlm":
+            return "rlm_recursive_adapter"
         if self.settings.left_hemisphere_fallback_endpoint:
             return "resilient_failover_adapter"
         endpoint = (self.settings.left_hemisphere_endpoint or "").lower()

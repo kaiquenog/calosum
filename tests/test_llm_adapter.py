@@ -55,7 +55,7 @@ def _bridge_packet() -> CognitiveBridgePacket:
 
 
 class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
-    async def test_openai_base_url_uses_responses_api_and_normalizes_common_model_alias(self) -> None:
+    async def test_openai_chat_completions_url_uses_responses_api_with_schema(self) -> None:
         captured: dict[str, object] = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -68,7 +68,7 @@ class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         adapter = QwenLeftHemisphereAdapter(
             QwenAdapterConfig(
-                api_url="https://api.openai.com/v1",
+                api_url="https://api.openai.com/v1/chat/completions",
                 api_key="sk-test",
                 model_name="gpt-5.4-mini",
                 reasoning_effort="low",
@@ -85,13 +85,14 @@ class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
         payload = captured["payload"]
         assert isinstance(payload, dict)
         self.assertEqual(captured["url"], "https://api.openai.com/v1/responses")
-        self.assertEqual(payload["model"], "gpt-4o-mini")
+        self.assertEqual(payload["model"], "gpt-5.4-mini")
         self.assertEqual(payload["reasoning"], {"effort": "low"})
         self.assertEqual(payload["text"]["format"]["type"], "json_schema")
         self.assertEqual(payload["text"]["format"]["strict"], False)
+        self.assertEqual(payload["text"]["format"]["name"], "left_hemisphere_result")
         self.assertEqual(result.response_text, "Resposta estruturada")
         self.assertEqual(result.telemetry["api_mode"], "openai_responses")
-        self.assertEqual(result.telemetry["model_name"], "gpt-4o-mini")
+        self.assertEqual(result.telemetry["model_name"], "gpt-5.4-mini")
         self.assertEqual(result.telemetry["system_directives"], ["be precise"])
 
     async def test_openai_compatible_endpoint_keeps_chat_completions_contract(self) -> None:
@@ -130,6 +131,37 @@ class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.response_text, "Resposta estruturada")
         self.assertEqual(result.telemetry["api_mode"], "openai_compatible_chat")
         self.assertEqual(result.telemetry["system_directives"], ["be precise"])
+
+    async def test_openai_chat_incomplete_json_returns_fallback_result(self) -> None:
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "{}"}}]},
+            )
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.aclose)
+
+        adapter = QwenLeftHemisphereAdapter(
+            QwenAdapterConfig(
+                api_url="https://api.openai.com/v1/chat/completions",
+                api_key="sk-test",
+                model_name="gpt-5.4-mini",
+                provider="openai_chat",
+            ),
+            client=client,
+        )
+
+        result = await adapter.areason(
+            UserTurn(session_id="openai-chat-incomplete", user_text="OI"),
+            _bridge_packet(),
+            _memory_context(),
+        )
+
+        self.assertIn("falhou temporariamente", result.response_text)
+        self.assertTrue(any("Erro LLM:" in item for item in result.reasoning_summary))
+        self.assertEqual(result.telemetry["api_mode"], "openai_chat")
+        self.assertIn("incomplete_structured_output", result.telemetry["error"])
 
     async def test_compiled_prompt_artifact_is_loaded_and_injected_into_prompt(self) -> None:
         captured: dict[str, object] = {}

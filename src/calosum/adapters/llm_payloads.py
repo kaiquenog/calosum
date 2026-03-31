@@ -233,17 +233,14 @@ def extract_chat_content(data: dict[str, Any]) -> str:
 def build_openai_responses_payload(prompt: str, model: str, max_tokens: int, reasoning_effort: str | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": model,
-        "input_text": prompt,
-        "output_format": "json_object",
-        "parameters": {"max_new_tokens": max_tokens, "temperature": 0.1, "top_p": 0.9},
+        "input": prompt,
+        "max_output_tokens": max_tokens,
         "text": {
             "format": {
                 "type": "json_schema",
+                "name": "left_hemisphere_result",
                 "strict": False,
-                "json_schema": {
-                    "name": "left_hemisphere_result",
-                    "schema": left_hemisphere_result_schema()
-                }
+                "schema": left_hemisphere_result_schema(),
             }
         },
     }
@@ -259,7 +256,14 @@ def build_openai_chat_payload(prompt: str, model: str, max_tokens: int) -> dict[
             {"role": "user", "content": prompt},
         ],
         "max_tokens": max_tokens,
-        "response_format": {"type": "json_object"},
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "left_hemisphere_result",
+                "strict": False,
+                "schema": left_hemisphere_result_schema(),
+            },
+        },
         "temperature": 0.1,
     }
 

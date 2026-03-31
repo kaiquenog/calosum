@@ -44,7 +44,14 @@ async def system_state(session_id: str | None = None) -> JSONResponse:
         if workspace is None and session_id is None:
             workspace = agent.workspace_for_session()
         if not workspace:
-            return JSONResponse({"status": "error", "error": "No cognitive workspace found"}, status_code=404)
+            return JSONResponse(
+                {
+                    "status": "ok",
+                    "state": None,
+                    "session_id": target_session,
+                    "note": "No cognitive workspace found yet",
+                }
+            )
         return JSONResponse({"status": "ok", "state": to_primitive(workspace)})
     except Exception as e:
         logger.error("Error retrieving system state", exc_info=True)

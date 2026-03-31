@@ -15,6 +15,9 @@ services:
       CALOSUM_DUCKDB_PATH: /data/state/semantic.duckdb
       CALOSUM_OTEL_COLLECTOR_ENDPOINT: http://otel-collector:4318
       CALOSUM_JAEGER_UI_URL: http://jaeger:16686
+      CALOSUM_RIGHT_BACKEND: vjepa21
+      CALOSUM_LEFT_BACKEND: rlm
+      CALOSUM_BRIDGE_BACKEND: cross_attention
       # Deixa o .env ditar as configs do LLM para evitar hardcode do host.docker.internal quebrando a API da OpenAI
     volumes:
       - ../.calosum-runtime:/data

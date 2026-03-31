@@ -83,9 +83,10 @@ class ApiIntegrationTests(unittest.TestCase):
         api_module.get_agent().last_workspace_by_session.clear()
 
         response = self.client.get("/v1/system/state", params={"session_id": "fresh-session"})
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["status"], "error")
+        self.assertEqual(data["status"], "ok")
+        self.assertIsNone(data["state"])
 
     def test_system_state_returns_workspace_after_turn(self) -> None:
         post_response = self.client.post("/v1/chat/completions", json={"text": "Hello workspace"})
@@ -113,8 +114,9 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
         missing = self.client.get("/v1/system/state", params={"session_id": "session-b"})
-        self.assertEqual(missing.status_code, 404)
-        self.assertEqual(missing.json()["status"], "error")
+        self.assertEqual(missing.status_code, 200)
+        self.assertEqual(missing.json()["status"], "ok")
+        self.assertIsNone(missing.json()["state"])
 
     def test_workspace_carries_previous_runtime_feedback_across_turns(self) -> None:
         session_id = "runtime-feedback-session"

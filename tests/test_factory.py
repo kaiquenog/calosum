@@ -13,6 +13,7 @@ from calosum import (
     PersistentDualMemorySystem,
     RightHemisphereJEPA,
 )
+from calosum.adapters.contract_wrappers import ContractEnforcedRightHemisphereAdapter
 from calosum.domain.telemetry import OTLPJsonlTelemetrySink
 
 
@@ -58,10 +59,11 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
         description = builder.describe()
         self.assertIsInstance(agent.right_hemisphere, ActiveInferenceRightHemisphereAdapter)
-        self.assertIsInstance(agent.right_hemisphere.base_adapter, RightHemisphereJEPA)
+        self.assertIsInstance(agent.right_hemisphere.base_adapter, ContractEnforcedRightHemisphereAdapter)
+        self.assertIsInstance(agent.right_hemisphere.base_adapter.provider, RightHemisphereJEPA)
         self.assertEqual(description["right_hemisphere_backend"], "active_inference_heuristic_fallback")
         self.assertEqual(
-            getattr(agent.right_hemisphere.base_adapter, "degraded_reason", None),
+            getattr(agent.right_hemisphere.base_adapter.provider, "degraded_reason", None),
             "hf_stack_unavailable:RuntimeError",
         )
 
@@ -167,7 +169,8 @@ class InfrastructureBuilderTests(unittest.TestCase):
         agent = builder.build()
         description = builder.describe(agent)
 
-        self.assertIsInstance(agent.right_hemisphere.base_adapter, RightHemisphereJEPA)
+        self.assertIsInstance(agent.right_hemisphere.base_adapter, ContractEnforcedRightHemisphereAdapter)
+        self.assertIsInstance(agent.right_hemisphere.base_adapter.provider, RightHemisphereJEPA)
         self.assertEqual(description["right_hemisphere_backend"], "active_inference_jepa_policy")
         self.assertEqual(description["routing_resolution"]["perception"]["active"], "jepa")
 

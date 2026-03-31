@@ -171,3 +171,33 @@ class VisionEmbeddingPort(Protocol):
 class LatentExchangePort(Protocol):
     async def broadcast_latent(self, session_id: str, latent_vector: list[float]) -> None: ...
     async def get_peer_latents(self, session_id: str) -> list[list[float]]: ...
+
+
+@runtime_checkable
+class BridgeFusionPort(Protocol):
+    def fuse_latent(
+        self,
+        latent_vector: list[float],
+        emotional_labels: list[str],
+    ) -> tuple[list[float], dict[str, Any]]: ...
+
+
+@runtime_checkable
+class ExperienceStorePort(Protocol):
+    def record_experience(
+        self,
+        *,
+        context_type: str,
+        variant_id: str,
+        score: float,
+        reward: float,
+        metadata: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    def variant_prior(
+        self,
+        *,
+        context_type: str,
+        variant_id: str,
+        limit: int = 100,
+    ) -> float: ...

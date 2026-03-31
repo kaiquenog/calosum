@@ -176,6 +176,41 @@ interface EvolutionDirective {
   status: string;
 }
 
+const toTimestampMs = (isoString?: string): number => {
+  if (!isoString) return 0;
+  const value = Date.parse(isoString);
+  return Number.isFinite(value) ? value : 0;
+};
+
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+const deriveExpectedFreeEnergy = (eventData: any): number => {
+  const direct = Number(eventData?.expected_free_energy);
+  if (Number.isFinite(direct)) return clamp01(direct);
+
+  const hypotheses = eventData?.world_hypotheses ?? {};
+  const fromHypothesis = Number(hypotheses?.expected_free_energy);
+  if (Number.isFinite(fromHypothesis)) return clamp01(fromHypothesis);
+
+  const complexity = Number(hypotheses?.interaction_complexity);
+  const semanticDensity = Number(hypotheses?.semantic_density);
+  const fallback = (Number.isFinite(complexity) ? complexity : 0.0) * 0.6 + (Number.isFinite(semanticDensity) ? semanticDensity : 0.0) * 0.4;
+  return clamp01(fallback);
+};
+
+const deriveSurprise = (eventData: any): number => {
+  const surprise = Number(eventData?.surprise_score);
+  if (Number.isFinite(surprise)) return clamp01(surprise);
+
+  const freeEnergy = Number(eventData?.telemetry?.free_energy);
+  if (Number.isFinite(freeEnergy)) return clamp01(freeEnergy);
+
+  const salience = Number(eventData?.salience);
+  if (Number.isFinite(salience)) return clamp01(salience);
+
+  return 0.0;
+};
+
 function App() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(false);
@@ -329,7 +364,7 @@ function App() {
   }, [fetchDashboard]);
 
   useEffect(() => {
-    if (activeTab !== 'chat' && activeTab !== 'history') {
+    if (activeTab !== 'chat' && activeTab !== 'history' && activeTab !== 'mente') {
       return;
     }
     const intervalId = window.setInterval(() => {
@@ -369,8 +404,8 @@ function App() {
     processChannel('execution', dashboard.execution);
     processChannel('reflection', dashboard.reflection);
 
-    // Sort by timestamp descending (newest first)
-    return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    // Sort by timestamp descending (newest first). Invalid timestamps are treated as oldest.
+    return events.sort((a, b) => toTimestampMs(b.timestamp) - toTimestampMs(a.timestamp));
   }, [dashboard, filterEvents]);
 
   const timelineEvents = useMemo(() => getTimelineEvents(), [getTimelineEvents]);
@@ -378,9 +413,26 @@ function App() {
   const liveTimelineEvents = useMemo(() => getTimelineEvents(activeSessionId), [getTimelineEvents, activeSessionId]);
   const liveEventsDesc = useMemo(() => {
     return [...liveTimelineEvents].sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      (a, b) => toTimestampMs(b.timestamp) - toTimestampMs(a.timestamp)
     );
   }, [liveTimelineEvents]);
+  const menteTimelineEvents = useMemo(
+    () => (liveEventsDesc.length > 0 ? liveEventsDesc : timelineEvents),
+    [liveEventsDesc, timelineEvents],
+  );
+  const menteFeltEvents = useMemo(
+    () => menteTimelineEvents.filter((event) => event.type === 'felt'),
+    [menteTimelineEvents],
+  );
+  const menteReflectionEvents = useMemo(
+    () => menteTimelineEvents.filter((event) => event.type === 'reflection'),
+    [menteTimelineEvents],
+  );
+  const latestMenteFelt = menteFeltEvents[0];
+  const latestMenteReflection = menteReflectionEvents[0];
+  const latestSurpriseScore = deriveSurprise(latestMenteFelt?.data);
+  const latestExpectedFreeEnergy = deriveExpectedFreeEnergy(latestMenteFelt?.data);
+  const latestCognitiveDissonance = Number(latestMenteReflection?.data?.cognitive_dissonance ?? 0);
 
   // Group events by session for a clearer view
   const groupedEvents = useMemo(() => {
@@ -1491,7 +1543,7 @@ function App() {
                         <h3 className="text-sm font-mono text-emerald-400 uppercase tracking-widest mb-2">Entropy (Surprise)</h3>
                         <div className="flex items-baseline gap-2">
                           <span className="text-4xl font-bold text-white">
-                            {timelineEvents.find(e => e.type === 'felt')?.data.surprise_score?.toFixed(3) || '0.000'}
+                            {latestSurpriseScore.toFixed(3)}
                           </span>
                           <span className="text-xs text-emerald-500/70">D_kl[Q||P]</span>
                         </div>
@@ -1502,7 +1554,7 @@ function App() {
                         <h3 className="text-sm font-mono text-blue-400 uppercase tracking-widest mb-2">Expected Free Energy (G)</h3>
                         <div className="flex items-baseline gap-2">
                           <span className="text-4xl font-bold text-white">
-                            {timelineEvents.find(e => e.type === 'felt')?.data.expected_free_energy?.toFixed(3) || '0.000'}
+                            {latestExpectedFreeEnergy.toFixed(3)}
                           </span>
                           <span className="text-xs text-blue-500/70">Epistemic Gain</span>
                         </div>
@@ -1513,7 +1565,7 @@ function App() {
                         <h3 className="text-sm font-mono text-amber-400 uppercase tracking-widest mb-2">Cognitive Dissonance</h3>
                         <div className="flex items-baseline gap-2">
                           <span className="text-4xl font-bold text-white">
-                            {timelineEvents.find(e => e.type === 'reflection')?.data.cognitive_dissonance?.toFixed(3) || '0.000'}
+                            {(Number.isFinite(latestCognitiveDissonance) ? latestCognitiveDissonance : 0).toFixed(3)}
                           </span>
                           <span className="text-xs text-amber-500/70">Model Mismatch</span>
                         </div>
@@ -1525,18 +1577,18 @@ function App() {
                         <Activity className="w-5 h-5 text-blue-400" /> Fluxo de Ressonância Contextual
                       </h3>
                       <div className="h-64 flex items-end gap-2 px-2">
-                        {timelineEvents.filter(e => e.type === 'felt').slice(0, 15).reverse().map((e, i) => (
+                        {menteFeltEvents.slice(0, 15).reverse().map((e, i) => (
                           <div key={i} className="flex-1 flex flex-col gap-2 group relative">
                             <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-800 px-2 py-1 rounded text-[10px] opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-nowrap">
-                              EFE: {e.data.expected_free_energy?.toFixed(3) || '0.00'}
+                              EFE: {deriveExpectedFreeEnergy(e.data).toFixed(3)}
                             </div>
                             <div 
                               className="w-full bg-blue-500/40 border-t-2 border-blue-400 rounded-t-sm transition-all hover:bg-blue-500/60" 
-                              style={{ height: `${(e.data.expected_free_energy || 0.1) * 100}%` }}
+                              style={{ height: `${Math.max(4, deriveExpectedFreeEnergy(e.data) * 100)}%` }}
                             ></div>
                             <div 
                               className="w-full bg-emerald-500/40 border-t-2 border-emerald-400 rounded-t-sm transition-all hover:bg-emerald-500/60" 
-                              style={{ height: `${(e.data.surprise_score || 0.1) * 100}%` }}
+                              style={{ height: `${Math.max(4, deriveSurprise(e.data) * 100)}%` }}
                             ></div>
                           </div>
                         ))}
@@ -1560,7 +1612,7 @@ function App() {
                   <p className="text-lg">Em desenvolvimento...</p>
                 </>
               )}
-              <p className="text-lg">Em desenvolvimento...</p>
+              {activeTab !== 'mente' && <p className="text-lg">Em desenvolvimento...</p>}
             </div>
           </div>
         ) : (

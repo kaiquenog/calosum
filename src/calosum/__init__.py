@@ -1,6 +1,12 @@
 """Public package surface for the Calosum cognitive architecture."""
 
 from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
+from calosum.adapters.bridge_cross_attention import CrossAttentionBridgeAdapter, CrossAttentionBridgeConfig
+from calosum.adapters.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.multimodal_perception import LocalClipVisionAdapter, LocalClipVisionConfig
+from calosum.adapters.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
+from calosum.adapters.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
+from calosum.adapters.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.factory import CalosumAgentBuilder
 from calosum.domain.bridge import CognitiveTokenizer, CognitiveTokenizerConfig
 from calosum.domain.left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
@@ -29,7 +35,9 @@ from calosum.domain.persistent_memory import (
 )
 from calosum.shared.ports import (
     ActionRuntimePort,
+    BridgeFusionPort,
     CognitiveTokenizerPort,
+    ExperienceStorePort,
     LeftHemispherePort,
     MemorySystemPort,
     ReflectionControllerPort,
@@ -76,6 +84,7 @@ __all__ = [
     "ActionRuntimePort",
     "ActiveInferenceRightHemisphereAdapter",
     "AgentTurnResult",
+    "BridgeFusionPort",
     "CalosumAgent",
     "CalosumAgentBuilder",
     "CalosumAgentConfig",
@@ -87,8 +96,11 @@ __all__ = [
     "CognitiveTokenizerConfig",
     "CognitiveVariantSpec",
     "ConsolidationReport",
+    "CrossAttentionBridgeAdapter",
+    "CrossAttentionBridgeConfig",
     "DualMemorySystem",
     "dump_json",
+    "ExperienceStorePort",
     "FailureType",
     "GEAReflectionController",
     "GroupTurnResult",
@@ -98,12 +110,16 @@ __all__ = [
     "InMemoryTelemetrySink",
     "InfrastructureProfile",
     "InfrastructureSettings",
+    "JepaRsConfig",
+    "JepaRsRightHemisphereAdapter",
     "JsonlEpisodicStore",
     "JsonlSemanticGraphStore",
     "JsonlSemanticStore",
     "KnowledgeTriple",
     "NanoGraphRAGKnowledgeGraphStore",
     "LeftHemispherePort",
+    "LocalClipVisionAdapter",
+    "LocalClipVisionConfig",
     "LeftHemisphereLogicalSLM",
     "LeftHemisphereLogicalSLMConfig",
     "LeftHemisphereResult",
@@ -120,6 +136,8 @@ __all__ = [
     "RightHemispherePort",
     "RightHemisphereJEPAConfig",
     "RightHemisphereState",
+    "RlmAdapterConfig",
+    "RlmLeftHemisphereAdapter",
     "ReflectionOutcome",
     "ReflectionScore",
     "SemanticRule",
@@ -133,4 +151,8 @@ __all__ = [
     "to_primitive",
     "TypedLambdaProgram",
     "UserTurn",
+    "VJepa21Config",
+    "VJepa21RightHemisphereAdapter",
+    "VLJepaConfig",
+    "VLJepaRightHemisphereAdapter",
 ]

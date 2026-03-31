@@ -18,7 +18,6 @@ from calosum.adapters.llm_payloads import (
     build_openai_responses_payload,
     extract_chat_content,
     extract_responses_content,
-    left_hemisphere_result_schema,
     load_compiled_examples,
     load_compiled_prompt_artifact,
 )
@@ -35,8 +34,6 @@ from calosum.shared.types import (
 )
 
 logger = logging.getLogger(__name__)
-
-
 @dataclass(slots=True)
 class QwenAdapterConfig:
     api_url: str = "http://localhost:8000/v1/chat/completions"
@@ -234,7 +231,7 @@ class QwenLeftHemisphereAdapter:
 
     def _build_request(self, prompt: str) -> dict[str, Any]:
         api_mode = self._resolve_api_mode()
-        resolved_model = self._resolve_model_name()
+        resolved_model = self._resolve_model_name(api_mode)
 
         if api_mode == "openai_responses":
             return {
@@ -267,25 +264,22 @@ class QwenLeftHemisphereAdapter:
         path = parsed.path.rstrip("/")
 
         if hostname == "api.openai.com":
-            if path.endswith("/chat/completions"):
-                return "openai_chat"
             return "openai_responses"
 
         return "openai_compatible_chat"
 
-    def _resolve_model_name(self) -> str:
+    def _resolve_model_name(self, api_mode: str) -> str:
         model = self.config.model_name.strip()
-        aliases = {
-            "gpt-5.4-mini": "gpt-4o-mini",
-            "gpt-5.4-nano": "gpt-4o-mini",
-        }
-        normalized = aliases.get(model, model)
-        if normalized != model:
-            logger.warning("Normalizing unsupported model alias %s -> %s", model, normalized)
-        return normalized
+        if not model:
+            if api_mode == "openai_responses":
+                return "gpt-5.4-mini"
+            return "gpt-4o-mini"
+        return model
 
     def _responses_url(self) -> str:
         base = self.config.api_url.rstrip("/")
+        if base.endswith("/chat/completions"):
+            base = base[: -len("/chat/completions")]
         if base.endswith("/responses"):
             return base
         if base.endswith("/v1"):
@@ -314,27 +308,65 @@ class QwenLeftHemisphereAdapter:
         system_directives: list[str] | None = None,
     ) -> LeftHemisphereResult:
         lambda_prog = parsed.get("lambda_program", {})
+        response_text = str(parsed.get("response_text", "") or "")
+        reasoning_summary = [str(item) for item in parsed.get("reasoning_summary", []) if str(item).strip()]
+
         program = TypedLambdaProgram(
-            signature=lambda_prog.get("signature", "Any -> Any"),
-            expression=lambda_prog.get("expression", ""),
-            expected_effect=lambda_prog.get("expected_effect", ""),
+            signature=str(lambda_prog.get("signature") or "Context -> Response"),
+            expression=str(
+                lambda_prog.get("expression")
+                or "(lambda context memory (sequence (emit respond_text)))"
+            ),
+            expected_effect=str(lambda_prog.get("expected_effect") or "Deliver a safe response"),
         )
 
-        actions = [
-            PrimitiveAction(
-                action_type=item.get("action_type", "unknown"),
-                typed_signature=item.get("typed_signature", "Any -> Any"),
-                payload=item.get("payload", {}),
-                safety_invariants=item.get("safety_invariants", []),
+        actions: list[PrimitiveAction] = []
+        for item in parsed.get("actions", []):
+            if not isinstance(item, dict):
+                continue
+            actions.append(
+                PrimitiveAction(
+                    action_type=str(item.get("action_type", "unknown")),
+                    typed_signature=str(item.get("typed_signature", "Any -> Any")),
+                    payload=dict(item.get("payload", {})),
+                    safety_invariants=[
+                        str(invariant)
+                        for invariant in item.get("safety_invariants", [])
+                        if isinstance(invariant, str) and invariant.strip()
+                    ],
+                )
             )
-            for item in parsed.get("actions", [])
-        ]
+
+        if not response_text.strip():
+            for action in actions:
+                if action.action_type != "respond_text":
+                    continue
+                candidate = action.payload.get("text")
+                if isinstance(candidate, str) and candidate.strip():
+                    response_text = candidate.strip()
+                    break
+
+        if not actions and response_text.strip():
+            actions = [
+                PrimitiveAction(
+                    action_type="respond_text",
+                    typed_signature="ResponsePlan -> SafeTextMessage",
+                    payload={"text": response_text},
+                    safety_invariants=["safe output only"],
+                )
+            ]
+
+        if not reasoning_summary:
+            reasoning_summary = ["structured_output_ok"]
+
+        if not response_text.strip() and not actions:
+            raise ValueError("incomplete_structured_output: empty response_text and no actions")
 
         return LeftHemisphereResult(
-            response_text=parsed.get("response_text", ""),
+            response_text=response_text,
             lambda_program=program,
             actions=actions,
-            reasoning_summary=parsed.get("reasoning_summary", []),
+            reasoning_summary=reasoning_summary,
             telemetry={
                 "adapter": "QwenLeftHemisphereAdapter",
                 "api_mode": api_mode,
