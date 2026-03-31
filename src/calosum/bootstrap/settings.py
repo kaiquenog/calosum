@@ -221,6 +221,9 @@ class InfrastructureSettings:
                 telegram_dm_policy=self.telegram_dm_policy,
                 telegram_allowlist_ids=list(self.telegram_allowlist_ids or []),
                 vault=self.vault,
+                vector_quantization=self.vector_quantization,
+                turboquant_bits=self.turboquant_bits,
+                qdrant_scalar_quantization=self.qdrant_scalar_quantization,
             )
 
         if self.profile == InfrastructureProfile.DOCKER:
@@ -273,6 +276,9 @@ class InfrastructureSettings:
                 telegram_dm_policy=self.telegram_dm_policy,
                 telegram_allowlist_ids=list(self.telegram_allowlist_ids or []),
                 vault=self.vault,
+                vector_quantization=self.vector_quantization,
+                turboquant_bits=self.turboquant_bits,
+                qdrant_scalar_quantization=self.qdrant_scalar_quantization,
             )
 
         return replace(

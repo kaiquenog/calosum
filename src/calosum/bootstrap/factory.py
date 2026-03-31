@@ -104,9 +104,11 @@ class CalosumAgentBuilder:
     def build_right_hemisphere(self):
         vision_adapter = resolve_vision_adapter()
         try:
+            codec = _build_codec(self.settings)
             adapter, backend, model_name = resolve_right_hemisphere(
                 self.settings,
                 vision_adapter=vision_adapter,
+                codec=codec,
             )
             self._last_right_hemisphere_backend = backend
             self._last_right_hemisphere_model_name = model_name

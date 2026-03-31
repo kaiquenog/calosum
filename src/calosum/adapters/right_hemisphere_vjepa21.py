@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from calosum.shared.ports import VisionEmbeddingPort
+from calosum.shared.ports import VectorCodecPort, VisionEmbeddingPort
 from calosum.shared.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
 
 
@@ -36,9 +36,11 @@ class VJepa21RightHemisphereAdapter:
         self,
         config: VJepa21Config | None = None,
         vision_adapter: VisionEmbeddingPort | None = None,
+        codec: VectorCodecPort | None = None,
     ) -> None:
         self.config = config or VJepa21Config()
         self.vision_adapter = vision_adapter
+        self.codec = codec
         self._embedder: Any | None = None
         self._onnx = None
         self._encoder_session = None
@@ -88,6 +90,7 @@ class VJepa21RightHemisphereAdapter:
                 "predictor_engine": "onnx" if self._predictor_session is not None else "numpy_local",
                 "horizon": self.config.horizon,
                 "action_conditioned": self.config.action_conditioned,
+                "codec_used": self.codec is not None,
             },
         )
 
@@ -236,7 +239,19 @@ class VJepa21RightHemisphereAdapter:
         Based on V-JEPA 2 (Bardes et al., 2025): surprise = ||z_actual - z_predicted||^2
         normalized by dimensionality, mapped through sigmoid for [0, 1] range.
         """
-        error = np.linalg.norm(current - predicted_prior) ** 2
+        if self.codec is not None:
+            # Optimize surprise calculation using approximate inner product
+            # Error = ||a-b||**2 = ||a||**2 + ||b||**2 - 2*<a,b>
+            # Assuming vectors are normalized in this adapter (see line 56/173)
+            # inner_product_approx should handle uncompressed vectors too.
+            try:
+                ip = self.codec.inner_product_approx(list(current), list(predicted_prior))
+                error = float(max(0.0, 2.0 - 2.0 * ip))
+            except Exception:
+                error = np.linalg.norm(current - predicted_prior) ** 2
+        else:
+            error = np.linalg.norm(current - predicted_prior) ** 2
+
         normalized = error / max(1, current.size)
         return float(1.0 / (1.0 + math.exp(-8.0 * (normalized - 0.1))))
 

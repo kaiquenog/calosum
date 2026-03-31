@@ -99,6 +99,7 @@ def resolve_left_hemisphere(
 def resolve_right_hemisphere(
     settings: InfrastructureSettings,
     vision_adapter: Any | None = None,
+    codec: Any | None = None,
 ) -> tuple[ActiveInferenceRightHemisphereAdapter, str, str]:
     backend = (settings.right_hemisphere_backend or "").strip().lower()
     requested_model = (settings.perception_model or "").strip()
@@ -118,7 +119,7 @@ def resolve_right_hemisphere(
             cfg = HuggingFaceRightHemisphereConfig(
                 embedding_model_name=requested_model or "paraphrase-multilingual-MiniLM-L12-v2"
             )
-            base = HuggingFaceRightHemisphereAdapter(cfg)
+            base = HuggingFaceRightHemisphereAdapter(cfg, codec=codec)
             return (
                 _active_inference_right(base),
                 "active_inference_huggingface",
@@ -142,6 +143,7 @@ def resolve_right_hemisphere(
                 horizon=settings.right_horizon,
             ),
             vision_adapter=vision_adapter,
+            codec=codec,
         )
         return _active_inference_right(base), "active_inference_vjepa21", "v-jepa-2.1-local"
 
@@ -173,7 +175,8 @@ def resolve_right_hemisphere(
 
         model_name = requested_model or "paraphrase-multilingual-MiniLM-L12-v2"
         base = HuggingFaceRightHemisphereAdapter(
-            HuggingFaceRightHemisphereConfig(embedding_model_name=model_name)
+            HuggingFaceRightHemisphereConfig(embedding_model_name=model_name),
+            codec=codec,
         )
         return _active_inference_right(base), "active_inference_huggingface", model_name
 
