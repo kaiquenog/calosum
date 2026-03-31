@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 from calosum.adapters.action_runtime import ConcreteActionRuntime
 from calosum.shared.types import LeftHemisphereResult, PrimitiveAction, TypedLambdaProgram, CognitiveWorkspace
@@ -41,7 +42,9 @@ class TestPersistentRuntime(unittest.IsolatedAsyncioTestCase):
         )
         
         output = result2[0].output.get("result", "")
-        self.assertIn("success", output)
+        payload = json.loads(output)
+        self.assertEqual(payload.get("exit_code"), 0)
+        self.assertIn("success", payload.get("stdout", ""))
 
     async def test_file_persistence_cross_tools(self):
         runtime = ConcreteActionRuntime()
@@ -80,7 +83,9 @@ class TestPersistentRuntime(unittest.IsolatedAsyncioTestCase):
         )
         
         output2 = result2[0].output.get("result", "")
-        self.assertIn("shared_content", output2)
+        payload2 = json.loads(output2)
+        self.assertEqual(payload2.get("exit_code"), 0)
+        self.assertIn("shared_content", payload2.get("stdout", ""))
 
     async def test_code_execution_math(self):
         runtime = ConcreteActionRuntime()

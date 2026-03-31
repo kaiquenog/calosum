@@ -6,7 +6,9 @@ from typing import Any
 from calosum.adapters.tools.code_execution import CodeExecutionTool
 from calosum.adapters.tools.http_request import HttpRequestTool
 from calosum.adapters.tools.introspection import IntrospectionTool
+from calosum.adapters.tools.mcp_tool import McpTool
 from calosum.adapters.tools.persistent_shell import PersistentShellTool
+from calosum.adapters.tools.subordinate_agent import SubordinateAgentTool
 from calosum.shared.async_utils import run_sync
 from calosum.shared.tools import ToolRegistry, ToolSchema, build_runtime_contract_audit_report
 from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult, ToolDescriptor, CognitiveWorkspace
@@ -25,9 +27,13 @@ class ConcreteActionRuntime:
         registry: ToolRegistry | None = None,
         granted_permissions: set[str] | None = None,
         agent_accessor: Any = None,
+        mcp_client: Any = None,
+        interceptor_manager: Any = None,
     ) -> None:
         self.vault = vault or {}
         self.agent_accessor = agent_accessor
+        self.mcp_client = mcp_client
+        self.interceptor_manager = interceptor_manager
         self.granted_permissions = granted_permissions
         self.persistent_shell = PersistentShellTool()
         self.registry = registry or self._build_default_registry()
@@ -36,6 +42,8 @@ class ConcreteActionRuntime:
         registry = ToolRegistry()
         code_execution = CodeExecutionTool()
         http_request = HttpRequestTool()
+        mcp_tool = McpTool(self.mcp_client)
+        subordinate_tool = SubordinateAgentTool(self.agent_accessor)
         
         registry.register(
             ToolSchema("respond_text", "Emit text to user", {"text": "string"}, []),
@@ -65,6 +73,8 @@ class ConcreteActionRuntime:
             ToolSchema("execute_bash", "Execute shell command in sandbox (Persistent)", {"command": "string"}, ["shell"]),
             self.persistent_shell.execute
         )
+        registry.register(mcp_tool.schema, mcp_tool.execute)
+        registry.register(subordinate_tool.schema, subordinate_tool.execute)
         registry.register(
             ToolSchema("introspect_self", "Analyze system health, architecture, or awareness bottlenecks", {"query": "string"}, []),
             self._execute_introspect_self
@@ -156,12 +166,26 @@ class ConcreteActionRuntime:
                 continue
 
             try:
+                await self._emit_interceptor(
+                    "before_tool_execution",
+                    {
+                        "action_type": action.action_type,
+                        "session_id": workspace.task_frame.get("session_id") if workspace and workspace.task_frame else None,
+                    },
+                )
                 # Extrai session_id do workspace se disponível
                 session_id = None
                 if workspace and workspace.task_frame:
                     session_id = workspace.task_frame.get("session_id")
 
                 res = await self.registry.execute(action.action_type, action.payload, session_id=session_id)
+                await self._emit_interceptor(
+                    "after_tool_execution",
+                    {
+                        "action_type": action.action_type,
+                        "status": "executed",
+                    },
+                )
                 results.append(
                     ActionExecutionResult(
                         action_type=action.action_type,
@@ -173,6 +197,14 @@ class ConcreteActionRuntime:
                 )
             except Exception as e:
                 logger.error(f"Error executing {action.action_type}: {e}")
+                await self._emit_interceptor(
+                    "after_tool_execution",
+                    {
+                        "action_type": action.action_type,
+                        "status": "error",
+                        "error": str(e),
+                    },
+                )
                 results.append(
                     ActionExecutionResult(
                         action_type=action.action_type,
@@ -207,17 +239,17 @@ class ConcreteActionRuntime:
             if permission not in self.granted_permissions
         ]
 
-    async def _execute_respond_text(self, payload: dict) -> str:
+    async def _execute_respond_text(self, payload: dict, **_: Any) -> str:
         # Ponto de integração real para emitir no WebSocket/Socket.IO do usuário
         text = payload.get("text", "")
         return f"Message buffered to client: {text}"
 
-    async def _execute_propose_plan(self, payload: dict) -> str:
+    async def _execute_propose_plan(self, payload: dict, **_: Any) -> str:
         # Ponto de integração real salvando o plano em banco relacional
         steps = payload.get("steps", [])
         return f"Plan saved. Steps: {len(steps)}"
 
-    async def _execute_load_semantic_rules(self, payload: dict) -> str:
+    async def _execute_load_semantic_rules(self, payload: dict, **_: Any) -> str:
         rules = payload.get("rules", [])
         return f"Semantic rules loaded. Count: {len(rules)}"
 
@@ -295,47 +327,7 @@ class ConcreteActionRuntime:
             logger.error(f"File read failure: {e}")
             return f"File read failed: {e}"
 
-    async def _execute_bash(self, payload: dict) -> str:
-        import asyncio
-        import tempfile
-        from pathlib import Path
-        
-        command = payload.get("command", "")
-        if not command:
-            return "No command provided."
-            
-        try:
-            sandbox_dir = Path(tempfile.gettempdir()) / "calosum_sandbox"
-            sandbox_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Roda o processo limitando o cwd ao sandbox
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(sandbox_dir)
-            )
-            
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10.0)
-            
-            out_str = stdout.decode('utf-8').strip()
-            err_str = stderr.decode('utf-8').strip()
-            
-            result = []
-            if out_str:
-                result.append(f"STDOUT:\n{out_str[:2000]}")
-            if err_str:
-                result.append(f"STDERR:\n{err_str[:2000]}")
-                
-            return "\n".join(result) if result else "Command executed silently (exit code 0)."
-            
-        except asyncio.TimeoutError:
-            return "Command execution timed out after 10 seconds."
-        except Exception as e:
-            logger.error(f"Bash execution failure: {e}")
-            return f"Bash execution failed: {e}"
-
-    async def _execute_introspect_self(self, payload: dict) -> str:
+    async def _execute_introspect_self(self, payload: dict, **_: Any) -> str:
         tool = IntrospectionTool(self.agent_accessor)
         return await tool.execute(payload)
 
@@ -351,3 +343,14 @@ class ConcreteActionRuntime:
                 f"{', '.join(str(item) for item in missing_permissions)}."
             )
         return f"A ação '{result.action_type}' precisa de aprovação antes de continuar."
+
+    async def _emit_interceptor(self, stage: str, payload: dict[str, Any]) -> None:
+        if self.interceptor_manager is None:
+            return
+        emit = getattr(self.interceptor_manager, "aemit", None)
+        if emit is None:
+            return
+        try:
+            await emit(stage, payload)
+        except Exception as exc:
+            logger.debug("interceptor emission failed at stage '%s': %s", stage, exc)

@@ -190,13 +190,32 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
     def test_factory_no_codec_when_flag_none(self) -> None:
         """Default settings produce no codec (vector_quantization=none)."""
-        import os
         from calosum.bootstrap.factory import _build_codec
 
-        env = {k: v for k, v in os.environ.items() if "CALOSUM_VECTOR_QUANTIZATION" not in k}
+        env = {"CALOSUM_VECTOR_QUANTIZATION": "none", "CALOSUM_TURBOQUANT_BITS": "4"}
         settings = InfrastructureSettings.from_sources(environ=env)
         codec = _build_codec(settings)
         self.assertIsNone(codec)
+
+    def test_mcp_settings_are_parsed_and_builder_exposes_client(self) -> None:
+        settings = InfrastructureSettings.from_sources(
+            environ={
+                "CALOSUM_MCP_ENABLED": "true",
+                "CALOSUM_MCP_SERVERS": '{"github":"http://localhost:7701/mcp"}',
+                "CALOSUM_MCP_ALLOWLIST": "github",
+            }
+        ).with_profile_defaults()
+        builder = CalosumAgentBuilder(settings)
+        client = builder.build_mcp_client()
+        self.assertIsNotNone(client)
+        assert client is not None
+        self.assertEqual(client.list_servers(), ["github"])
+        self.assertEqual(client.allowlisted_servers, {"github"})
+
+    def test_builder_attaches_interceptor_manager(self) -> None:
+        builder = CalosumAgentBuilder(InfrastructureSettings().with_profile_defaults())
+        agent = builder.build()
+        self.assertTrue(hasattr(agent, "interceptor_manager"))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine
 
@@ -64,7 +65,19 @@ class ToolRegistry:
         handler = self._handlers.get(name)
         if not handler:
             raise ValueError(f"Tool '{name}' not found in registry")
-        return await handler(payload, **kwargs)
+        signature = inspect.signature(handler)
+        accepts_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+        if accepts_kwargs:
+            return await handler(payload, **kwargs)
+        filtered = {
+            key: value
+            for key, value in kwargs.items()
+            if key in signature.parameters
+        }
+        return await handler(payload, **filtered)
 
     def list_schemas(self) -> list[ToolSchema]:
         return list(self._schemas.values())

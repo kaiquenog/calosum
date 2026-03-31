@@ -2,12 +2,40 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 from calosum.shared.types import CognitiveBridgePacket, MemoryContext, UserTurn
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_LEFT_PROMPT_TEMPLATE = """
+Analyze the input and generate a JSON object.
+
+Input: {input_text}
+Soft Prompts (Bridge): {soft_prompts}
+System Directives: {system_directives}
+
+# MEMORY & CONTEXT
+Semantic Rules: {semantic_rules}
+Knowledge Triples: {knowledge_triples}
+Recent Episodes (Past interactions):
+{recent_episodes}
+
+# RUNTIME OBSERVATIONS (Tool Outputs)
+{runtime_observations}
+
+IMPORTANT - MULTI-STEP REASONING:
+1. If you need more information, output actions like "execute_bash", "search_web", "read_file", "introspect_self", "call_mcp_tool" or "spawn_subordinate".
+2. Leave 'response_text' empty ("") while gathering data.
+3. Once the '# RUNTIME OBSERVATIONS' section contains the facts you need, you MUST PROVIDE THE FINAL ANSWER in 'response_text' and stop calling tools.
+4. Do not repeat the same tool call if the observation already contains the answer.
+5. Synthesize facts into a helpful response.
+
+Available Action Types:
+{available_actions}
+""".strip()
 
 
 def build_left_hemisphere_prompt(
@@ -16,49 +44,66 @@ def build_left_hemisphere_prompt(
     memory_context: MemoryContext,
     feedback: list[str] | None,
 ) -> str:
-    episodes = []
-    for ep in memory_context.recent_episodes[:3]:
-        episodes.append(
+    episodes = [
+        (
             f"  - <|episode|>: USER: {ep.user_turn.user_text} -> AGENT: {ep.left_result.response_text} "
             f"[{', '.join(a.action_type for a in ep.left_result.actions)}]"
         )
-    episodes_block = "\n".join(episodes) or "  - No recent episodes available."
-
-    knowledge_block = "\n".join(triples) or "None"
+        for ep in memory_context.recent_episodes[:3]
+    ]
+    episodes_block = "\n".join(episodes) if episodes else "  - No recent episodes available."
+    rules = [rule.statement for rule in memory_context.semantic_rules[:8]]
+    rules_block = "; ".join(rules) if rules else "None"
+    triples = [
+        f"{triple.subject} | {triple.predicate} | {triple.object}"
+        for triple in memory_context.knowledge_triples[:8]
+    ]
+    knowledge_block = "\n".join(triples) if triples else "None"
     feedback_block = "\n".join(feedback) if feedback else "None"
+    available_actions = "\n".join(
+        [
+            '- "respond_text": { "text": "your final answer" }',
+            '- "propose_plan": { "steps": ["step1", "step2"] }',
+            '- "search_web": { "query": "search keywords" }',
+            '- "read_file": { "path": "file/path.txt" }',
+            '- "execute_bash": { "command": "ls -la" }',
+            '- "introspect_self": { "query": "arquitetura" }',
+            '- "call_mcp_tool": { "server": "name", "tool_name": "tool", "arguments": {} }',
+            '- "spawn_subordinate": { "task": "subtask to delegate" }',
+        ]
+    )
+    template = load_left_prompt_template()
+    return template.format(
+        input_text=user_turn.user_text,
+        soft_prompts=[token.token for token in bridge_packet.soft_prompts],
+        system_directives=bridge_packet.control.system_directives,
+        semantic_rules=rules_block,
+        knowledge_triples=knowledge_block,
+        recent_episodes=episodes_block,
+        runtime_observations=feedback_block,
+        available_actions=available_actions,
+    )
 
-    return f"""
-Analyze the input and generate a JSON object.
 
-Input: {user_turn.user_text}
-Soft Prompts (Bridge): {[token.token for token in bridge_packet.soft_prompts]}
-System Directives: {bridge_packet.control.system_directives}
+def load_left_prompt_template() -> str:
+    configured = os.getenv("CALOSUM_LEFT_PROMPT_PATH")
+    search_paths = []
+    if configured:
+        search_paths.append(Path(configured))
+    search_paths.append(_repo_root() / "prompts" / "left_hemisphere" / "system_prompt.md")
+    for path in search_paths:
+        try:
+            if path.exists():
+                content = path.read_text(encoding="utf-8").strip()
+                if content:
+                    return content
+        except OSError as exc:
+            logger.warning("Failed to load prompt template from %s: %s", path, exc)
+    return DEFAULT_LEFT_PROMPT_TEMPLATE
 
-# MEMORY & CONTEXT
-Semantic Rules: {rules}
-Knowledge Triples: {knowledge_block}
-Recent Episodes (Past interactions):
-{episodes_block}
 
-# RUNTIME OBSERVATIONS (Tool Outputs)
-{feedback_block}
-
-IMPORTANT - MULTI-STEP REASONING:
-1. If you need more information, output actions like "execute_bash", "search_web", "read_file", or "introspect_self".
-2. Leave 'response_text' empty ("") while gathering data.
-3. Once the '# RUNTIME OBSERVATIONS' section contains the facts you need, you MUST PROVIDE THE FINAL ANSWER in 'response_text' and stop calling tools.
-
-4. Do not repeat the same tool call if the observation already contains the answer.
-5. Synthesize facts into a helpful response.
-
-Available Action Types:
-- "respond_text": {{ "text": "your final answer" }}
-- "propose_plan": {{ "steps": ["step1", "step2"] }}
-- "search_web": {{ "query": "search keywords" }}
-- "read_file": {{ "path": "file/path.txt" }}
-- "execute_bash": {{ "command": "ls -la" }}
-- "introspect_self": {{ "query": "arquitetura" }}
-""".strip()
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
 
 
 def load_compiled_prompt_artifact(compiled_prompt_path: Path | None) -> dict[str, Any]:

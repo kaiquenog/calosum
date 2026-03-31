@@ -27,6 +27,10 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - `CALOSUM_RIGHT_HORIZON`: Opcional. Horizonte de predicao do hemisferio direito.
 - `CALOSUM_RIGHT_JEPARS_BINARY`: Opcional. Binario do backend Rust `jepa-rs`.
 - `CALOSUM_BRIDGE_BACKEND`: Opcional. Seleciona a fusao do corpus caloso (`heuristic` ou `cross_attention`).
+- `CALOSUM_LEFT_PROMPT_PATH`: Opcional. Caminho para template externo de prompt base do hemisferio esquerdo (prompt-as-data).
+- `CALOSUM_MCP_ENABLED`: Opcional. Liga suporte a chamadas MCP no runtime (`call_mcp_tool`).
+- `CALOSUM_MCP_SERVERS`: Opcional. JSON `{ "nome":"http://host:porta/mcp" }` com endpoints MCP via HTTP.
+- `CALOSUM_MCP_ALLOWLIST`: Opcional. Lista CSV de servidores MCP permitidos (controle de seguranca).
 - `CALOSUM_GEA_SHARING_ENABLED`: Opcional. Ativa experience sharing persistente no ReflectionController.
 - `CALOSUM_GEA_EXPERIENCE_STORE_PATH`: Opcional. Caminho do banco SQLite de experiencias do GEA.
 - `CALOSUM_NIGHT_TRAINER_BACKEND`: Opcional. Seleciona o backend do ciclo noturno (`auto`, `dspy`, `opro_lite`).
@@ -129,3 +133,8 @@ Nesse fluxo, a CLI grava a telemetria em `.calosum-runtime/telemetry/events.json
 - Se `CALOSUM_VECTORDB_URL` estiver configurado e nenhum backend de embedding separado for informado, o builder reutiliza o endpoint OpenAI oficial para embeddings e deriva `text-embedding-3-small`.
 - Se voce apontar para um endpoint local no formato OpenAI-compatible, como Ollama ou vLLM, o adapter mantem `chat/completions`.
 - Para workloads mais inteligentes e pesados, prefira `gpt-5.4`. Para menor custo e latencia, prefira `gpt-5-mini`.
+
+## Extensoes Cognitivas
+
+- O runtime agora expoe `spawn_subordinate` para delegacao de subtarefas isoladas.
+- Hooks/interceptors podem observar eventos de ciclo (`message_loop_start`, `after_perception`, `after_turn_execution`) e execucao de tool (`before_tool_execution`, `after_tool_execution`) sem acoplamento no dominio.

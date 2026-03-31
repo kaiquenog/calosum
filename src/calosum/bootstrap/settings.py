@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Mapping
-
-
 class InfrastructureProfile(StrEnum):
     EPHEMERAL = "ephemeral"
     PERSISTENT = "persistent"
@@ -72,6 +71,9 @@ class InfrastructureSettings:
     vector_quantization: str = "none"   # "none" | "turboquant"
     turboquant_bits: int = 4
     qdrant_scalar_quantization: bool = False
+    mcp_enabled: bool = False
+    mcp_servers: dict[str, str] = field(default_factory=dict)
+    mcp_allowlist: list[str] = field(default_factory=list)
 
     @classmethod
     def from_sources(
@@ -169,6 +171,9 @@ class InfrastructureSettings:
             vector_quantization=env.get("CALOSUM_VECTOR_QUANTIZATION", "none"),
             turboquant_bits=max(1, int(env.get("CALOSUM_TURBOQUANT_BITS", 4))),
             qdrant_scalar_quantization=_parse_bool(env.get("CALOSUM_QDRANT_SCALAR_QUANTIZATION"), False),
+            mcp_enabled=_parse_bool(env.get("CALOSUM_MCP_ENABLED"), False),
+            mcp_servers=_parse_json_mapping(env.get("CALOSUM_MCP_SERVERS")),
+            mcp_allowlist=_parse_csv_list(env.get("CALOSUM_MCP_ALLOWLIST")),
         )
         return settings.with_profile_defaults()
 
@@ -224,6 +229,9 @@ class InfrastructureSettings:
                 vector_quantization=self.vector_quantization,
                 turboquant_bits=self.turboquant_bits,
                 qdrant_scalar_quantization=self.qdrant_scalar_quantization,
+                mcp_enabled=self.mcp_enabled,
+                mcp_servers=dict(self.mcp_servers or {}),
+                mcp_allowlist=list(self.mcp_allowlist or []),
             )
 
         if self.profile == InfrastructureProfile.DOCKER:
@@ -279,6 +287,9 @@ class InfrastructureSettings:
                 vector_quantization=self.vector_quantization,
                 turboquant_bits=self.turboquant_bits,
                 qdrant_scalar_quantization=self.qdrant_scalar_quantization,
+                mcp_enabled=self.mcp_enabled,
+                mcp_servers=dict(self.mcp_servers or {}),
+                mcp_allowlist=list(self.mcp_allowlist or []),
             )
 
         return replace(
@@ -286,6 +297,9 @@ class InfrastructureSettings:
             awareness_interval_turns=max(1, self.awareness_interval_turns),
             telegram_dm_policy=self.telegram_dm_policy or "open",
             telegram_allowlist_ids=list(self.telegram_allowlist_ids or []),
+            mcp_enabled=self.mcp_enabled,
+            mcp_servers=dict(self.mcp_servers or {}),
+            mcp_allowlist=list(self.mcp_allowlist or []),
         )
 
 
@@ -312,6 +326,21 @@ def _parse_bool(value: str | None, default: bool) -> bool:
     return default
 
 
+def _parse_json_mapping(value: str | None) -> dict[str, str]:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    normalized: dict[str, str] = {}
+    for key, item in parsed.items():
+        if isinstance(key, str) and isinstance(item, str):
+            if key.strip() and item.strip():
+                normalized[key.strip()] = item.strip()
+    return normalized
 def should_enable_local_persistence_defaults(
     settings: InfrastructureSettings,
     *,

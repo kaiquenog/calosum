@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from calosum.adapters.action_runtime import ConcreteActionRuntime
+from calosum.adapters.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
 from calosum.adapters.telemetry_otlp import OTLPHTTPTraceSink
 from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 from calosum.domain.event_bus import InternalEventBus
 from calosum.domain.evolution import JsonlEvolutionArchive
+from calosum.domain.interceptors import AuditLogInterceptor, InterceptorManager
 from calosum.domain.memory import DualMemorySystem, InMemorySemanticGraphStore
 from calosum.domain.orchestrator import CalosumAgent, CalosumAgentConfig
 from calosum.domain.introspection_capabilities import CalosumSystemIntrospector
@@ -52,6 +54,7 @@ class CalosumAgentBuilder:
     _last_right_hemisphere_model_name: str | None = field(default=None, init=False, repr=False)
 
     def build(self, agent_accessor: Any | None = None) -> CalosumAgent:
+        interceptor_manager = InterceptorManager([AuditLogInterceptor()])
         left_hemisphere = self.build_left_hemisphere()
         right_hemisphere = self.build_right_hemisphere()
         from calosum.domain.bridge import CognitiveTokenizer
@@ -65,7 +68,9 @@ class CalosumAgentBuilder:
         )
         action_runtime = ConcreteActionRuntime(
             vault=self.settings.vault,
-            agent_accessor=agent_accessor
+            agent_accessor=agent_accessor,
+            mcp_client=self.build_mcp_client(),
+            interceptor_manager=interceptor_manager,
         )
         memory_system = self.build_memory_system()
         telemetry_bus = self.build_telemetry_bus()
@@ -74,7 +79,7 @@ class CalosumAgentBuilder:
 
         latent_exchange = InternalLatentExchangeAdapter(event_bus=self.settings.event_bus or InternalEventBus())
         reflection_controller = resolve_reflection_controller(self.settings)
-        return CalosumAgent(
+        agent = CalosumAgent(
             right_hemisphere=right_hemisphere,
             tokenizer=tokenizer,
             left_hemisphere=left_hemisphere,
@@ -88,6 +93,9 @@ class CalosumAgentBuilder:
             latent_exchange=latent_exchange,
             reflection_controller=reflection_controller,
         )
+        interceptor_manager.attach_event_bus(agent.event_bus)
+        setattr(agent, "interceptor_manager", interceptor_manager)
+        return agent
 
     def build_left_hemisphere(self):
         try:
@@ -238,6 +246,18 @@ class CalosumAgentBuilder:
             provider=self.settings.left_hemisphere_provider,
             reasoning_effort=self.settings.left_hemisphere_reasoning_effort,
             backend=os.getenv("CALOSUM_NIGHT_TRAINER_BACKEND", "dspy"),
+        )
+
+    def build_mcp_client(self) -> HttpMcpClientAdapter | None:
+        if not self.settings.mcp_enabled:
+            return None
+        servers: dict[str, McpServerEndpoint] = {}
+        for name, url in self.settings.mcp_servers.items():
+            servers[name] = McpServerEndpoint(name=name, url=url)
+        allowlisted_servers = set(self.settings.mcp_allowlist or []) or None
+        return HttpMcpClientAdapter(
+            servers=servers,
+            allowlisted_servers=allowlisted_servers,
         )
 
     def describe(self, agent: CalosumAgent | None = None) -> dict[str, Any]:

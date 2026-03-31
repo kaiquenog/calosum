@@ -158,9 +158,11 @@ Criterios de aceite:
 - [x] Leitura do report externo e mapeamento dos 5 pontos.
 - [x] Validacao contra documentacao oficial do projeto.
 - [x] Triagem de aplicabilidade por ponto.
-- [x] Plano em sprints criado em `docs/exec-plans/active/`.
-- [ ] Execucao das sprints.
-- [ ] Gate final de testes e harness.
+- [x] Plano em sprints criado em `docs/exec-plans/completed/`.
+- [x] Execucao das sprints.
+- [x] Gate final de testes e harness.
+- [x] Rebuild da aplicacao via Docker Compose.
+- [x] Interacao de validacao em runtime apos rebuild.
 
 ## Decision Log
 
@@ -169,3 +171,5 @@ Criterios de aceite:
 - 2026-03-31: Ponto 3 (subagentes) aprovado somente com limites operacionais e budget explicito.
 - 2026-03-31: Ponto 4 (prompt-as-data) aprovado como melhoria de modularidade e experimentacao.
 - 2026-03-31: Ponto 5 (hooks) aprovado como formalizacao de extensao sobre base existente de event bus.
+- 2026-03-31: Validacao final executada com `PYTHONPATH=src python3 -m calosum.harness_checks` e `PYTHONPATH=src python3 -m unittest discover -s tests -t .` (verde).
+- 2026-03-31: Deploy rebuildado com `docker compose -f deploy/docker-compose.yml up --build -d` e interacao validada na API/runtime do container.

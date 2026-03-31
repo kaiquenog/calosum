@@ -226,3 +226,15 @@ class VectorCodecPort(Protocol):
 
     @property
     def bits_per_dim(self) -> int: ...
+
+
+@runtime_checkable
+class McpClientPort(Protocol):
+    def list_servers(self) -> list[str]: ...
+    def call_tool(
+        self,
+        *,
+        server: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]: ...
