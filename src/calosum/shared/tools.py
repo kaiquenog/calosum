@@ -30,12 +30,12 @@ class ToolSchema:
 class ToolRegistry:
     def __init__(self):
         self._schemas: dict[str, ToolSchema] = {}
-        self._handlers: dict[str, Callable[[dict[str, Any]], Coroutine[Any, Any, str]]] = {}
+        self._handlers: dict[str, Callable[..., Coroutine[Any, Any, str]]] = {}
 
     def register(
         self,
         schema: ToolSchema,
-        handler: Callable[[dict[str, Any]], Coroutine[Any, Any, str]],
+        handler: Callable[..., Coroutine[Any, Any, str]],
     ) -> None:
         self._schemas[schema.name] = schema
         self._handlers[schema.name] = handler
@@ -60,11 +60,11 @@ class ToolRegistry:
                 )
         return violations
 
-    async def execute(self, name: str, payload: dict[str, Any]) -> str:
+    async def execute(self, name: str, payload: dict[str, Any], **kwargs: Any) -> str:
         handler = self._handlers.get(name)
         if not handler:
             raise ValueError(f"Tool '{name}' not found in registry")
-        return await handler(payload)
+        return await handler(payload, **kwargs)
 
     def list_schemas(self) -> list[ToolSchema]:
         return list(self._schemas.values())

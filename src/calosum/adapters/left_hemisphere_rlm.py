@@ -49,6 +49,14 @@ class RlmLeftHemisphereAdapter:
             "runtime_feedback": runtime_feedback or [],
             "max_depth": self.config.max_depth,
             "model_path": self.config.model_path,
+            "memory": {
+                "rules": [r.statement for r in memory_context.semantic_rules],
+                "triples": [f"{t.subject} {t.predicate} {t.object}" for t in memory_context.knowledge_triples[:5]],
+                "recent_episodes": [
+                    {"query": ep.user_turn.user_text, "response": ep.left_result.response_text}
+                    for ep in memory_context.recent_episodes[:3]
+                ],
+            },
         }
 
         if self.config.runtime_command:
@@ -226,8 +234,21 @@ class RlmLeftHemisphereAdapter:
         wants_plan = any(k in query.lower() for k in plan_keywords)
 
         opening = "Vou resolver de forma recursiva e segura."
+        
+        memory = payload.get("memory", {})
+        episodes = memory.get("recent_episodes", [])
+        
+        # Heurística de Contexto: Se houver memória que casa com a query (busca simples de substring para protótipo)
+        contextual_addition = ""
+        for ep in episodes:
+            if any(word.lower() in ep["query"].lower() for word in query.lower().split() if len(word) > 4):
+                contextual_addition = f" Lembro que você mencionou: '{ep['response']}'."
+                break
+
         if bridge_packet.control.empathy_priority:
             opening = "Entendi o contexto e vou estruturar uma resposta segura e objetiva."
+        
+        opening += contextual_addition
 
         if feedback:
             opening += " Ajustei a resposta com base no feedback de runtime."

@@ -6,6 +6,7 @@ from typing import Any
 from calosum.adapters.tools.code_execution import CodeExecutionTool
 from calosum.adapters.tools.http_request import HttpRequestTool
 from calosum.adapters.tools.introspection import IntrospectionTool
+from calosum.adapters.tools.persistent_shell import PersistentShellTool
 from calosum.shared.async_utils import run_sync
 from calosum.shared.tools import ToolRegistry, ToolSchema, build_runtime_contract_audit_report
 from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult, ToolDescriptor, CognitiveWorkspace
@@ -27,8 +28,9 @@ class ConcreteActionRuntime:
     ) -> None:
         self.vault = vault or {}
         self.agent_accessor = agent_accessor
-        self.registry = registry or self._build_default_registry()
         self.granted_permissions = granted_permissions
+        self.persistent_shell = PersistentShellTool()
+        self.registry = registry or self._build_default_registry()
 
     def _build_default_registry(self) -> ToolRegistry:
         registry = ToolRegistry()
@@ -60,8 +62,8 @@ class ConcreteActionRuntime:
             self._execute_read_file
         )
         registry.register(
-            ToolSchema("execute_bash", "Execute shell command in sandbox", {"command": "string"}, ["shell"]),
-            self._execute_bash
+            ToolSchema("execute_bash", "Execute shell command in sandbox (Persistent)", {"command": "string"}, ["shell"]),
+            self.persistent_shell.execute
         )
         registry.register(
             ToolSchema("introspect_self", "Analyze system health, architecture, or awareness bottlenecks", {"query": "string"}, []),
@@ -154,7 +156,12 @@ class ConcreteActionRuntime:
                 continue
 
             try:
-                res = await self.registry.execute(action.action_type, action.payload)
+                # Extrai session_id do workspace se disponível
+                session_id = None
+                if workspace and workspace.task_frame:
+                    session_id = workspace.task_frame.get("session_id")
+
+                res = await self.registry.execute(action.action_type, action.payload, session_id=session_id)
                 results.append(
                     ActionExecutionResult(
                         action_type=action.action_type,
@@ -214,7 +221,7 @@ class ConcreteActionRuntime:
         rules = payload.get("rules", [])
         return f"Semantic rules loaded. Count: {len(rules)}"
 
-    async def _execute_search_web(self, payload: dict) -> str:
+    async def _execute_search_web(self, payload: dict, session_id: str | None = None) -> str:
         # Integração real usando duckduckgo-search livre
         query = payload.get("query", "")
         if not query:
@@ -236,7 +243,7 @@ class ConcreteActionRuntime:
             logger.error(f"DDGS failure: {e}")
             return f"Search failed: {e}"
 
-    async def _execute_write_file(self, payload: dict) -> str:
+    async def _execute_write_file(self, payload: dict, session_id: str | None = None) -> str:
         import tempfile
         from pathlib import Path
         path_str = payload.get("path", "")
@@ -245,8 +252,9 @@ class ConcreteActionRuntime:
             return "No path provided for write_file."
             
         try:
-            # Sandbox: force write inside a temporary directory to avoid host modifications
-            sandbox_dir = Path(tempfile.gettempdir()) / "calosum_sandbox"
+            # Sandbox: force write inside a session directory to avoid host modifications
+            sandbox_base = Path(tempfile.gettempdir()) / "calosum_sandbox"
+            sandbox_dir = sandbox_base / (session_id or "global")
             sandbox_dir.mkdir(parents=True, exist_ok=True)
             
             # Resolve the path to ensure it stays within the sandbox
@@ -262,7 +270,7 @@ class ConcreteActionRuntime:
             logger.error(f"File write failure: {e}")
             return f"File write failed: {e}"
 
-    async def _execute_read_file(self, payload: dict) -> str:
+    async def _execute_read_file(self, payload: dict, session_id: str | None = None) -> str:
         import tempfile
         from pathlib import Path
         path_str = payload.get("path", "")
@@ -270,7 +278,8 @@ class ConcreteActionRuntime:
             return "No path provided for read_file."
             
         try:
-            sandbox_dir = Path(tempfile.gettempdir()) / "calosum_sandbox"
+            sandbox_base = Path(tempfile.gettempdir()) / "calosum_sandbox"
+            sandbox_dir = sandbox_base / (session_id or "global")
             safe_name = Path(path_str).name
             target = sandbox_dir / safe_name
             

@@ -100,7 +100,7 @@ class CodeExecutionTool:
         )
     )
 
-    async def execute(self, payload: dict[str, object]) -> str:
+    async def execute(self, payload: dict[str, object], session_id: str | None = None) -> str:
         code = str(payload.get("code", "") or "")
         if not code.strip():
             return "Code execution rejected: empty code payload."
@@ -117,6 +117,7 @@ class CodeExecutionTool:
             code,
             timeout_seconds=timeout_seconds,
             max_output_chars=self.max_output_chars,
+            session_id=session_id,
         )
 
 
@@ -170,9 +171,17 @@ async def _run_in_subprocess(
     *,
     timeout_seconds: float,
     max_output_chars: int,
+    session_id: str | None = None,
 ) -> str:
-    with tempfile.TemporaryDirectory(prefix="calosum_tool_code_exec_") as temp_dir:
-        temp_path = Path(temp_dir)
+    sandbox_base = Path(tempfile.gettempdir()) / "calosum_sandbox"
+    if session_id:
+        temp_path = sandbox_base / session_id / "python_exec"
+    else:
+        # Fallback para comportamento efêmero se não houver sessão
+        temp_path = Path(tempfile.mkdtemp(prefix="calosum_tool_code_exec_"))
+    
+    temp_path.mkdir(parents=True, exist_ok=True)
+    try:
         source_path = temp_path / "snippet.py"
         source_path.write_text(code, encoding="utf-8")
 
@@ -184,7 +193,7 @@ async def _run_in_subprocess(
             "-c",
             _SAFE_WRAPPER,
             str(source_path),
-            cwd=temp_dir,
+            cwd=str(temp_path),
             env={"PYTHONIOENCODING": "utf-8"},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -209,6 +218,14 @@ async def _run_in_subprocess(
 
         error_suffix = f" stderr={payload}" if payload else ""
         return f"Code exited with status {process.returncode}.{error_suffix}"
+    finally:
+        # Só remove se for efêmero (sem session_id)
+        if not session_id and temp_path.exists():
+            try:
+                import shutil
+                shutil.rmtree(temp_path)
+            except Exception:
+                pass
 
 
 def _truncate_text(text: str, max_chars: int) -> str:

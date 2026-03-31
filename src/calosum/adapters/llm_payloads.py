@@ -16,11 +16,14 @@ def build_left_hemisphere_prompt(
     memory_context: MemoryContext,
     feedback: list[str] | None,
 ) -> str:
-    rules = [item.statement for item in memory_context.semantic_rules]
-    triples = [
-        f"{item.subject} {item.predicate} {item.object}"
-        for item in memory_context.knowledge_triples[:5]
-    ]
+    episodes = []
+    for ep in memory_context.recent_episodes[:3]:
+        episodes.append(
+            f"  - <|episode|>: USER: {ep.user_turn.user_text} -> AGENT: {ep.left_result.response_text} "
+            f"[{', '.join(a.action_type for a in ep.left_result.actions)}]"
+        )
+    episodes_block = "\n".join(episodes) or "  - No recent episodes available."
+
     knowledge_block = "\n".join(triples) or "None"
     feedback_block = "\n".join(feedback) if feedback else "None"
 
@@ -34,6 +37,8 @@ System Directives: {bridge_packet.control.system_directives}
 # MEMORY & CONTEXT
 Semantic Rules: {rules}
 Knowledge Triples: {knowledge_block}
+Recent Episodes (Past interactions):
+{episodes_block}
 
 # RUNTIME OBSERVATIONS (Tool Outputs)
 {feedback_block}
@@ -42,6 +47,7 @@ IMPORTANT - MULTI-STEP REASONING:
 1. If you need more information, output actions like "execute_bash", "search_web", "read_file", or "introspect_self".
 2. Leave 'response_text' empty ("") while gathering data.
 3. Once the '# RUNTIME OBSERVATIONS' section contains the facts you need, you MUST PROVIDE THE FINAL ANSWER in 'response_text' and stop calling tools.
+
 4. Do not repeat the same tool call if the observation already contains the answer.
 5. Synthesize facts into a helpful response.
 

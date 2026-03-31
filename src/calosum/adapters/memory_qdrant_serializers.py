@@ -5,7 +5,12 @@ de 400 linhas e facilitar testes unitários isolados.
 """
 from __future__ import annotations
 
+import base64
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from calosum.shared.ports import VectorCodecPort
 
 from calosum.shared.types import (
     BridgeControlSignal,
@@ -48,9 +53,21 @@ def episode_payload(episode: MemoryEpisode) -> dict:
     }
 
 
-def episode_from_point(point) -> MemoryEpisode:
+def episode_from_point(point, codec: VectorCodecPort | None = None) -> MemoryEpisode:
     """Deserialize a Qdrant ScoredPoint / Record into a MemoryEpisode."""
     payload = point.payload or {}
+    
+    latent_vector = list(payload.get("latent_vector", []))
+    compressed = payload.get("latent_vector_compressed")
+    
+    if codec is not None and compressed:
+        try:
+            decoded = codec.decode(base64.b64decode(compressed))
+            # Se decodificou com sucesso, priorizamos o vetor decodificado (mais preciso/fiel ao original)
+            latent_vector = list(decoded)
+        except Exception:
+            pass
+
     user_turn = UserTurn(
         session_id=payload.get("session", "*"),
         user_text=payload.get("text", ""),
@@ -59,7 +76,7 @@ def episode_from_point(point) -> MemoryEpisode:
     )
     right_state = _placeholder_right_state(
         user_turn,
-        latent_vector=list(payload.get("latent_vector", [])),
+        latent_vector=latent_vector,
         emotional_labels=list(payload.get("emotional_labels", [])),
         salience=float(payload.get("salience", 0.5 if payload.get("emotional_labels") else 0.15)),
         confidence=float(payload.get("confidence", 0.0)),

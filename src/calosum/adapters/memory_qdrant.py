@@ -118,7 +118,7 @@ class QdrantDualMemoryAdapter:
         )
 
         episodes = [
-            episode_from_point(point)
+            episode_from_point(point, codec=self.codec)
             for point in episode_points
             if getattr(point, "payload", None)
         ]
@@ -184,7 +184,7 @@ class QdrantDualMemoryAdapter:
             limit=100,
             with_payload=True,
         )
-        episodes = [episode_from_point(p) for p in points if getattr(p, "payload", None)]
+        episodes = [episode_from_point(p, codec=self.codec) for p in points if getattr(p, "payload", None)]
         consolidator = SleepModeConsolidator(exporter=self.exporter, minimum_frequency=1)
         report = consolidator.consolidate(episodes)
 
