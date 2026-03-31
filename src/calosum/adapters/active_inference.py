@@ -206,6 +206,59 @@ class ActiveInferenceRightHemisphereAdapter:
             "memory_alignment": round(float(alignment), 4),
         }
 
+    def expected_free_energy(
+        self,
+        latent_vector: list[float],
+        memory_context: MemoryContext | None,
+        available_policies: list[str] | None = None,
+    ) -> tuple[float, dict[str, Any]]:
+        """Compute Expected Free Energy G(pi) for policy selection.
+
+        G(pi) = -E_q[ln P(o|pi)] - E_q[DKL(q(s|o,pi) || q(s|pi))]
+
+        Decomposes into:
+        - Epistemic value: information gain (prior entropy - posterior entropy)
+        - Pragmatic value: preference satisfaction (alignment with known states)
+
+        Based on: Parr & Friston (2019), Da Costa et al. (2025), pymdp.
+        """
+        if np is None or not latent_vector:
+            return 0.5, {"epistemic": 0.25, "pragmatic": 0.25}
+
+        current = np.asarray(latent_vector, dtype=np.float64)
+        vectors = _recent_vectors(memory_context, expected_size=len(latent_vector))
+
+        if len(vectors) == 0:
+            return 0.5, {"epistemic": 0.5, "pragmatic": 0.0}
+
+        # Epistemic Value (Information Gain)
+        prior_entropy = self._latent_entropy(vectors)
+        distances = np.asarray(
+            [_cosine_distance_np(current, past) for past in vectors], dtype=np.float64
+        )
+        posterior = _softmax_np(-self.config.distance_temperature * distances)
+        posterior_entropy = float(-np.sum(posterior * _safe_log_np(posterior)))
+        epistemic_value = max(0.0, prior_entropy - posterior_entropy)
+
+        # Pragmatic Value (Preference Satisfaction)
+        alignment = 1.0 - float(np.min(distances) / 2.0)
+        pragmatic_value = max(0.0, min(1.0, alignment))
+
+        efe = (0.55 * epistemic_value) + (0.45 * pragmatic_value)
+        return round(float(min(1.0, efe)), 3), {
+            "epistemic": round(epistemic_value, 4),
+            "pragmatic": round(pragmatic_value, 4),
+        }
+
+    def _latent_entropy(self, vectors: list[Any]) -> float:
+        """Compute entropy of the latent distribution from memory vectors."""
+        if np is None or len(vectors) < 2:
+            return 0.5
+        stacked = np.stack(vectors, axis=0)
+        variances = np.var(stacked, axis=0)
+        mean_var = float(np.mean(variances))
+        return float(min(1.0, 0.5 * math.log(2 * math.pi * math.e * max(1e-9, mean_var))))
+
 
 def _recent_vectors(
     memory_context: MemoryContext | None,

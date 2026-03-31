@@ -87,18 +87,35 @@ class VLJepaRightHemisphereAdapter(VJepa21RightHemisphereAdapter):
         return merged if norm == 0 else merged / norm
 
     def _hierarchical_features(self, latent: np.ndarray) -> list[dict[str, float]]:
+        """Multi-scale spatial pyramid pooling over the latent vector.
+
+        Each level doubles the resolution:
+        Level 1: global (full vector) — coarse semantic energy
+        Level 2: split into 2 regions — mid-level structure
+        Level 3: split into 4 regions — fine-grained details
+        ...and so on up to hierarchy_levels.
+        """
         levels = max(1, self.config.hierarchy_levels)
-        chunk = max(1, latent.size // levels)
         out: list[dict[str, float]] = []
-        for i in range(levels):
-            segment = latent[i * chunk : (i + 1) * chunk]
-            if segment.size == 0:
-                continue
-            out.append(
-                {
-                    "level": float(i + 1),
-                    "energy": float(np.mean(np.abs(segment))),
-                    "variance": float(np.var(segment)),
-                }
-            )
+        for level_idx in range(levels):
+            n_regions = 2 ** level_idx
+            region_size = max(1, latent.size // n_regions)
+            level_energies: list[float] = []
+            level_variances: list[float] = []
+            for r in range(n_regions):
+                start = r * region_size
+                end = min(start + region_size, latent.size)
+                segment = latent[start:end]
+                if segment.size == 0:
+                    continue
+                level_energies.append(float(np.mean(np.abs(segment))))
+                level_variances.append(float(np.var(segment)))
+            if level_energies:
+                out.append({
+                    "level": float(level_idx + 1),
+                    "energy": float(np.mean(level_energies)),
+                    "variance": float(np.mean(level_variances)),
+                    "regions": float(n_regions),
+                    "contrast": float(np.std(level_energies)) if len(level_energies) > 1 else 0.0,
+                })
         return out

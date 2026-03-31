@@ -201,3 +201,16 @@ class ExperienceStorePort(Protocol):
         variant_id: str,
         limit: int = 100,
     ) -> float: ...
+
+
+@runtime_checkable
+class DistributedExperiencePort(Protocol):
+    """Inter-agent experience sharing port (GEA Sprint 3)."""
+    def broadcast_experience(
+        self, *, agent_id: str, context_type: str, variant_id: str,
+        score: float, metadata: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    def collect_peer_experiences(
+        self, *, context_type: str, limit: int = 50,
+    ) -> list[dict[str, Any]]: ...

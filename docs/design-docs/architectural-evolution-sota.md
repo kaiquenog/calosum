@@ -14,7 +14,7 @@ The SOTA literature highlights that true agentic behavior requires:
 ## 2. Near-Term Evolution Plan (Next Sprints)
 
 ### 2.1. Complete the "Self-Learning" Loop (DSPy Integration)
-**Status:** Planned (Active: `docs/exec-plans/active/2026-03-30-dspy-self-learning.md`)
+**Status:** Implementado (`adapters/night_trainer_dspy.py`, `domain/evolution.py`). Loop de autoaprendizagem ativado via `CALOSUM_NIGHT_TRAINER_BACKEND`. Plano concluído em `docs/exec-plans/completed/2026-03-30-dual-hemisphere-100-implementation-plan.md`.
 **Why:** Research shows that manual prompt engineering hits a ceiling. SOTA frameworks like DSPy treat LLM pipelines as compilable programs.
 **Actionable Steps:**
 - Activate `NightTrainerDSPyAdapter` in the Sleep Mode loop.
@@ -23,14 +23,14 @@ The SOTA literature highlights that true agentic behavior requires:
 - Persist the compiled artifacts (JSON) so the agent "wakes up" smarter.
 
 ### 2.2. Bidirectional Cognitive Bridge (System 2 overriding System 1)
-**Status:** Proposed Future Plan
+**Status:** Implementado (`adapters/bridge_cross_attention.py`, `shared/ports.py` — `BridgeFusionPort`). Selecionável via `CALOSUM_BRIDGE_BACKEND=cross_attention`. Loop bidirecional de feedback operacional integrado via workspace shared state.
 **Why:** Current neuro-symbolic research emphasizes that System 2 (logical reasoning) must act as a corrective regularizer for System 1 (neural perception). Currently, Calosum's `RightHemisphere` dictates the `BridgeControlSignal` unconditionally.
 **Actionable Steps:**
 - Introduce a feedback loop where the `AgentExecutionEngine` (System 2 execution) can flag a "cognitive mismatch" (e.g., the Right Hemisphere flagged "urgency" but the Left Hemisphere detected a casual joke).
 - Persist this mismatch as a new `SemanticRule` or feed it into the `CognitiveTokenizer`'s neural weights adaptation. This ensures the intuitive embedding model is "fine-tuned" by the logical outcomes.
 
 ### 2.3. Endogenous Goal Generation (Telogenesis)
-**Status:** Proposed Future Plan
+**Status:** Implementado (`domain/idle_foraging.py`). Orquestrador detecta turnos ociosos e aciona foraging epistêmico. Active Inference governa a seleção de alvos de pesquisa via EFE multi-horizonte.
 **Why:** Recent papers on Active Inference (e.g., *"Telogenesis: Goal Is All U Need"*) argue that agents should generate their own goals based on "epistemic gaps" (ignorance, surprise, staleness).
 **Actionable Steps:**
 - Upgrade the Orchestrator to support an "Idle Loop" or "Background Foraging Mode".

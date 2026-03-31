@@ -53,17 +53,24 @@ class LocalClipVisionAdapter(VisionEmbeddingPort):
     def _ensure_clip_loaded(self) -> bool:
         if self._processor is not None and self._model is not None:
             return True
-        try:
-            from transformers import CLIPModel, CLIPProcessor
-
-            self._processor = CLIPProcessor.from_pretrained(self.config.model_name)
-            self._model = CLIPModel.from_pretrained(self.config.model_name)
-            self._model.eval()
-            return True
-        except Exception:
-            self._processor = None
-            self._model = None
-            return False
+        # Try SigLIP2 first (2024 SOTA), fallback to CLIP
+        for model_name in [self.config.model_name, "openai/clip-vit-base-patch32"]:
+            try:
+                if "siglip" in model_name.lower():
+                    from transformers import AutoProcessor, AutoModel
+                    self._processor = AutoProcessor.from_pretrained(model_name)
+                    self._model = AutoModel.from_pretrained(model_name)
+                else:
+                    from transformers import CLIPModel, CLIPProcessor
+                    self._processor = CLIPProcessor.from_pretrained(model_name)
+                    self._model = CLIPModel.from_pretrained(model_name)
+                self._model.eval()
+                return True
+            except Exception:
+                continue
+        self._processor = None
+        self._model = None
+        return False
 
     def _load_image(self, image_data: bytes):
         try:

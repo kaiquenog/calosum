@@ -266,3 +266,36 @@ class CognitiveTokenizer:
 
     async def atranslate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket:
         return self.translate(right_state, workspace)
+
+    def train_step(self, latent_vector: list[float], target_salience: float, learning_rate: float = 0.01) -> dict[str, Any]:
+        """Train the neural bridge projection using reflection outcomes as signal.
+
+        The target_salience comes from the GEA reflection controller's evaluation
+        of which variant performed best — providing a supervised signal for the bridge.
+        """
+        if not self.use_neural or len(latent_vector) != self.latent_dim:
+            return {"trained": False, "reason": "neural bridge not active or dim mismatch"}
+        try:
+            import torch
+            optimizer = torch.optim.SGD(self.projection.parameters(), lr=learning_rate)
+            tensor_in = torch.tensor(latent_vector, dtype=torch.float32)
+            output = self.projection(tensor_in)
+            predicted_salience = output[0]
+            target = torch.tensor(target_salience, dtype=torch.float32)
+            loss = torch.nn.functional.mse_loss(predicted_salience, target)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            return {"trained": True, "loss": round(float(loss.item()), 6)}
+        except Exception as exc:
+            return {"trained": False, "reason": str(exc)}
+
+    def get_bridge_parameters(self) -> list[Any]:
+        """Return trainable parameters from both the projection and the fusion adapter."""
+        params: list[Any] = []
+        if self.use_neural:
+            params.extend(self.projection.parameters())
+        if self.fusion is not None and hasattr(self.fusion, "get_parameters"):
+            params.extend(self.fusion.get_parameters())
+        return params
+

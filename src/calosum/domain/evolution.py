@@ -247,24 +247,44 @@ class JsonlEvolutionArchive:
             self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def record_diagnostic(self, diagnostic: SessionDiagnostic) -> None:
-        self._append(
-            {
-                "record_type": "diagnostic",
-                "recorded_at": utc_now().isoformat(),
-                "session_id": diagnostic.session_id,
-                "diagnostic": _to_json_value(diagnostic),
-            }
-        )
+        self._append({"record_type": "diagnostic", "recorded_at": utc_now().isoformat(),
+                      "session_id": diagnostic.session_id, "diagnostic": _to_json_value(diagnostic)})
 
     def record_directive(self, directive: EvolutionDirective, *, event: str) -> None:
-        self._append(
-            {
-                "record_type": "directive",
-                "recorded_at": utc_now().isoformat(),
-                "event": event,
-                "directive": _to_json_value(directive),
-            }
-        )
+        self._append({"record_type": "directive", "recorded_at": utc_now().isoformat(),
+                      "event": event, "directive": _to_json_value(directive)})
+
+    def record_tool_trace(
+        self, *, session_id: str, turn_id: str, tool_name: str,
+        status: str, duration_ms: float, metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Record individual tool execution trace for evolutionary analysis."""
+        self._append({
+            "record_type": "tool_trace",
+            "recorded_at": utc_now().isoformat(),
+            "session_id": session_id, "turn_id": turn_id,
+            "tool_name": tool_name, "status": status,
+            "duration_ms": round(duration_ms, 2),
+            "metadata": metadata or {},
+        })
+
+    def record_execution_trace(
+        self, *, session_id: str, turn_id: str,
+        actions_proposed: int, actions_accepted: int,
+        runtime_retries: int, critique_revisions: int,
+        variant_id: str | None = None,
+    ) -> None:
+        """Record end-of-turn execution summary for GEA evolutionary history."""
+        self._append({
+            "record_type": "execution_trace",
+            "recorded_at": utc_now().isoformat(),
+            "session_id": session_id, "turn_id": turn_id,
+            "variant_id": variant_id or "default",
+            "actions_proposed": actions_proposed,
+            "actions_accepted": actions_accepted,
+            "runtime_retries": runtime_retries,
+            "critique_revisions": critique_revisions,
+        })
 
     def load_pending_directives(self) -> list[EvolutionDirective]:
         if self.path is None or not self.path.exists():

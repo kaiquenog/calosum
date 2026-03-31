@@ -15,7 +15,7 @@ class CrossAttentionBridgeTests(unittest.TestCase):
         fused, meta = adapter.fuse_latent(latent, ["ansioso", "urgente"])
 
         self.assertEqual(len(fused), 384)
-        self.assertEqual(meta["fusion_backend"], "cross_attention")
+        self.assertIn(meta["fusion_backend"], {"cross_attention_heuristic", "learned_cross_attention"})
         self.assertIn("attention_entropy", meta)
 
     def test_tokenizer_applies_fusion_when_configured(self) -> None:

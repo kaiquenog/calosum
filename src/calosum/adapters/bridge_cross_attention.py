@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,13 +10,44 @@ import numpy as np
 class CrossAttentionBridgeConfig:
     target_dim: int = 384
     temperature: float = 0.75
+    d_k: int = 64
 
 
 class CrossAttentionBridgeAdapter:
-    """Cross-attention fusion for right-latent compression in the bridge."""
+    """Cross-attention fusion with learnable projections for the bridge.
+
+    When PyTorch is available, uses nn.Linear projections (Q, K, V) and
+    nn.Embedding for label representations — proper learned attention.
+    Falls back to hash-based keys when torch is unavailable.
+    """
 
     def __init__(self, config: CrossAttentionBridgeConfig | None = None) -> None:
         self.config = config or CrossAttentionBridgeConfig()
+        self._torch_available = False
+        self._W_q = None
+        self._W_k = None
+        self._W_v = None
+        self._W_out = None
+        self._label_embeddings = None
+        self._label_to_idx: dict[str, int] = {}
+        self._next_idx = 0
+        self._init_learned_projections()
+
+    def _init_learned_projections(self) -> None:
+        try:
+            import torch
+            import torch.nn as nn
+
+            d = self.config.target_dim
+            d_k = self.config.d_k
+            self._W_q = nn.Linear(d, d_k, bias=False)
+            self._W_k = nn.Linear(d, d_k, bias=False)
+            self._W_v = nn.Linear(d, d, bias=False)
+            self._W_out = nn.Linear(d, d, bias=False)
+            self._label_embeddings = nn.Embedding(64, d)
+            self._torch_available = True
+        except ImportError:
+            self._torch_available = False
 
     def fuse_latent(
         self,
@@ -28,7 +58,45 @@ class CrossAttentionBridgeAdapter:
         if x.size == 0:
             return [], {"fusion_backend": "cross_attention", "attention_entropy": 0.0}
 
-        keys = self._label_matrix(emotional_labels, self.config.target_dim)
+        if self._torch_available:
+            return self._learned_fuse(x, emotional_labels or ["neutral"])
+        return self._heuristic_fuse(x, emotional_labels or ["neutral"])
+
+    def _learned_fuse(
+        self, x: np.ndarray, labels: list[str]
+    ) -> tuple[list[float], dict[str, Any]]:
+        """Cross-attention with learned nn.Linear projections."""
+        import torch
+
+        x_tensor = torch.tensor(x, dtype=torch.float32).unsqueeze(0)
+        label_indices = [self._get_label_idx(label) for label in labels[:8]]
+        k_input = self._label_embeddings(torch.tensor(label_indices))
+
+        Q = self._W_q(x_tensor)           # (1, d_k)
+        K = self._W_k(k_input)            # (n_labels, d_k)
+        V = self._W_v(k_input)            # (n_labels, d)
+
+        scores = torch.matmul(Q, K.T) / (self.config.d_k ** 0.5)
+        attn = torch.softmax(scores, dim=-1)
+        context = torch.matmul(attn, V)   # (1, d)
+
+        fused = self._W_out(0.72 * x_tensor + 0.28 * context)
+        fused = fused / (fused.norm() + 1e-8)
+        entropy = float(-torch.sum(attn.detach() * torch.log(attn.detach() + 1e-9)))
+
+        return fused.squeeze(0).detach().tolist(), {
+            "fusion_backend": "learned_cross_attention",
+            "attention_entropy": round(entropy, 6),
+            "attention_heads": len(labels[:8]),
+            "target_dim": self.config.target_dim,
+            "projection_type": "nn.Linear",
+        }
+
+    def _heuristic_fuse(
+        self, x: np.ndarray, labels: list[str]
+    ) -> tuple[list[float], dict[str, Any]]:
+        """Fallback using deterministic label vectors when torch unavailable."""
+        keys = self._label_matrix_deterministic(labels, self.config.target_dim)
         scores = (keys @ x) / max(1e-5, self.config.temperature)
         attn = self._softmax(scores)
         context = attn @ keys
@@ -39,22 +107,39 @@ class CrossAttentionBridgeAdapter:
 
         entropy = float(-np.sum(attn * np.log(np.clip(attn, 1e-9, 1.0))))
         return fused.astype(np.float32).tolist(), {
-            "fusion_backend": "cross_attention",
+            "fusion_backend": "cross_attention_heuristic",
             "attention_entropy": round(entropy, 6),
             "attention_heads": int(keys.shape[0]),
             "target_dim": self.config.target_dim,
+            "projection_type": "deterministic",
         }
 
-    def _label_matrix(self, labels: list[str], dim: int) -> np.ndarray:
-        labels = labels or ["neutral"]
+    def _get_label_idx(self, label: str) -> int:
+        if label not in self._label_to_idx:
+            self._label_to_idx[label] = self._next_idx % 64
+            self._next_idx += 1
+        return self._label_to_idx[label]
+
+    def _label_matrix_deterministic(self, labels: list[str], dim: int) -> np.ndarray:
+        """Deterministic label embedding fallback using character-based vectors."""
         rows: list[np.ndarray] = []
         for label in labels[:8]:
-            h = hashlib.sha256(label.encode("utf-8")).digest()
-            row = np.frombuffer(h, dtype=np.uint8).astype(np.float32)
-            row = self._fit(row, dim)
-            row = (row / 255.0) * 2.0 - 1.0
-            rows.append(row)
+            vec = np.zeros(dim, dtype=np.float32)
+            for i, ch in enumerate(label.lower()):
+                vec[(ord(ch) + i * 7) % dim] += 1.0
+            norm = np.linalg.norm(vec)
+            rows.append(vec / max(norm, 1e-8))
         return np.stack(rows, axis=0)
+
+    def get_parameters(self) -> list[Any]:
+        """Return trainable parameters for bridge neural training loop."""
+        if not self._torch_available:
+            return []
+        params = []
+        for module in [self._W_q, self._W_k, self._W_v, self._W_out, self._label_embeddings]:
+            if module is not None:
+                params.extend(module.parameters())
+        return params
 
     def _fit(self, vec: np.ndarray, size: int) -> np.ndarray:
         if vec.size == size:

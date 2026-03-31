@@ -213,6 +213,22 @@ class GEAReflectionController:
         for key, value in outcome.bridge_adjustments.items():
             if hasattr(tokenizer.config, key):
                 setattr(tokenizer.config, key, value)
+
+        # S2.2: Train bridge neural projection using reflection outcome
+        if hasattr(tokenizer, "train_step") and outcome.selected_metrics:
+            target_salience = outcome.selected_metrics.get("calibrated_salience", 0.5)
+            latent = outcome.selected_metrics.get("_latent_vector")
+            if latent and isinstance(latent, list):
+                tokenizer.train_step(latent, target_salience)
+
+        # S2.3: Bidirectional dissonance feedback
+        if outcome.selected_metrics.get("high_dissonance"):
+            for key, value in outcome.bridge_adjustments.items():
+                if key == "salience_gain":
+                    outcome.bridge_adjustments[key] = max(0.5, value - self.adaptation_step)
+                if key == "salience_bias":
+                    outcome.bridge_adjustments[key] = max(-0.3, value - 0.02)
+
         if hasattr(tokenizer, "record_reflection_event"):
             tokenizer.record_reflection_event(outcome.as_dict())
         if hasattr(tokenizer, "persist_adaptation_state"):
@@ -283,96 +299,70 @@ class GEAReflectionController:
             score += 0.1
             reasons.append(f"cognitive_alignment={1.0 - dissonance:.2f}")
 
+        # S3.2: Performance-Novelty Selection
+        novelty = self._compute_novelty(candidate)
+        score += novelty * 0.2
+        reasons.append(f"novelty_bonus={novelty:.2f}")
+
         return score, reasons
 
-    def _propose_bridge_adjustments(
-        self,
-        selected_candidate: CognitiveCandidate,
-        base_tokenizer: CognitiveTokenizer,
-    ) -> dict[str, Any]:
-        overrides = dict(selected_candidate.variant.tokenizer_overrides)
-        direct_overrides = {
-            key: value
-            for key, value in overrides.items()
-            if key in {
-                "salience_threshold",
-                "base_temperature",
-                "max_directives",
-                "bottleneck_tokens",
-                "salience_gain",
-                "salience_bias",
-                "temperature_bias",
-            }
-        }
-        if direct_overrides:
-            return direct_overrides
+    def _propose_bridge_adjustments(self, selected: CognitiveCandidate, base: CognitiveTokenizer) -> dict[str, Any]:
+        overrides = dict(selected.variant.tokenizer_overrides)
+        valid_keys = {"salience_threshold", "base_temperature", "max_directives", "bottleneck_tokens",
+                      "salience_gain", "salience_bias", "temperature_bias"}
+        direct = {k: v for k, v in overrides.items() if k in valid_keys}
+        if direct:
+            return direct
 
-        current_threshold = base_tokenizer.config.salience_threshold
-        current_temperature = base_tokenizer.config.base_temperature
-        current_directives = base_tokenizer.config.max_directives
-        current_tokens = base_tokenizer.config.bottleneck_tokens
-        current_salience_gain = getattr(base_tokenizer.config, "salience_gain", 1.0)
-        current_salience_bias = getattr(base_tokenizer.config, "salience_bias", 0.0)
-        current_temperature_bias = getattr(base_tokenizer.config, "temperature_bias", 0.0)
+        cfg = base.config
+        tr = selected.turn_result
+        emp = tr.bridge_packet.control.empathy_priority
+        rej = sum(1 for i in tr.execution_results if i.status == "rejected")
+        emw = len(tr.right_state.emotional_labels)
+        s = self.adaptation_step
 
-        turn_result = selected_candidate.turn_result
-        empathy_priority = turn_result.bridge_packet.control.empathy_priority
-        rejected_count = sum(1 for item in turn_result.execution_results if item.status == "rejected")
-        emotional_bandwidth = len(turn_result.right_state.emotional_labels)
-
-        if empathy_priority:
-            proposed_threshold = max(0.1, round(current_threshold - self.adaptation_step, 2))
-            proposed_tokens = min(8, current_tokens + (1 if emotional_bandwidth >= 2 else 0))
-            proposed_temperature = min(0.45, round(current_temperature + 0.02, 2))
-            proposed_directives = min(6, current_directives + 1)
-            proposed_salience_gain = min(1.5, round(current_salience_gain + 0.05, 2))
-            proposed_salience_bias = min(0.25, round(current_salience_bias + 0.02, 2))
-            proposed_temperature_bias = min(0.2, round(current_temperature_bias + 0.01, 2))
+        if emp:
+            p = {"salience_threshold": max(0.1, round(cfg.salience_threshold - s, 2)),
+                 "bottleneck_tokens": min(8, cfg.bottleneck_tokens + (1 if emw >= 2 else 0)),
+                 "base_temperature": min(0.45, round(cfg.base_temperature + 0.02, 2)),
+                 "max_directives": min(6, cfg.max_directives + 1),
+                 "salience_gain": min(1.5, round(getattr(cfg, "salience_gain", 1.0) + 0.05, 2)),
+                 "salience_bias": min(0.25, round(getattr(cfg, "salience_bias", 0.0) + 0.02, 2)),
+                 "temperature_bias": min(0.2, round(getattr(cfg, "temperature_bias", 0.0) + 0.01, 2))}
         else:
-            proposed_threshold = min(0.95, round(current_threshold + self.adaptation_step, 2))
-            proposed_tokens = max(4, current_tokens - (1 if emotional_bandwidth <= 1 else 0))
-            proposed_temperature = max(0.1, round(current_temperature - 0.01, 2))
-            proposed_directives = max(2, current_directives - 1)
-            proposed_salience_gain = max(0.6, round(current_salience_gain - 0.03, 2))
-            proposed_salience_bias = max(-0.25, round(current_salience_bias - 0.01, 2))
-            proposed_temperature_bias = max(-0.15, round(current_temperature_bias - 0.01, 2))
-
-        if rejected_count or turn_result.runtime_retry_count:
-            proposed_temperature = max(0.1, round(current_temperature - self.adaptation_step, 2))
-            proposed_directives = max(2, current_directives - 1)
-            proposed_salience_gain = max(0.6, round(current_salience_gain - 0.05, 2))
-            proposed_temperature_bias = max(-0.15, round(current_temperature_bias - 0.03, 2))
-
-        return {
-            "salience_threshold": proposed_threshold,
-            "base_temperature": proposed_temperature,
-            "max_directives": proposed_directives,
-            "bottleneck_tokens": proposed_tokens,
-            "salience_gain": proposed_salience_gain,
-            "salience_bias": proposed_salience_bias,
-            "temperature_bias": proposed_temperature_bias,
-        }
+            p = {"salience_threshold": min(0.95, round(cfg.salience_threshold + s, 2)),
+                 "bottleneck_tokens": max(4, cfg.bottleneck_tokens - (1 if emw <= 1 else 0)),
+                 "base_temperature": max(0.1, round(cfg.base_temperature - 0.01, 2)),
+                 "max_directives": max(2, cfg.max_directives - 1),
+                 "salience_gain": max(0.6, round(getattr(cfg, "salience_gain", 1.0) - 0.03, 2)),
+                 "salience_bias": max(-0.25, round(getattr(cfg, "salience_bias", 0.0) - 0.01, 2)),
+                 "temperature_bias": max(-0.15, round(getattr(cfg, "temperature_bias", 0.0) - 0.01, 2))}
+        if rej or tr.runtime_retry_count:
+            p["base_temperature"] = max(0.1, round(cfg.base_temperature - s, 2))
+            p["max_directives"] = max(2, cfg.max_directives - 1)
+            p["salience_gain"] = max(0.6, round(getattr(cfg, "salience_gain", 1.0) - 0.05, 2))
+            p["temperature_bias"] = max(-0.15, round(getattr(cfg, "temperature_bias", 0.0) - 0.03, 2))
+        return p
 
     def _selected_metrics(self, cand: CognitiveCandidate, score: float) -> dict[str, Any]:
         res = cand.turn_result
         rejected = sum(1 for i in res.execution_results if i.status == "rejected")
-        return {
-            "score": round(score, 3), "empathy_priority": res.bridge_packet.control.empathy_priority,
-            "runtime_retry_count": res.runtime_retry_count, "runtime_rejected_count": rejected,
-            "semantic_rules": len(res.memory_context.semantic_rules),
-            "action_count": len(res.left_result.actions), "calibrated_salience": res.bridge_packet.salience,
-        }
+        grounding_conf = 0.5
+        for a in res.left_result.actions:
+            if a.action_type == "respond_text":
+                grounding_conf = a.payload.get("grounding_confidence", 0.5); break
+        from calosum.domain.differentiable_logic import CognitiveDissonanceMetric
+        dissonance = CognitiveDissonanceMetric().calculate(res.right_state, grounding_conf)
+        return {"score": round(score, 3), "empathy_priority": res.bridge_packet.control.empathy_priority,
+                "runtime_retry_count": res.runtime_retry_count, "runtime_rejected_count": rejected,
+                "semantic_rules": len(res.memory_context.semantic_rules),
+                "action_count": len(res.left_result.actions), "calibrated_salience": res.bridge_packet.salience,
+                "_latent_vector": list(res.right_state.latent_vector),
+                "high_dissonance": dissonance > 0.4, "dissonance_score": round(dissonance, 4)}
 
     def strategy_registry_snapshot(self) -> dict[str, dict[str, dict[str, float]]]:
-        snapshot: dict[str, dict[str, dict[str, float]]] = {}
-        for context_type, arms in self._strategy_registry.items():
-            snapshot[context_type] = {}
-            for variant_id, arm in arms.items():
-                snapshot[context_type][variant_id] = {
-                    "n_pulls": float(arm.n_pulls),
-                    "mean_reward": round(arm.mean_reward, 4),
-                }
-        return snapshot
+        return {ctx: {vid: {"n_pulls": float(a.n_pulls), "mean_reward": round(a.mean_reward, 4)}
+                      for vid, a in arms.items()} for ctx, arms in self._strategy_registry.items()}
 
     def _infer_context_type(self, candidates: list[CognitiveCandidate]) -> str:
         if not candidates: return "factual"
@@ -389,3 +379,17 @@ class GEAReflectionController:
         rejected = sum(1 for i in res.execution_results if i.status == "rejected")
         r = 0.55 + min(0.25, score * 0.08) - min(0.2, res.runtime_retry_count * 0.08) - min(0.2, rejected * 0.1)
         return round(max(0.0, min(1.0, r)), 4)
+
+    def _compute_novelty(self, candidate: CognitiveCandidate) -> float:
+        """Compute novelty as inverse exploitation frequency from strategy registry."""
+        text = candidate.turn_result.left_result.response_text.lower()
+        if not text.split():
+            return 1.0
+        vid = candidate.variant.variant_id
+        ctx = self._infer_context_type([candidate])
+        arm = self._strategy_registry.get(ctx, {}).get(vid)
+        if arm is None or arm.n_pulls == 0:
+            return 1.0
+        avg_reward = arm.mean_reward
+        diversity = 1.0 - avg_reward if avg_reward > 0.7 else 0.5
+        return round(max(0.0, min(1.0, diversity)), 3)

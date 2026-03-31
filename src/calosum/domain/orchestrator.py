@@ -142,11 +142,19 @@ class CalosumAgent:
 
         # Active Inference V2/V3: Branching based on VFE/EFE
         surprise_score = getattr(right_state, "surprise_score", 0.0)
-        ambiguity_score = right_state.world_hypotheses.get("interaction_complexity", 0.0)
-        semantic_density = right_state.world_hypotheses.get("semantic_density", 0.5)
-        
-        expected_free_energy = (ambiguity_score * 0.6) + (semantic_density * 0.4)
-        
+
+        # EFE with proper epistemic/pragmatic decomposition
+        expected_free_energy = 0.5
+        if hasattr(self.right_hemisphere, "expected_free_energy"):
+            efe_value, _efe_components = self.right_hemisphere.expected_free_energy(
+                right_state.latent_vector, memory_context
+            )
+            expected_free_energy = efe_value
+        else:
+            ambiguity_score = right_state.world_hypotheses.get("interaction_complexity", 0.0)
+            semantic_density = right_state.world_hypotheses.get("semantic_density", 0.5)
+            expected_free_energy = (ambiguity_score * 0.6) + (semantic_density * 0.4)
+
         needs_branching = (
             self.config.branching_budget.max_depth > 0
             and (surprise_score > self.config.surprise_threshold or expected_free_energy > 0.75)
@@ -334,15 +342,12 @@ class CalosumAgent:
                 session_id=session_id, analyzed_turns=0, tool_success_rate=1.0,
                 average_retries=0.0, average_surprise=0.0, bottlenecks=[],
                 pending_approval_backlog=0,
-                pending_directive_count=len(self.evolution_manager.pending_directives),
-            )
+                pending_directive_count=len(self.evolution_manager.pending_directives))
         else:
             from calosum.domain.introspection import IntrospectionEngine
             diagnostic = IntrospectionEngine().analyze(
-                session_id, dashboard, 
-                pending_directive_count=len(self.evolution_manager.pending_directives),
-            )
-
+                session_id, dashboard,
+                pending_directive_count=len(self.evolution_manager.pending_directives))
         self.latest_awareness_by_session[session_id] = diagnostic
         if persist:
             if hasattr(self.telemetry_bus, "record_awareness"):
@@ -351,12 +356,12 @@ class CalosumAgent:
                 self.evolution_archive.record_diagnostic(diagnostic)
         return diagnostic
 
-    def latest_awareness_for_session(self, session_id: str | None = None) -> SessionDiagnostic | None:
-        if session_id: return self.latest_awareness_by_session.get(session_id)
+    def latest_awareness_for_session(self, sid: str | None = None) -> SessionDiagnostic | None:
+        if sid: return self.latest_awareness_by_session.get(sid)
         return list(self.latest_awareness_by_session.values())[-1] if self.latest_awareness_by_session else None
 
-    def workspace_for_session(self, session_id: str | None = None) -> CognitiveWorkspace | None:
-        if session_id: return self.last_workspace_by_session.get(session_id)
+    def workspace_for_session(self, sid: str | None = None) -> CognitiveWorkspace | None:
+        if sid: return self.last_workspace_by_session.get(sid)
         return list(self.last_workspace_by_session.values())[-1] if self.last_workspace_by_session else None
 
     @property
@@ -377,24 +382,19 @@ class CalosumAgent:
         if self.night_trainer is not None:
             await maybe_await(self.execution_engine.call_component(self.night_trainer, "arun_training_cycle", "run_training_cycle"))
         return report
-    def cognitive_dashboard(self, session_id: str | None = None) -> dict[str, list[dict]]: return self.telemetry_bus.dashboard_for_session(session_id)
+    def cognitive_dashboard(self, sid: str | None = None) -> dict[str, list[dict]]: return self.telemetry_bus.dashboard_for_session(sid)
 
     async def _store_selected_episode(self, result: AgentTurnResult) -> None:
-        episode = MemoryEpisode(
+        ep = MemoryEpisode(
             episode_id=str(uuid4()), recorded_at=utc_now(), user_turn=result.user_turn,
             right_state=result.right_state, bridge_packet=result.bridge_packet,
             left_result=result.left_result, execution_results=result.execution_results,
-            runtime_retry_count=result.runtime_retry_count, critique_revision_count=result.critique_revision_count,
-        )
-        await maybe_await(self.execution_engine.call_component(self.memory_system, "astore_episode", "store_episode", episode))
-        
+            runtime_retry_count=result.runtime_retry_count, critique_revision_count=result.critique_revision_count)
+        await maybe_await(self.execution_engine.call_component(self.memory_system, "astore_episode", "store_episode", ep))
         if self.memory_system and self.config.episode_volume_threshold > 0:
             count = await maybe_await(self.execution_engine.call_component(self.memory_system, "aepisode_count", "episode_count"))
             if count % self.config.episode_volume_threshold == 0: await self.asleep_mode()
 
-    def idle_foraging(self) -> AgentTurnResult | GroupTurnResult | None:
-        return run_sync(self.aidle_foraging())
-
+    def idle_foraging(self) -> AgentTurnResult | GroupTurnResult | None: return run_sync(self.aidle_foraging())
     async def aidle_foraging(self) -> AgentTurnResult | GroupTurnResult | None:
-        synthetic_turn = build_idle_foraging_turn(self.memory_system)
-        return await self.aprocess_turn(synthetic_turn)
+        return await self.aprocess_turn(build_idle_foraging_turn(self.memory_system))

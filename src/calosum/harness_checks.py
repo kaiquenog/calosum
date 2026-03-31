@@ -65,7 +65,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.memory": {"shared.types", "shared.ports"},
     "domain.persistent_memory": {"domain.memory", "shared.serialization", "shared.types"},
     "domain.telemetry": {"shared.types", "shared.serialization"},
-    "domain.tool_registry": {"shared.types"},
+
     "domain.workspace": {"domain.orchestrator", "shared.types"},
     "domain.introspection": {"shared.types"},
     "domain.introspection_capabilities": {"domain.orchestrator", "bootstrap.factory", "shared.types"},
@@ -176,6 +176,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.channel_telegram": {"shared.types"},
     "adapters.knowledge_graph_nanorag": {"shared.types"},
     "adapters.gea_experience_store": set(),
+    "adapters.gea_experience_distributed": set(),
     "adapters.gea_reflection_experience": {"domain.bridge", "domain.metacognition"},
     "adapters.left_hemisphere_rlm": {"shared.types"},
     "adapters.llm_failover": {"shared.async_utils", "shared.ports", "shared.types"},
@@ -199,9 +200,6 @@ MODULE_RULES: dict[str, set[str]] = {
 
     # ROOT
     "harness_checks": set(),
-    "final_prod_val": set(),
-    "verify_v3": set(),
-    "debug_numpy": set(),
     "__init__": {
         "adapters.active_inference",
         "adapters.bridge_cross_attention",

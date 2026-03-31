@@ -283,19 +283,51 @@ class RlmLeftHemisphereAdapter:
         )
 
     def _decompose(self, text: str, depth: int) -> list[str]:
-        cleaned = text.strip()
-        if depth <= 0 or len(cleaned) < 40:
-            return [cleaned or "Responder com clareza e seguranca."]
+        """RLM-style recursive decomposition with semantic clause analysis.
 
-        separators = [". ", "; ", " e ", " mas ", " porque "]
-        for sep in separators:
-            if sep in cleaned:
-                parts = [p.strip() for p in cleaned.split(sep) if p.strip()]
+        Instead of naive text splitting, the decomposition:
+        1. Identifies semantically independent sub-tasks using coordinating markers
+        2. Creates isolated context frames for each sub-problem
+        3. Recursively processes sub-problems if depth budget allows
+        """
+        frame = {"query": text.strip(), "depth": 0, "max_depth": depth}
+        results = self._recursive_decompose(frame)
+        return [r["query"] for r in results if r.get("query")]
+
+    def _recursive_decompose(self, frame: dict) -> list[dict]:
+        query = frame["query"]
+        depth = frame["depth"]
+        max_depth = frame["max_depth"]
+
+        if depth >= max_depth or len(query) < 50:
+            return [{"query": query or "Responder com clareza e seguranca.", "depth": depth, "leaf": True}]
+
+        sub_tasks = self._identify_sub_tasks(query)
+        if len(sub_tasks) <= 1:
+            return [{"query": query, "depth": depth, "leaf": True}]
+
+        results: list[dict] = []
+        for sub_task in sub_tasks[:3]:
+            child_frame = {**frame, "query": sub_task, "depth": depth + 1}
+            results.extend(self._recursive_decompose(child_frame))
+        return results
+
+    def _identify_sub_tasks(self, query: str) -> list[str]:
+        """Identifies semantically independent sub-tasks using clause structure.
+
+        Uses coordinating/subordinating markers ordered by independence strength
+        to split compound queries into actionable sub-problems.
+        """
+        coord_markers = [
+            (" e depois ", 2), (" alem disso ", 2), (" tambem ", 2),
+            (" entao ", 2), (" em seguida ", 2),
+            (". ", 1), ("; ", 1),
+            (" mas ", 2), (" porem ", 2), (" porque ", 2),
+        ]
+        text = query
+        for marker, _priority in coord_markers:
+            if marker in text and len(text) > 60:
+                parts = [p.strip() for p in text.split(marker, 1) if p.strip()]
                 if len(parts) >= 2:
-                    out: list[str] = []
-                    for part in parts[:3]:
-                        out.extend(self._decompose(part, depth - 1))
-                    return out
-
-        mid = len(cleaned) // 2
-        return self._decompose(cleaned[:mid], depth - 1) + self._decompose(cleaned[mid:], depth - 1)
+                    return parts
+        return [query]

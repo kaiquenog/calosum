@@ -549,19 +549,37 @@ Minimo:
 
 - [x] Inspecao tecnica do estado atual (codigo e docs centrais).
 - [x] Criacao do plano detalhado em `docs/exec-plans/active/`.
-- [ ] Sprint 0 concluido.
-- [ ] Sprint 1 concluido.
-- [ ] Sprint 2 concluido.
-- [ ] Sprint 3 concluido.
-- [ ] Sprint 4 concluido.
-- [ ] Sprint 5 concluido.
-- [ ] Sprint 6 concluido.
-- [ ] Sprint 7 concluido.
-- [ ] Sprint 8 concluido.
-- [ ] Sprint 9 concluido.
-- [ ] Harness checks final verde.
-- [ ] Suite de testes final verde.
-- [ ] Plano movido para `docs/exec-plans/completed/` com resumo final.
+- [x] Sprint 0 concluido — Stubs e feature flags sem quebrar baseline.
+- [x] Sprint 1 concluido — Ports `BridgeFusionPort`, `ExperienceStorePort` em `shared/ports.py`.
+- [x] Sprint 2 concluido — `VJepa21RightHemisphereAdapter` funcional com fallback.
+- [x] Sprint 3 concluido — `VLJepaRightHemisphereAdapter` multimodal.
+- [x] Sprint 4 concluido — `JepaRsRightHemisphereAdapter` (Rust/Burn backend).
+- [x] Sprint 5 concluido — `RlmLeftHemisphereAdapter` com fallback para Qwen.
+- [x] Sprint 6 concluido — `CrossAttentionBridgeAdapter` com `BridgeFusionPort`.
+- [x] Sprint 7 concluido — Active Inference refinado com EFE multi-horizonte e novelty density.
+- [x] Sprint 8 concluido — GEA experience sharing persistente (SQLite + Redis).
+- [x] Sprint 9 concluido — Wiring final, docs operacionais, benchmark de hemisferio direito.
+- [x] Harness checks final verde (2026-03-31).
+- [x] Suite de testes final verde — 114 testes passando (2026-03-31).
+- [x] Plano movido para `docs/exec-plans/completed/` com resumo final.
+
+## Resumo Final (2026-03-31)
+
+Todos os 10 sprints do programa dual-hemisphere 2026 foram concluídos. O Calosum evoluiu de um
+framework heurístico para uma arquitetura neuro-simbólica dual-hemisphere completa com:
+
+- 4 backends selecionáveis para o hemisfério direito (HF/V-JEPA 2.1/VL-JEPA/JEPA-rs).
+- Backend RLM recursivo para o hemisfério esquerdo com fallback para Qwen.
+- Cross-attention aprendida no corpus caloso com BridgeFusionPort.
+- Active Inference com EFE multi-horizonte e decomposição de surpresa.
+- GEA com experience sharing persistente (SQLite) e distribuído (Redis).
+- DSPy e LoRA para ciclos noturnos de auto-otimização.
+- Contract wrappers por hemisferio garantindo contratos estáveis em runtime.
+- Backend resolver centralizado mantendo fábrica desacoplada de decisões de routing.
+- 114 testes automatizados cobrindo todas as camadas.
+- Harness verde com verificação AST mecânica de fronteiras e tamanho de módulos.
+
+Debt residual documentado em `docs/exec-plans/tech-debt-tracker.md`.
 
 ## Decision Log
 

@@ -111,4 +111,23 @@ class JepaRsRightHemisphereAdapter:
 
         if not isinstance(parsed, dict):
             raise RuntimeError("jepa-rs payload must be an object")
+        self._validate_schema(parsed)
         return parsed
+
+    def _validate_schema(self, payload: dict[str, Any]) -> None:
+        """Validate jepa-rs response against required schema."""
+        required = {"latent_vector": list}
+        optional_typed = {
+            "surprise_score": (int, float),
+            "salience": (int, float),
+            "confidence": (int, float),
+            "emotional_labels": list,
+        }
+        for field, expected_type in required.items():
+            if field not in payload:
+                raise RuntimeError(f"jepa-rs missing required field: {field}")
+            if not isinstance(payload[field], expected_type):
+                raise RuntimeError(f"jepa-rs field '{field}' must be {expected_type.__name__}")
+        for field, expected_types in optional_typed.items():
+            if field in payload and not isinstance(payload[field], expected_types):
+                raise RuntimeError(f"jepa-rs field '{field}' has wrong type: {type(payload[field])}")
