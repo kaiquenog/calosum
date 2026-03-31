@@ -69,9 +69,47 @@ O bootstrap também injeta um store de conhecimento em grafo persistido em `know
 
 ## Observabilidade (OTEL)
 
-A telemetria cognitiva está preparada para exportar logs `JSONL` compatíveis com o formato OpenTelemetry. Quando o perfil Docker é ativado, esses logs podem ser consumidos por coletores (ex: `otel-collector`) para roteamento a visualizadores de rastreamento distribuído (Jaeger).
+A telemetria cognitiva exporta spans via HTTP/OTLP para o coletor configurado. O fluxo completo é:
 
-Adicionalmente, os dados de telemetria da sessão estão disponíveis em tempo real através da API REST (`/v1/telemetry/dashboard/{session_id}`) e consumidos ativamente pelo painel UI React.
+```
+Agente (OTLPHTTPTraceSink) → otel-collector:4318 → Jaeger:4317 → Jaeger UI:16686
+```
+
+### Configuração
+
+A variável `CALOSUM_OTEL_COLLECTOR_ENDPOINT` define o endpoint do coletor OTLP (padrão em Docker: `http://otel-collector:4318`). O adapter `adapters/telemetry_otlp.py` exporta spans via `POST /v1/traces` usando HTTP+JSON.
+
+**Fallback gracioso:** Se o coletor não estiver disponível, o adapter registra `WARNING: Failed to export OTLP trace` e continua sem lançar exceção — o agente nunca aborta por falha de telemetria.
+
+### Validando traces OTLP (stack Docker completa)
+
+```bash
+# 1. Subir a stack de infraestrutura
+docker compose -f deploy/docker-compose.yml up -d
+
+# 2. Aguardar os containers ficarem saudáveis (~15s)
+docker compose -f deploy/docker-compose.yml ps
+
+# 3. Rodar um turno pelo CLI (local conectando ao collector em Docker)
+CALOSUM_OTEL_COLLECTOR_ENDPOINT=http://localhost:4318 \
+CALOSUM_INFRA_PROFILE=persistent \
+PYTHONPATH=src .venv/bin/python3 -m calosum.bootstrap.cli chat
+# (envie uma mensagem e saia com Ctrl+C)
+
+# 4. Abrir o Jaeger UI e verificar a trace
+open http://localhost:16686
+# Selecionar service: "calosum" → Find Traces
+```
+
+### Arquivo de configuração do coletor
+
+`deploy/otel-collector-config.yaml` — define o pipeline:
+- **Receiver:** `otlp` (gRPC:4317, HTTP:4318)
+- **Processor:** `batch`
+- **Exporters:** `debug` (log básico) + `otlp/jaeger` (para Jaeger via gRPC:4317)
+
+Adicionalmente, os dados de telemetria da sessão estão disponíveis em tempo real através da API REST (`/v1/telemetry/dashboard/{session_id}`) e consumidos pelo painel UI React.
+
 
 ## Fluxo Local Recomendado
 

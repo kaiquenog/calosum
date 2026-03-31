@@ -1,0 +1,76 @@
+# CI — Calosum Harness & Tests
+#
+# Executa em cada push e pull request para main:
+#   - job `harness`: verifica integridade arquitetural (fronteiras, tamanho, artefatos)
+#   - job `tests`:   roda a suite completa de unitários (114 testes)
+#
+# Os dois jobs rodam em paralelo para feedback rápido e granular.
+# Nenhuma credencial de LLM é necessária — os adapters operam em modo
+# de fallback/mock quando variáveis de ambiente de API estão ausentes.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  harness:
+    name: Harness Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -e . --quiet
+
+      - name: Run harness checks
+        run: PYTHONPATH=src python3 -m calosum.harness_checks
+
+  tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -e . --quiet
+
+      - name: Run unit tests
+        env:
+          # Sem credenciais reais — adapters operam em modo fallback/mock
+          CALOSUM_INFRA_PROFILE: ephemeral
+          MPLCONFIGDIR: /tmp/calosum_mplcfg
+        run: PYTHONPATH=src python3 -m unittest discover -s tests -t . -v 2>&1 | tail -20

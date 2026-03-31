@@ -28,12 +28,7 @@ Atualizado em: 2026-03-31
 
 ### 🟡 Pendentes de sprint dedicada
 
-1. **2026-03-30** — CI remota executando harness checks e testes em cada PR. Impacto: médio. Bloqueia detecção automática de regressões arquiteturais.
-2. **2026-03-30** — Exportador OTLP direto para collector externo. Impacto: baixo em dev, médio em prod.
-3. **2026-03-30** — Validação de docstrings de `__init__.py` no harness. Impacto: baixo.
-4. **2026-03-30** — Benchmark do hemisferio direito com checkpoint HF real pré-carregado. Impacto: médio.
-5. **2026-03-31** — `shared/ports.py` depende de `domain.metacognition` (importação para type hint). Avaliar se pode ser movida para `shared/types.py` para quebrar essa dependência reversa. Impacto: baixo.
-6. **2026-03-31** — Warning `MPLCONFIGDIR` durante testes (matplotlib tempdir). Adicionar `MPLCONFIGDIR` ao entrypoint de testes ou `.env`.
+> Nenhum item pendente. Todos os débitos técnicos levantados até 2026-03-31 foram resolvidos.
 
 ## Regra de Atualização
 
@@ -42,7 +37,12 @@ Atualizado em: 2026-03-31
 
 ## Resolvidos
 
+- **2026-03-31** — CI remota (`.github/workflows/ci.yml`): jobs `harness` + `tests` em paralelo em cada push/PR para `main`. Validação remota pendente de push inicial ao GitHub.
+- **2026-03-31** — OTLP hardening: documentação ponta-a-ponta adicionada ao `INFRASTRUCTURE.md`; fallback gracioso confirmado via teste.
+- **2026-03-31** — Docstrings no harness: check `missing_package_docstring` adicionado; `bootstrap/routers/__init__.py` corrigido.
+- **2026-03-31** — Benchmark hemisfério direito: `scripts/benchmark_right_hemisphere.py` criado; documentado em `harness-engineering.md`.
+- **2026-03-31** — Dependência reversa `shared/ports.py → domain.metacognition`: confirmada dentro de `TYPE_CHECKING` (sem impacto runtime); check `shared_domain_runtime_import` adicionado ao harness para enforcement futuro.
+- **2026-03-31** — Warning `MPLCONFIGDIR`: corrigido em `tests/__init__.py` (compatível com `unittest discover` e pytest).
 - **2026-03-31** — Ghost rules `final_prod_val`, `verify_v3`, `debug_numpy` e `domain.tool_registry` removidas do `MODULE_RULES`.
 - **2026-03-31** — Warning `tensor.detach()` em `bridge_cross_attention.py` corrigido.
 - **2026-03-30** — Contratos de backend padronizados via `adapters/contract_wrappers.py`.
-

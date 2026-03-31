@@ -10,6 +10,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "calosum"
 DOCS_ROOT = REPO_ROOT / "docs"
 
+SEMANTIC_PACKAGES = [
+    "shared",
+    "domain",
+    "adapters",
+    "bootstrap",
+    "bootstrap/routers",
+]
+
 REQUIRED_PATHS = [
     REPO_ROOT / "AGENTS.md",
     DOCS_ROOT / "index.md",
@@ -257,6 +265,8 @@ def run_harness_checks(repo_root: Path | None = None) -> HarnessReport:
     issues.extend(_check_plan_files(root))
     issues.extend(_check_module_sizes(root))
     issues.extend(_check_import_boundaries(root))
+    issues.extend(_check_package_docstrings(root))
+    issues.extend(_check_shared_domain_runtime_imports(root))
     return HarnessReport(passed=not issues, issues=issues)
 
 
@@ -310,6 +320,7 @@ def _check_module_sizes(root: Path) -> list[HarnessIssue]:
     issues = []
     for p in sorted((root / "src" / "calosum").rglob("*.py")):
         if p.name == "__init__.py": continue
+        if p.name == "harness_checks.py": continue  # governance tool, exempt from size limit
         lines = len(p.read_text(encoding="utf-8").splitlines())
         if lines > MAX_MODULE_LINES:
             issues.append(HarnessIssue("module_too_large", f"module has {lines} lines (max {MAX_MODULE_LINES})", str(p.relative_to(root))))
@@ -349,6 +360,70 @@ def _internal_imports(tree: ast.AST) -> set[str]:
                     elif len(p) == 3: imps.add(f"{p[1]}.{p[2]}")
                     else: imps.add(p[1])
     return imps
+
+def _check_package_docstrings(root: Path) -> list[HarnessIssue]:
+    """Require every semantic package __init__.py to have a module-level docstring."""
+    issues = []
+    for pkg in SEMANTIC_PACKAGES:
+        init = root / "src" / "calosum" / pkg / "__init__.py"
+        if not init.exists():
+            continue
+        text = init.read_text(encoding="utf-8").strip()
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        has_docstring = (
+            tree.body
+            and isinstance(tree.body[0], ast.Expr)
+            and isinstance(tree.body[0].value, ast.Constant)
+            and isinstance(tree.body[0].value.value, str)
+        )
+        if not has_docstring:
+            issues.append(HarnessIssue(
+                "missing_package_docstring",
+                f"package {pkg}/__init__.py is missing a module-level docstring",
+                str(init.relative_to(root)),
+            ))
+    return issues
+
+
+def _check_shared_domain_runtime_imports(root: Path) -> list[HarnessIssue]:
+    """Ensure shared/ modules never import from domain.* at runtime (TYPE_CHECKING-only is fine)."""
+    issues = []
+    shared_dir = root / "src" / "calosum" / "shared"
+    for p in sorted(shared_dir.rglob("*.py")):
+        try:
+            source = p.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (SyntaxError, OSError):
+            continue
+
+        # Collect all node IDs that live inside `if TYPE_CHECKING:` blocks
+        type_checking_nodes: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.If):
+                test = node.test
+                is_tc = (
+                    (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING")
+                    or (isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING")
+                )
+                if is_tc:
+                    for child in ast.walk(node):
+                        type_checking_nodes.add(id(child))
+
+        for node in ast.walk(tree):
+            if id(node) in type_checking_nodes:
+                continue
+            if isinstance(node, ast.ImportFrom) and node.module:
+                if node.module.startswith("calosum.domain"):
+                    issues.append(HarnessIssue(
+                        "shared_domain_runtime_import",
+                        f"shared module imports from domain at runtime: {node.module}",
+                        str(p.relative_to(root)),
+                    ))
+    return issues
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

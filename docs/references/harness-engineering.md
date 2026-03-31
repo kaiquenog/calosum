@@ -34,10 +34,9 @@ Conforme a base de código cresce, a fragmentação de dezenas de módulos na me
 
 ## Limites Atuais do Harness
 
-- O harness não exige que todo arquivo Python esteja dentro dos quatro subpacotes semânticos; `harness_checks.py` é mantido no nível raiz do pacote por simplicidade de execução.
-- O harness não valida ainda a presença ou o conteúdo das docstrings de `__init__.py` por pacote semântico.
+- O harness não valida que todo arquivo Python esteja dentro dos quatro subpacotes semânticos; `harness_checks.py` é mantido no nível raiz do pacote por simplicidade de execução e está **isento** do limite de 400 linhas.
 - O harness verifica fronteiras de importação a partir de `MODULE_RULES`; quando a estrutura muda (novos módulos, renomeações), esse mapa **e** esta documentação precisam evoluir juntos. Módulos não registrados em `MODULE_RULES` geram violação `missing_module_rule` que quebra o build.
-- O harness não executa em CI remota ainda; roda manualmente via `PYTHONPATH=src python3 -m calosum.harness_checks`.
+- Em CI remota (GitHub Actions), os dois jobs (`harness` + `tests`) rodam em paralelo em cada push/PR para `main`. Ver `.github/workflows/ci.yml`.
 
 ## Checks Atuais (harness_checks.py)
 
@@ -48,6 +47,24 @@ Conforme a base de código cresce, a fragmentação de dezenas de módulos na me
 | `agents_missing_link` | AGENTS.md não referencia link obrigatório de docs |
 | `docs_index_missing_ref` | docs/index.md não referencia doc obrigatório |
 | `plan_missing_heading` | Plano em active/ ou completed/ sem heading obrigatório |
-| `module_too_large` | Módulo .py com mais de 400 linhas |
+| `module_too_large` | Módulo .py com mais de 400 linhas (harness_checks.py isento) |
 | `missing_module_rule` | Módulo não registrado em MODULE_RULES |
 | `forbidden_internal_import` | Módulo importa pacote não permitido pela regra de fronteira |
+| `missing_package_docstring` | `__init__.py` de pacote semântico sem docstring de módulo |
+| `shared_domain_runtime_import` | Módulo em `shared/` importa de `domain.*` fora de `TYPE_CHECKING` |
+
+## Benchmarks
+
+O script `scripts/benchmark_right_hemisphere.py` mede latência e qualidade do hemisfério direito HuggingFace com um checkpoint real.
+
+```bash
+# Rodar benchmark (CPU-only, ~2-5 min na primeira execução pelo download do modelo)
+PYTHONPATH=src .venv/bin/python3 scripts/benchmark_right_hemisphere.py
+```
+
+**Saída:** relatório datado em `docs/reports/benchmark_right_hemi_YYYY-MM-DD.md` com:
+- Latência (média, mediana, P95, min, max) em ms
+- `surprise_score` médio e desvio padrão
+- Tempo de carregamento do modelo
+
+**Baseline:** usar como referência para comparação futura entre backends (`huggingface`, `vjepa21`, `jepars`).
