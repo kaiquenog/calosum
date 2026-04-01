@@ -219,142 +219,21 @@ class CalosumAgent:
         _precomputed_right: Any | None = None,
         _precomputed_workspace: CognitiveWorkspace | None = None,
     ) -> GroupTurnResult:
-        if not variants:
-            raise ValueError("process_group_turn requires at least one variant")
-
-        started_at = perf_counter()
-        
-        workspace = _precomputed_workspace
-        if workspace is None:
-            from calosum.domain.workspace import init_turn_workspace
-            workspace = init_turn_workspace(self, user_turn)
-            self.last_workspace_by_session[user_turn.session_id] = workspace
-        
-        memory_context = _precomputed_memory
-        if memory_context is None:
-            memory_context = await maybe_await(
-                self.execution_engine.call_component(
-                    self.memory_system, "abuild_context", "build_context", user_turn
-                )
-            )
-            
-        right_state = _precomputed_right
-        if right_state is None:
-            right_state = await maybe_await(
-                self.execution_engine.call_component(
-                    self.right_hemisphere, "aperceive", "perceive", user_turn, memory_context, workspace
-                )
-            )
-        candidates: list[CognitiveCandidate] = []
-
-        capabilities_dict = None
-        if self.capability_snapshot:
-            from dataclasses import asdict
-            capabilities_dict = asdict(self.capability_snapshot)
-
-        async def _run_variant(variant: CognitiveVariantSpec) -> CognitiveCandidate:
-            variant_started_at = perf_counter()
-            tokenizer = self.execution_engine.clone_component_with_overrides(self.tokenizer, variant.tokenizer_overrides)
-            left_hemisphere = self.execution_engine.clone_component_with_overrides(self.left_hemisphere, variant.left_overrides)
-            turn_result = await self.execution_engine.run_variant(
-                user_turn=user_turn,
-                memory_context=memory_context,
-                right_state=right_state,
-                tokenizer=tokenizer,
-                left_hemisphere=left_hemisphere,
-                variant_label=variant.variant_id,
-                bridge_directives=self.evolution_manager.approved_prompt_directives + list(variant.bridge_directives),
-                capabilities=capabilities_dict,
-                workspace=workspace,
-            )
-            turn_result.latency_ms = round((perf_counter() - variant_started_at) * 1000.0, 3)
-            return CognitiveCandidate(variant=variant, turn_result=turn_result)
-
-        candidates = list(await asyncio.gather(*(_run_variant(variant) for variant in variants)))
-
-        reflection = await maybe_await(
-            self.execution_engine.call_component(
-                self.reflection_controller,
-                "aevaluate",
-                "evaluate",
-                candidates,
-                self.tokenizer,
-            )
-        )
-        self.reflection_controller.apply_neuroplasticity(self.tokenizer, reflection)
-        selected_candidate = next(
-            item
-            for item in candidates
-            if item.variant.variant_id == reflection.selected_variant_id
-        )
-        selected_candidate.turn_result.latency_ms = round((perf_counter() - started_at) * 1000.0, 3)
-        await self._store_selected_episode(selected_candidate.turn_result)
-        await maybe_await(
-            self.execution_engine.call_component(
-                self.telemetry_bus,
-                "arecord_turn",
-                "record_turn",
-                selected_candidate.turn_result,
-            )
-        )
-        await maybe_await(
-            self.execution_engine.call_component(
-                self.telemetry_bus,
-                "arecord_reflection",
-                "record_reflection",
-                user_turn.session_id,
-                user_turn.turn_id,
-                reflection.as_dict(),
-            )
-        )
-        
-        await self._awareness_loop(user_turn.session_id)
-
-        return GroupTurnResult(
-            user_turn=user_turn,
-            right_state=right_state,
-            candidates=candidates,
-            selected_result=selected_candidate.turn_result,
-            reflection=reflection,
+        from calosum.domain.group_turn import process_group_turn as _pgt
+        return await _pgt(
+            self, user_turn, variants, 
+            _precomputed_memory=_precomputed_memory, 
+            _precomputed_right=_precomputed_right, 
+            _precomputed_workspace=_precomputed_workspace
         )
 
     async def _awareness_loop(self, session_id: str) -> None:
-        self._awareness_turn_counts[session_id] = self._awareness_turn_counts.get(session_id, 0) + 1
-        if self._awareness_turn_counts[session_id] % max(1, self.config.awareness_interval_turns) != 0:
-            return
-
-        diagnostic = self.analyze_session(session_id, persist=True)
-        if not diagnostic.bottlenecks:
-            return
-
-        for directive in self.evolution_manager.proposer.propose(diagnostic):
-            if directive.directive_type == DirectiveType.PARAMETER:
-                self.evolution_manager.apply_directive(directive, self)
-                if self.evolution_manager.archive:
-                    self.evolution_manager.archive.record_directive(directive, event="auto_applied")
-                continue
-            self.evolution_manager.queue_directive(directive)
+        from calosum.domain.awareness import process_awareness_loop
+        await process_awareness_loop(self, session_id)
 
     def analyze_session(self, session_id: str, *, persist: bool = False) -> SessionDiagnostic:
-        dashboard = self.cognitive_dashboard(session_id)
-        if not dashboard.get("decision"):
-            diagnostic = SessionDiagnostic(
-                session_id=session_id, analyzed_turns=0, tool_success_rate=1.0,
-                average_retries=0.0, average_surprise=0.0, bottlenecks=[],
-                pending_approval_backlog=0,
-                pending_directive_count=len(self.evolution_manager.pending_directives))
-        else:
-            from calosum.domain.introspection import IntrospectionEngine
-            diagnostic = IntrospectionEngine().analyze(
-                session_id, dashboard,
-                pending_directive_count=len(self.evolution_manager.pending_directives))
-        self.latest_awareness_by_session[session_id] = diagnostic
-        if persist:
-            if hasattr(self.telemetry_bus, "record_awareness"):
-                self.telemetry_bus.record_awareness(session_id, diagnostic)
-            if self.evolution_archive:
-                self.evolution_archive.record_diagnostic(diagnostic)
-        return diagnostic
+        from calosum.domain.awareness import analyze_session as _analyze_session
+        return _analyze_session(self, session_id, persist=persist)
 
     def latest_awareness_for_session(self, sid: str | None = None) -> SessionDiagnostic | None:
         if sid: return self.latest_awareness_by_session.get(sid)

@@ -10,7 +10,7 @@ from calosum.adapters.contract_wrappers import (
     ContractEnforcedLeftHemisphereAdapter,
     ContractEnforcedRightHemisphereAdapter,
 )
-from calosum.adapters.gea_experience_store import GeaExperienceStoreConfig, SqliteGeaExperienceStore
+from calosum.adapters.gea_experience_graph import GeaExperienceGraphConfig, GraphGeaExperienceStore
 from calosum.adapters.gea_reflection_experience import ExperienceAwareGEAReflectionController
 from calosum.adapters.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
 from calosum.adapters.llm_failover import ResilientLeftHemisphereAdapter
@@ -46,8 +46,8 @@ def resolve_reflection_controller(settings: InfrastructureSettings):
     if settings.gea_experience_store_path is None:
         return GEAReflectionController()
 
-    store = SqliteGeaExperienceStore(
-        GeaExperienceStoreConfig(path=settings.gea_experience_store_path)
+    store = GraphGeaExperienceStore(
+        GeaExperienceGraphConfig(path=settings.gea_experience_store_path)
     )
     return ExperienceAwareGEAReflectionController(experience_store=store)
 

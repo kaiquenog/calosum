@@ -12,6 +12,7 @@ from calosum.shared.ports import BridgeFusionPort, BridgeStateStorePort
 
 @dataclass(slots=True)
 class CognitiveTokenizerConfig:
+    target_dim: int = 384
     bottleneck_tokens: int = 6
     base_temperature: float = 0.25
     salience_threshold: float = 0.7
@@ -52,8 +53,8 @@ class CognitiveTokenizer:
             import torch
             import torch.nn as nn
             
-            # Assume 384 from Sprint 1 (all-MiniLM-L6-v2)
-            self.latent_dim = 384 
+            # Target dimension dinâmico via configuração
+            self.latent_dim = self.config.target_dim
             # Saída: 1 neurônio para Saliência + N neurônios para Soft Prompts
             self.output_dim = 1 + self.config.bottleneck_tokens
             
@@ -81,6 +82,7 @@ class CognitiveTokenizer:
             return
 
         for key in (
+            "target_dim",
             "bottleneck_tokens",
             "base_temperature",
             "salience_threshold",
@@ -97,6 +99,7 @@ class CognitiveTokenizer:
             return
             
         payload = {
+            "target_dim": self.config.target_dim,
             "bottleneck_tokens": self.config.bottleneck_tokens,
             "base_temperature": self.config.base_temperature,
             "salience_threshold": self.config.salience_threshold,
@@ -135,6 +138,9 @@ class CognitiveTokenizer:
             fused_latent, meta = self.fusion.fuse_latent(
                 latent_vector=right_state.latent_vector,
                 emotional_labels=right_state.emotional_labels,
+                surprise=right_state.surprise_score,
+                confidence=right_state.confidence,
+                context_novelty=getattr(right_state, "context_novelty", 0.0),
             )
             telemetry = dict(right_state.telemetry)
             telemetry.update(meta)

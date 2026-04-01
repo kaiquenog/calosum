@@ -49,21 +49,47 @@ class CrossAttentionBridgeAdapter:
         except ImportError:
             self._torch_available = False
 
+    def compute_adaptive_gate(
+        self,
+        surprise: float,
+        confidence: float,
+        context_novelty: float,
+    ) -> tuple[float, float]:
+        """Gating adaptativo baseado em estado cognitivo."""
+        # Base weights
+        latent_weight = 0.5 + 0.3 * surprise - 0.2 * confidence
+        
+        # Novelty adjustment: novelty puxa para 50/50
+        novelty_factor = context_novelty * 0.2
+        latent_weight = latent_weight * (1 - novelty_factor) + 0.5 * novelty_factor
+        
+        # Clamp
+        latent_weight = max(0.2, min(0.8, latent_weight))
+        context_weight = 1.0 - latent_weight
+        
+        return float(latent_weight), float(context_weight)
+
     def fuse_latent(
         self,
+        *,
         latent_vector: list[float],
         emotional_labels: list[str],
+        surprise: float = 0.0,
+        confidence: float = 0.0,
+        context_novelty: float = 0.0,
     ) -> tuple[list[float], dict[str, Any]]:
         x = self._fit(np.asarray(latent_vector, dtype=np.float32), self.config.target_dim)
         if x.size == 0:
             return [], {"fusion_backend": "cross_attention", "attention_entropy": 0.0}
 
+        lw, cw = self.compute_adaptive_gate(surprise, confidence, context_novelty)
+
         if self._torch_available:
-            return self._learned_fuse(x, emotional_labels or ["neutral"])
-        return self._heuristic_fuse(x, emotional_labels or ["neutral"])
+            return self._learned_fuse(x, emotional_labels or ["neutral"], lw, cw)
+        return self._heuristic_fuse(x, emotional_labels or ["neutral"], lw, cw)
 
     def _learned_fuse(
-        self, x: np.ndarray, labels: list[str]
+        self, x: np.ndarray, labels: list[str], latent_w: float, context_w: float
     ) -> tuple[list[float], dict[str, Any]]:
         """Cross-attention with learned nn.Linear projections."""
         import torch
@@ -80,7 +106,7 @@ class CrossAttentionBridgeAdapter:
         attn = torch.softmax(scores, dim=-1)
         context = torch.matmul(attn, V)   # (1, d)
 
-        fused = self._W_out(0.72 * x_tensor + 0.28 * context)
+        fused = self._W_out(latent_w * x_tensor + context_w * context)
         fused = fused / (fused.norm() + 1e-8)
         entropy = float(-torch.sum(attn.detach() * torch.log(attn.detach() + 1e-9)))
 
@@ -93,7 +119,7 @@ class CrossAttentionBridgeAdapter:
         }
 
     def _heuristic_fuse(
-        self, x: np.ndarray, labels: list[str]
+        self, x: np.ndarray, labels: list[str], latent_w: float, context_w: float
     ) -> tuple[list[float], dict[str, Any]]:
         """Fallback using deterministic label vectors when torch unavailable."""
         keys = self._label_matrix_deterministic(labels, self.config.target_dim)
@@ -101,7 +127,7 @@ class CrossAttentionBridgeAdapter:
         attn = self._softmax(scores)
         context = attn @ keys
 
-        gated = (0.72 * x) + (0.28 * context)
+        gated = (latent_w * x) + (context_w * context)
         norm = np.linalg.norm(gated)
         fused = gated if norm == 0 else gated / norm
 

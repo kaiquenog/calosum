@@ -21,6 +21,7 @@ from calosum.adapters.llm_payloads import (
     load_compiled_examples,
     load_compiled_prompt_artifact,
 )
+from calosum.adapters.llm_payload_parser import parse_to_result, fallback_result
 from calosum.shared.async_utils import run_sync
 from calosum.shared.types import (
     ActionExecutionResult,
@@ -136,7 +137,7 @@ class QwenLeftHemisphereAdapter:
             content = self._extract_content(data, request["api_mode"])
 
             if not content.strip():
-                result = self._fallback_result(
+                result = fallback_result(
                     f"empty_response_from_{request['api_mode']}",
                     request["api_mode"],
                     request["resolved_model"],
@@ -146,10 +147,12 @@ class QwenLeftHemisphereAdapter:
                 return result
 
             parsed = json.loads(content)
-            result = self._parse_to_result(
+            result = parse_to_result(
                 parsed,
                 api_mode=request["api_mode"],
                 resolved_model=request["resolved_model"],
+                compiled_few_shot_count=len(self.compiled_examples),
+                compiled_prompt_selected=bool(self.compiled_prompt_artifact.get("selected_prompt")),
                 system_directives=bridge_packet.control.system_directives,
             )
             
@@ -177,7 +180,7 @@ class QwenLeftHemisphereAdapter:
                 workspace.left_notes.update({"error": "json_decode_error", "details": str(exc)})
             return result
         except Exception as exc:
-            result = self._fallback_result(
+            result = fallback_result(
                 repr(exc),
                 request["api_mode"],
                 request["resolved_model"],
@@ -313,83 +316,3 @@ class QwenLeftHemisphereAdapter:
         if api_mode == "openai_responses":
             return extract_responses_content(data)
         return extract_chat_content(data)
-
-    def _parse_to_result(
-        self,
-        parsed: dict[str, Any],
-        *,
-        api_mode: str,
-        resolved_model: str,
-        system_directives: list[str] | None = None,
-    ) -> LeftHemisphereResult:
-        lambda_prog = parsed.get("lambda_program", {})
-        response_text = str(parsed.get("response_text", "") or "")
-        reasoning_summary = [str(item) for item in parsed.get("reasoning_summary", []) if str(item).strip()]
-
-        program = TypedLambdaProgram(
-            signature=str(lambda_prog.get("signature") or "Context -> Response"),
-            expression=str(
-                lambda_prog.get("expression")
-                or "(lambda context memory (sequence (emit respond_text)))"
-            ),
-            expected_effect=str(lambda_prog.get("expected_effect") or "Deliver a safe response"),
-        )
-
-        actions = [
-            PrimitiveAction(
-                action_type=str(item.get("action_type", "unknown")),
-                typed_signature=str(item.get("typed_signature", "Any -> Any")),
-                payload=dict(item.get("payload", {})),
-                safety_invariants=[str(i) for i in item.get("safety_invariants", []) if isinstance(i, str) and i.strip()],
-            )
-            for item in parsed.get("actions", []) if isinstance(item, dict)
-        ]
-
-        if not response_text.strip():
-            for action in actions:
-                if action.action_type == "respond_text":
-                    candidate = action.payload.get("text")
-                    if isinstance(candidate, str) and candidate.strip():
-                        response_text = candidate.strip()
-                        break
-        if not actions and response_text.strip():
-            actions = [PrimitiveAction(action_type="respond_text", typed_signature="ResponsePlan -> SafeTextMessage", payload={"text": response_text}, safety_invariants=["safe output only"])]
-        if not reasoning_summary: reasoning_summary = ["structured_output_ok"]
-        if not response_text.strip() and not actions:
-            raise ValueError("incomplete_structured_output: empty response_text and no actions")
-
-        return LeftHemisphereResult(
-            response_text=response_text,
-            lambda_program=program,
-            actions=actions,
-            reasoning_summary=reasoning_summary,
-            telemetry={
-                "adapter": "QwenLeftHemisphereAdapter",
-                "api_mode": api_mode,
-                "model_name": resolved_model,
-                "compiled_few_shot_count": len(self.compiled_examples),
-                "compiled_prompt_selected": bool(self.compiled_prompt_artifact.get("selected_prompt")),
-                "system_directives": system_directives or [],
-            },
-        )
-
-    def _fallback_result(
-        self,
-        error: str,
-        api_mode: str,
-        resolved_model: str,
-        system_directives: list[str] | None = None,
-    ) -> LeftHemisphereResult:
-        return LeftHemisphereResult(
-            response_text="Desculpe, meu subsistema de raciocínio falhou temporariamente.",
-            lambda_program=TypedLambdaProgram("Fallback", "()", "None"),
-            actions=[],
-            reasoning_summary=[f"Erro LLM: {error}"],
-            telemetry={
-                "adapter": "QwenLeftHemisphereAdapter",
-                "api_mode": api_mode,
-                "model_name": resolved_model,
-                "error": error,
-                "system_directives": system_directives or [],
-            },
-        )

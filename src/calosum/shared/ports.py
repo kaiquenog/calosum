@@ -177,8 +177,12 @@ class LatentExchangePort(Protocol):
 class BridgeFusionPort(Protocol):
     def fuse_latent(
         self,
+        *,
         latent_vector: list[float],
         emotional_labels: list[str],
+        surprise: float = 0.0,
+        confidence: float = 0.0,
+        context_novelty: float = 0.0,
     ) -> tuple[list[float], dict[str, Any]]: ...
 
 

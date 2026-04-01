@@ -12,7 +12,7 @@ class CrossAttentionBridgeTests(unittest.TestCase):
         adapter = CrossAttentionBridgeAdapter()
         latent = [0.01 * i for i in range(384)]
 
-        fused, meta = adapter.fuse_latent(latent, ["ansioso", "urgente"])
+        fused, meta = adapter.fuse_latent(latent_vector=latent, emotional_labels=["ansioso", "urgente"])
 
         self.assertEqual(len(fused), 384)
         self.assertIn(meta["fusion_backend"], {"cross_attention_heuristic", "learned_cross_attention"})
