@@ -347,6 +347,8 @@ class CalosumAgentBuilder:
             return "openai_responses_adapter"
         if provider in {"openai_chat", "chat"}:
             return "openai_chat_adapter"
+        if provider == "openrouter":
+            return "openrouter_adapter"
         if "api.openai.com" in endpoint:
             if endpoint.rstrip("/").endswith("/chat/completions"):
                 return "openai_chat_adapter"

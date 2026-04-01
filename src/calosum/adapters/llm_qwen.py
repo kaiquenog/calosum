@@ -44,7 +44,6 @@ class QwenAdapterConfig:
     reasoning_effort: str | None = None
     compiled_prompt_path: Path | None = Path(".calosum-runtime/dspy_artifacts/latest/compiled_prompt.json")
 
-
 class QwenLeftHemisphereAdapter:
     """
     Adapter estruturado para o hemisferio esquerdo.
@@ -63,6 +62,11 @@ class QwenLeftHemisphereAdapter:
         headers: dict[str, str] = {}
         if self.config.api_key and self.config.api_key != "empty":
             headers["Authorization"] = f"Bearer {self.config.api_key}"
+        
+        if self.config.provider.strip().lower() == "openrouter":
+            headers["HTTP-Referer"] = "https://github.com/kaiquenog/calosum"
+            headers["X-Title"] = "Calosum Agent Framework"
+
         self.client = client or httpx.AsyncClient(headers=headers, timeout=300.0)
         self.compiled_prompt_artifact = load_compiled_prompt_artifact(self.config.compiled_prompt_path)
         self.compiled_examples = load_compiled_examples(self.config.compiled_prompt_path)
@@ -157,7 +161,6 @@ class QwenLeftHemisphereAdapter:
                     "introspective_intent": introspective_intent
                 })
             return result
-            
         except json.JSONDecodeError as exc:
             result = LeftHemisphereResult(
                 response_text="",
@@ -245,6 +248,12 @@ class QwenLeftHemisphereAdapter:
                 "url": self._chat_completions_url(), "payload": build_openai_chat_payload(prompt, resolved_model, self.config.max_tokens),
             }
 
+        if api_mode == "openrouter":
+            return {
+                "api_mode": api_mode, "resolved_model": resolved_model,
+                "url": self._chat_completions_url(), "payload": build_openai_chat_payload(prompt, resolved_model, self.config.max_tokens),
+            }
+
         return {
             "api_mode": api_mode, "resolved_model": resolved_model,
             "url": self._chat_completions_url(), "payload": build_compatible_chat_payload(prompt, resolved_model, self.config.max_tokens),
@@ -252,7 +261,7 @@ class QwenLeftHemisphereAdapter:
 
     def _resolve_api_mode(self) -> str:
         provider = self.config.provider.strip().lower()
-        if provider in {"openai_responses", "openai_chat", "openai_compatible_chat"}:
+        if provider in {"openai_responses", "openai_chat", "openai_compatible_chat", "openrouter"}:
             return provider
         if provider in {"openai", "responses"}:
             return "openai_responses"
@@ -277,6 +286,9 @@ class QwenLeftHemisphereAdapter:
         return model
 
     def _responses_url(self) -> str:
+        if self.config.provider.strip().lower() == "openrouter" and self.config.api_url == QwenAdapterConfig.api_url:
+             return "https://openrouter.ai/api/v1/responses"
+        
         base = self.config.api_url.rstrip("/")
         if base.endswith("/chat/completions"):
             base = base[: -len("/chat/completions")]
@@ -287,6 +299,9 @@ class QwenLeftHemisphereAdapter:
         return f"{base}/v1/responses"
 
     def _chat_completions_url(self) -> str:
+        if self.config.provider.strip().lower() == "openrouter" and self.config.api_url == QwenAdapterConfig.api_url:
+            return "https://openrouter.ai/api/v1/chat/completions"
+            
         base = self.config.api_url.rstrip("/")
         if base.endswith("/chat/completions"):
             return base
@@ -320,45 +335,26 @@ class QwenLeftHemisphereAdapter:
             expected_effect=str(lambda_prog.get("expected_effect") or "Deliver a safe response"),
         )
 
-        actions: list[PrimitiveAction] = []
-        for item in parsed.get("actions", []):
-            if not isinstance(item, dict):
-                continue
-            actions.append(
-                PrimitiveAction(
-                    action_type=str(item.get("action_type", "unknown")),
-                    typed_signature=str(item.get("typed_signature", "Any -> Any")),
-                    payload=dict(item.get("payload", {})),
-                    safety_invariants=[
-                        str(invariant)
-                        for invariant in item.get("safety_invariants", [])
-                        if isinstance(invariant, str) and invariant.strip()
-                    ],
-                )
+        actions = [
+            PrimitiveAction(
+                action_type=str(item.get("action_type", "unknown")),
+                typed_signature=str(item.get("typed_signature", "Any -> Any")),
+                payload=dict(item.get("payload", {})),
+                safety_invariants=[str(i) for i in item.get("safety_invariants", []) if isinstance(i, str) and i.strip()],
             )
+            for item in parsed.get("actions", []) if isinstance(item, dict)
+        ]
 
         if not response_text.strip():
             for action in actions:
-                if action.action_type != "respond_text":
-                    continue
-                candidate = action.payload.get("text")
-                if isinstance(candidate, str) and candidate.strip():
-                    response_text = candidate.strip()
-                    break
-
+                if action.action_type == "respond_text":
+                    candidate = action.payload.get("text")
+                    if isinstance(candidate, str) and candidate.strip():
+                        response_text = candidate.strip()
+                        break
         if not actions and response_text.strip():
-            actions = [
-                PrimitiveAction(
-                    action_type="respond_text",
-                    typed_signature="ResponsePlan -> SafeTextMessage",
-                    payload={"text": response_text},
-                    safety_invariants=["safe output only"],
-                )
-            ]
-
-        if not reasoning_summary:
-            reasoning_summary = ["structured_output_ok"]
-
+            actions = [PrimitiveAction(action_type="respond_text", typed_signature="ResponsePlan -> SafeTextMessage", payload={"text": response_text}, safety_invariants=["safe output only"])]
+        if not reasoning_summary: reasoning_summary = ["structured_output_ok"]
         if not response_text.strip() and not actions:
             raise ValueError("incomplete_structured_output: empty response_text and no actions")
 

@@ -48,6 +48,11 @@ class TextEmbeddingAdapter:
         headers: dict[str, str] = {}
         if self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
+        
+        if self.config.provider.strip().lower() == "openrouter":
+            headers["HTTP-Referer"] = "https://github.com/kaiquenog/calosum"
+            headers["X-Title"] = "Calosum Agent Framework"
+
         self.client = client or httpx.AsyncClient(headers=headers, timeout=self.config.timeout_s)
         self._sentence_transformer: Any | None = None
         self.codec: VectorCodecPort | None = codec
@@ -94,7 +99,7 @@ class TextEmbeddingAdapter:
 
     def _resolve_provider(self) -> str:
         provider = self.config.provider.strip().lower()
-        if provider in {"openai", "openai_compatible", "huggingface", "lexical"}:
+        if provider in {"openai", "openai_compatible", "huggingface", "lexical", "openrouter"}:
             return provider
 
         if self.config.api_url:
@@ -125,6 +130,9 @@ class TextEmbeddingAdapter:
         return vectors
 
     def _embeddings_url(self) -> str:
+        if self.config.provider.strip().lower() == "openrouter" and self.config.api_url is None:
+            return "https://openrouter.ai/api/v1/embeddings"
+            
         base = (self.config.api_url or "https://api.openai.com/v1").rstrip("/")
         if base.endswith("/chat/completions"):
             base = base[: -len("/chat/completions")]
