@@ -162,6 +162,15 @@ class QdrantDualMemoryAdapter:
         payload = episode_payload(episode)
         vector = await self._embed_text(episode_document(episode))
 
+        # Check if episode has a valid latent_vector from JEPA
+        latent_vector = payload.get("latent_vector", [])
+        if latent_vector and self.config.vector_size > 0:
+            # Validate latent_vector dimension matches expected vector_size
+            if len(latent_vector) == self.config.vector_size:
+                # Use the JEPA latent vector directly as the Qdrant vector
+                vector = [float(x) for x in latent_vector]
+            # If dimension doesn't match, fall back to text embedding (existing behavior)
+
         if self.codec is not None:
             latent = payload.get("latent_vector", [])
             if latent:

@@ -16,11 +16,18 @@ def build_idle_foraging_turn(memory_system) -> UserTurn:
         except Exception:
             pass
 
+    # Epistemic gain and Expected Free Energy (EFE) heuristic for endogenous exploration
+    efе_heuristic = (
+        " Focus on reducing uncertainty and increasing epistemic value by seeking "
+        "novel predictions and testing knowledge gaps through Expected Free Energy minimization."
+    )
+
     prompt = (
         "SYSTEM IDLE MODE. You are in an endogenous goal generation state. "
         "Review your current knowledge and project context for gaps, staleness, or ambiguity."
-        f"{graph_data} "
-        "Actively use your tools (like search_web, execute_bash, read_file) to forage for new, relevant information "
-        "and propose plans or semantic rules to reduce future uncertainty."
+        f"{graph_data}"
+        f"{efе_heuristic}"
+        " Actively use your tools (like search_web, execute_bash, read_file) to forage for new, relevant information "
+        "and propose plans or semantic rules to reduce future uncertainty through epistemic gain."
     )
     return UserTurn(session_id=session_id, user_text=prompt, signals=[])

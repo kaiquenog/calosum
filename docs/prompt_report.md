@@ -4,6 +4,8 @@ Sua tarefa é gerar **o report completo e exploratório para o framework Calosum
 
 O objetivo é levar o Calosum a **100% do aspiracional dual-hemisfério** que foi definido no histórico da conversa: 
 - Hemisfério Direito (emocional/intuitivo/criativo) = world model preditivo baseado em **V-JEPA 2** (arXiv 2506.09985) ou **VL-JEPA** (arXiv 2512.10942) + variantes action-conditioned (V-JEPA 2-AC).
+git clone https://github.com/Physical-Intelligence/openpi
+huggingface-cli download lerobot/pi0_base
 - Hemisfério Esquerdo (lógico/analítico) = small LLM + **RLM (Recursive Language Models)** oficial (arXiv 2512.24601, repo alexzhang13/rlm).
 - Corpus Caloso = fusão multimodal com cross-attention.
 - GEA = Group-Evolving Agents real (arXiv 2602.04837) com experience sharing.

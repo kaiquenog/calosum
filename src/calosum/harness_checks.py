@@ -162,6 +162,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "shared.ports",
         "shared.types"
     },
+    "bootstrap.jepa_rs_manager": {"shared.types"},
     "bootstrap.cli": {
         "bootstrap.factory",
         "domain.metacognition",
