@@ -32,10 +32,17 @@ class DualHemisphereE2ETests(unittest.TestCase):
                 )
             )
 
-            self.assertGreaterEqual(result.right_state.surprise_score, 0.0)
-            self.assertLessEqual(result.right_state.surprise_score, 1.0)
-            self.assertTrue(result.left_result.actions)
-            self.assertTrue(any(item.status in {"executed", "planned"} for item in result.execution_results))
+            if hasattr(result, "selected_result"):
+                result_agent = result.selected_result
+                right_state = result.right_state
+            else:
+                result_agent = result
+                right_state = result.right_state
+
+            self.assertGreaterEqual(right_state.surprise_score, 0.0)
+            self.assertLessEqual(right_state.surprise_score, 1.0)
+            self.assertTrue(result_agent.left_result.actions)
+            self.assertTrue(any(item.status in {"executed", "planned"} for item in result_agent.execution_results))
 
 
 if __name__ == "__main__":

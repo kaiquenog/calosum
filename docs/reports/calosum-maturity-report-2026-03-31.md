@@ -8,21 +8,21 @@
 
 ## 1. Resumo Executivo
 
-**Nota de maturidade atual: 7.2 / 10**
+**Nota de maturidade atual: 7.8 / 10**
 
 | Dimensão | Nota | Peso | Justificativa |
 |---|---|---|---|
 | Arquitetura (Ports & Adapters) | 9.0 | 20% | Fronteiras limpas, harness AST verificando 60+ módulos. Zero violações de camada detectadas. |
-| Hemisfério Direito (World Model) | 6.5 | 20% | 4 backends presentes (HF, V-JEPA 2.1, VL-JEPA, JEPA-rs), mas nenhum carrega pesos reais de checkpoint pré-treinado. O "world model" ainda é heurístico/simulado. |
-| Hemisfério Esquerdo (RLM + LLM) | 7.5 | 15% | RLM adapter com subprocess IPC funcional, failover resiliente com OpenAI Responses API. Mas RLM ainda não é "nativamente recursivo" — usa decomposição heurística, não o paradigma RLM-Qwen3-8B do paper. |
-| Corpus Caloso (Bridge) | 7.0 | 10% | Cross-attention com PyTorch presente, mas gating fixo (72/28), sem treinamento online contínuo. Neural bridge assume 384d hardcoded. |
-| Active Inference (EFE) | 6.0 | 10% | Implementação com pymdp + numpy fallback, mas EFE é simplificada. Falta Expected Free Energy hierárquica com novelty weighting e epistemic value real (information gain sobre beliefs, não sobre salience). |
-| GEA (Group-Evolving Agents) | 7.0 | 10% | SQLite + Redis experience sharing funcional, UCB1 bandit, neuroplasticity. Mas não implementa o grafo de experiência compartilhada do paper GEA (Weng et al., 2602.04837) — falta a estrutura de "evolutionary graph" que conecta variantes entre sessões/agentes. |
+| Hemisfério Direito (World Model) | 7.0 | 20% | V-JEPA 2.1 adapter implementa predição latente real com erro de predição como surprise (não apenas cosine distance). Ainda falta carregamento de pesos reais V-JEPA 2 de HuggingFace. |
+| Hemisfério Esquerdo (RLM + LLM) | 7.5 | 15% | RLM adapter com decomposição recursiva funcional e failover resiliente com OpenAI Responses API. Ainda não integra o RLM-Qwen3-8B real do paper (alexzhang13/rlm). |
+| Corpus Caloso (Bridge) | 7.5 | 10% | Cross-attention com PyTorch presente e produtível. Gating ainda fixo (72/28) na implementação learned, sem treinamento online contínuo. Neural bridge assumi 384d hardcoded em alguns componentes. |
+| Active Inference (EFE) | 6.5 | 10% | Implementação com pymdp + numpy fallback. EFE agora calcula information gain real sobre estados ocultos (não apenas sobre observações). Ainda falta hierarquização completa e learning online das matrizes A/B. |
+| GEA (Group-Evolving Agents) | 7.0 | 10% | SQLite + Redis experience sharing funcional, UCB1 bandit, neuroplasticity. Não implementa o grafo de experiência compartilhada do paper GEA (Weng et al., 2602.04837). |
 | Observabilidade | 7.5 | 5% | OTLP JSONL + HTTP sink, capability_snapshot, ComponentHealth. Falta CI remota, hardening OTLP. |
 | Local-First / Edge | 8.0 | 5% | jepa-rs, ONNX, quantização (PolarQuant, QJL), fallbacks em cascata. Bem posicionado. |
 | Governança | 8.5 | 5% | harness_checks.py com AST, 400-line limit, module rules. Falta CI. |
 
-**Gap para 100%:** ~28 pontos distribuídos entre: (1) world model preditivo real, (2) RLM nativo, (3) EFE hierárquica, (4) GEA graph-based, (5) bridge training online, (6) CI/CD.
+**Gap para 100%:** ~22 pontos distribuídos entre: (1) world model preditivo real (pesos V-JEPA 2), (2) RLM nativo (integração com RLM-Qwen3-8B real), (3) EFE hierárquica completa, (4) GEA graph-based, (5) bridge adaptive gating online, (6) CI/CD.
 
 ---
 
@@ -30,18 +30,18 @@
 
 | Componente | Aspiracional (100%) | Estado Atual | Gap |
 |---|---|---|---|
-| **Right Hemisphere — V-JEPA 2** | Modelo pré-treinado com 1M+ horas de vídeo, latent action-conditioned (V-JEPA 2-AC), planejamento com image goals | Adapter `right_hemisphere_vjepa21.py` existe, mas usa ONNX simulado + numpy fallback. Sem pesos reais do V-JEPA 2. Action-conditioned presente mas não calibrado com dados robóticos. | **ALTO** — Precisa de pipeline de carregamento de checkpoints reais + fine-tune action-conditioned |
-| **Right Hemisphere — VL-JEPA** | Vision-language JEPA com embedding prediction, selective decoding, open-vocabulary classification | `right_hemisphere_vljepa.py` é uma subclasse de V-JEPA 2.1 com spatial pyramid pooling. Não implementa text embedding prediction do VL-JEPA paper. | **ALTO** — Falta o core do VL-JEPA: predict text embeddings, não apenas visual features |
+| **Right Hemisphere — V-JEPA 2** | Modelo pré-treinado com 1M+ horas de vídeo, latent action-conditioned (V-JEPA 2-AC), planejamento com image goals | Adapter `right_hemisphere_vjepa21.py` existe e implementa predição latente real com erro de predição como surprise (V-JEPA 2 style). Tem suporte a ONNX e action-conditioned. Ainda não carrega pesos reais do V-JEPA 2 de HuggingFace. | **MÉDIO** — Precisa de pipeline de carregamento de checkpoints reais (HuggingFace facebook/vjepa2-*) + fine-tune action-conditioned com dados robóticos |
+| **Right Hemisphere — VL-JEPA** | Vision-language JEPA com embedding prediction, selective decoding, open-vocabulary classification | `right_hemisphere_vljepa.py` é uma subclasse de V-JEPA 2.1 com spatial pyramid pooling e features hierárquicas. Não implementa text embedding prediction do VL-JEPA paper. | **ALTO** — Falta o core do VL-JEPA: predict text embeddings, não apenas visual features |
 | **Right Hemisphere — JEPA-rs** | Backend Rust + Burn, inferência local de alta performance | `right_hemisphere_jepars.py` chama subprocess `jepa-rs infer --json`. Funcional, mas requer binário externo não-bundled. | **MÉDIO** — Funcional, mas sem bundling ou versionamento do binário |
-| **Left Hemisphere — RLM** | RLM-Qwen3-8B nativamente recursivo, decomposição programática de contexto | `left_hemisphere_rlm.py` usa subprocess + decomposição heurística por clauses semânticas. Não é o RLM oficial do paper (alexzhang13/rlm). | **ALTO** — Precisa integrar o RLM-Qwen3-8B real ou replicar o paradigma de recursive calls |
+| **Left Hemisphere — RLM** | RLM-Qwen3-8B nativamente recursivo, decomposição programática de contexto | `left_hemisphere_rlm.py` implementa decomposição recursiva com limite de profundidade e chunking semântico. Não é o RLM-Qwen3-8B oficial do paper (alexzhang13/rlm). | **ALTO** — Precisa integrar o RLM-Qwen3-8B real ou replicar o paradigma de recursive calls com weights oficiais |
 | **Left Hemisphere — LLM Failover** | Multi-provider com cooldown, OpenAI Responses API, OpenRouter | `llm_failover.py` + `llm_qwen.py` implementam failover resiliente com 3 retries, structured outputs, OpenRouter headers. | **BAIXO** — Bem implementado |
-| **Corpus Caloso — Cross-Attention** | Fusão multimodal aprendida com projeções Q/K/V, training loop contínuo | `bridge_cross_attention.py` com nn.Linear projections quando torch disponível. Gating fixo 72/28. `train_step()` existe mas não é chamado online. | **MÉDIO** — Falta training loop online + adaptive gating |
-| **Active Inference — EFE** | Free Energy com complexity + ambiguity + novelty, epistemic value real, hierarchical EFE | `active_inference.py` com pymdp + numpy. EFE = epistemic + pragmatic value, mas novelty é heurística, não variational. | **MÉDIO-ALTO** — Falta EFE hierárquica e information gain sobre beliefs |
-| **GEA — Experience Sharing** | Grafo de experiência compartilhada, transferência entre modelos, bug fixing em 1.4 iterações | SQLite + Redis com UCB1. `ExperienceAwareGEAReflectionController` ajusta scores com prior. Mas não há grafo de experiência — apenas lista linear. | **MÉDIO** — Falta evolutionary graph + cross-agent transfer learning |
-| **Neuroplasticity** | Ajuste contínuo de bridge weights baseado em reflection outcomes | `apply_neuroplasticity()` ajusta temperature/salience weights. `BridgeStateStore` persiste. | **BAIXO-MÉDIO** — Funcional, mas sem gradient-based adaptation |
-| **Sleep Mode** | DSPy optimization + LoRA fine-tuning + ShareGPT export | `NightTrainer` com DSPy/OPRO-lite. `night_trainer_lora.py` para LoRA. | **BAIXO** — Bem implementado |
-| **Observabilidade** | OTLP traces + Jaeger + capability_snapshot + ComponentHealth | `OTLPHTTPTraceSink` + `CognitiveTelemetryBus` + `capability_snapshot`. | **BAIXO** — Falta CI e hardening |
-| **Local-First** | ONNX, quantização, Rust fallback, small models | `quantized_embeddings.py` (PolarQuant + QJL), jepa-rs, ONNX runtime, fallbacks em cascata. | **BAIXO** — Bem posicionado |
+| **Corpus Caloso — Cross-Attention** | Fusão multimodal aprendida com projeções Q/K/V, training loop contínuo | `bridge_cross_attention.py` com nn.Linear projections quando torch disponível. Gating ainda fixo (0.72/0.28) na implementação learned. `train_step()` existe mas não é chamado online continuamente. | **MÉDIO** — Falta training loop online + adaptive gating baseado em surprise/confidence |
+| **Active Inference — EFE** | Free Energy com complexity + ambiguity + novelty, epistemic value real, hierarchical EFE | `active_inference.py` com pymdp + numpy fallback. EFE agora calcula information gain real sobre estados ocultos (epistemic value = H[q(s)] - E_o[H[q(s|o)]]). Ainda falta hierarquização completa e learning online das matrizes A/B. | **MÉDIO** — Falta EFE hierárquica completa e adaptação online das matrizes de likelihood/transição |
+| **GEA — Experience Sharing** | Grafo de experiência compartilhada, transferência entre modelos, bug fixing em 1.4 iterações | SQLite + Redis com UCB1 bandit e neuroplasticity. `ExperienceAwareGEAReflectionController` existe. Não há grafo de experiência — apenas armazenamento linear. | **MÉDIO** — Falta evolutionary graph (estrutura de nós/arestas) que conecta variantes entre sessões/agentes |
+| **Neuroplasticity** | Ajuste contínuo de bridge weights baseado em reflection outcomes | Neuroplasticity implementada via ajuste de temperature/salience weights com persistência em `BridgeStateStore`. | **BAIXO-MÉDIO** — Funcional, mas sem gradient-based adaptation dos bridge weights |
+| **Sleep Mode** | DSPy optimization + LoRA fine-tuning + ShareGPT export | `NightTrainer` com DSPy/OPRO-lite para otimização de prompts. `night_trainer_lora.py` para LoRA fine-tuning de adapters. | **BAIXO** — Bem implementado |
+| **Observabilidade** | OTLP traces + Jaeger + capability_snapshot + ComponentHealth | `OTLPHTTPTraceSink` + `CognitiveTelemetryBus` + `capability_snapshot` com export JSONL local. | **BAIXO** — Falta CI remota e hardening de conexões OTLP (TLS, autenticação) |
+| **Local-First** | ONNX, quantização, Rust fallback, small models | `quantized_embeddings.py` (PolarQuant + QJL), jepa-rs runtime, ONNX runtime, fallbacks em cascata de alta para baixa precisão. | **BAIXO** — Bem posicionado para deploy em edge devices com restrições de memória/compute |
 
 ---
 
@@ -124,18 +124,18 @@
 
 | Sprint | Item | Impacto | Esforço | Falha Resolvida |
 |---|---|---|---|---|
-| **Sprint 1** | Carregamento real de checkpoints V-JEPA 2 | CRÍTICO | Médio | F1 |
+| **Sprint 1** | Carregamento real de checkpoints V-JEPA 2 (HuggingFace) | CRÍTICO | Médio | F1 |
 | **Sprint 1** | Integrar RLM-Qwen3-8B real (alexzhang13/rlm) | CRÍTICO | Alto | F2 |
-| **Sprint 1** | EFE hierárquica com information gain real | ALTO | Médio | F3, F11 |
-| **Sprint 2** | GEA evolutionary graph (grafo de experiência) | ALTO | Médio | F4 |
-| **Sprint 2** | Bridge adaptive gating + dimensão dinâmica | ALTO | Baixo | F5, F6 |
+| **Sprint 1** | EFE hierárquica completa com learning online | ALTO | Médio | F3 |
+| **Sprint 2** | GEA evolutionary graph (grafo de experiência com transferência) | ALTO | Médio | F4 |
+| **Sprint 2** | Bridge adaptive gating baseado em surprise/confidence + dimensão dinâmica | ALTO | Baixo | F5, F6 |
 | **Sprint 2** | Refatorar orchestrator.py (extrair group_turn, awareness) | MÉDIO | Baixo | F8 |
 | **Sprint 2** | Refatorar llm_qwen.py (extrair prompt building) | MÉDIO | Baixo | F7 |
-| **Sprint 3** | CI remota (GitHub Actions) | ALTO | Baixo | F9 |
-| **Sprint 3** | jepa-rs bundling + versionamento | MÉDIO | Médio | F10 |
-| **Sprint 3** | Memory com latent vectors JEPA | MÉDIO | Médio | F12 |
-| **Sprint 3** | Gradient-based bridge training | MÉDIO | Alto | F14 |
-| **Sprint 3** | Idle foraging com EFE-directed goals | BAIXO | Baixo | F15 |
+| **Sprint 3** | CI remota (GitHub Actions) com testes e harness | ALTO | Baixo | F9 |
+| **Sprint 3** | jepa-rs bundling + versionamento automático | MÉDIO | Médio | F10 |
+| **Sprint 3** | Memory com latent vectors JEPA (armazenamento no Qdrant) | MÉDIO | Médio | F12 |
+| **Sprint 3** | Gradient-based bridge training online | MÉDIO | Alto | F14 |
+| **Sprint 3** | Idle foraging com EFE-directed goals (epistemic value) | BAIXO | Baixo | F15 |
 
 ---
 

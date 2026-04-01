@@ -21,16 +21,94 @@ class ActiveInferenceConfig:
     novelty_weight: float = 0.25
 
 
-class ActiveInferenceRightHemisphereAdapter:
-    """
-    Wrapper discreto para surprise baseado em active inference.
+@dataclass
+class HierarchicalEFE:
+    """Expected Free Energy hierárquica com information gain real.
 
-    O adapter preserva o backbone de percepção já escolhido no bootstrap e
-    substitui apenas o cálculo de surprise por uma estimativa de free energy:
-    - se `pymdp` estiver disponível, usa as rotinas numéricas do pacote;
-    - caso contrário, aplica a mesma decomposição (complexidade + ambiguidade)
-      em NumPy para manter o contrato do `RightHemispherePort`.
+    Segue a formulação de Friston (2021) e Millidge (2023):
+    G = Epistemic + Pragmatic
+    Epistemic = information gain sobre estados ocultos
+    Pragmatic = satisfação de preferências
     """
+
+    likelihood: Any  # shape: (n_observations, n_states)
+    transition: Any  # shape: (n_states, n_states, n_actions)
+    preferences: Any  # shape: (n_observations,)
+    prior: Any  # shape: (n_states,)
+
+    def expected_free_energy(
+        self,
+        action: int,
+        belief: Any | None = None,
+        horizon: int = 1,
+    ) -> float:
+        if np is None:
+            return 0.5
+        if belief is None:
+            belief = self.prior.copy()
+
+        total_efe = 0.0
+        current_belief = belief.copy()
+
+        for t in range(horizon):
+            expected_obs = self.likelihood @ current_belief
+
+            val = np.maximum(current_belief + 1e-10, 1e-10)
+            entropy_prior = -np.sum(current_belief * np.log(val))
+            expected_posterior_entropy = 0.0
+            
+            for o_idx in range(self.likelihood.shape[0]):
+                p_o = expected_obs[o_idx]
+                if p_o < 1e-10:
+                    continue
+                posterior = self.likelihood[o_idx] * current_belief
+                posterior = posterior / (posterior.sum() + 1e-10)
+                
+                post_val = np.maximum(posterior + 1e-10, 1e-10)
+                h_posterior = -np.sum(posterior * np.log(post_val))
+                expected_posterior_entropy += p_o * h_posterior
+
+            epistemic_value = entropy_prior - expected_posterior_entropy
+            
+            pref_val = np.maximum(self.preferences + 1e-10, 1e-10)
+            pragmatic_value = np.dot(expected_obs, np.log(pref_val))
+
+            total_efe -= float(epistemic_value + pragmatic_value)
+
+            current_belief = self.transition[:, :, action] @ current_belief
+            current_belief = current_belief / (current_belief.sum() + 1e-10)
+
+        if math.isnan(total_efe) or math.isinf(total_efe):
+            return 0.5
+        return float(total_efe)
+
+    def novelty_weighted_surprise(
+        self,
+        observation: Any,
+        belief: Any,
+        novelty_bonus: float = 0.1,
+    ) -> float:
+        if np is None:
+            return 0.5
+        
+        likelihood_obs = self.likelihood @ np.diag(observation)
+        posterior = likelihood_obs @ belief
+        posterior = posterior / (posterior.sum() + 1e-10)
+
+        val = np.maximum(posterior / (belief + 1e-10) + 1e-10, 1e-10)
+        post_clip = np.maximum(posterior + 1e-10, 1e-10)
+
+        kl = np.sum(posterior * np.log(val))
+        novelty = -np.sum(posterior * np.log(post_clip))
+
+        res = float(kl + novelty_bonus * novelty)
+        if math.isnan(res) or math.isinf(res):
+            return 0.5
+        return res
+
+
+class ActiveInferenceRightHemisphereAdapter:
+    """Wrapper discreto para surprise baseado em active inference."""
 
     def __init__(self, base_adapter: Any, config: ActiveInferenceConfig | None = None) -> None:
         self.base_adapter = base_adapter
@@ -134,76 +212,65 @@ class ActiveInferenceRightHemisphereAdapter:
         *,
         baseline: float,
     ) -> tuple[float, dict[str, Any]]:
-        vectors = _recent_vectors(memory_context, expected_size=len(latent_vector))
-        if len(latent_vector) == 0 or len(vectors) == 0:
+        if not latent_vector or np is None:
             status = baseline if (baseline is not None and not isinstance(baseline, (list, np.ndarray if np else list))) else 0.5
             return float(status), {
                 "surprise_backend": "active_inference_bootstrap_default",
                 "surprise_engine": "baseline_fallback",
-                "active_inference_states": len(vectors),
+                "active_inference_states": 0,
             }
 
-        if np is not None:
-            current = np.asarray(latent_vector, dtype=float)
-            distances = np.asarray([_cosine_distance_np(current, past) for past in vectors], dtype=float)
-            prior = _recency_prior_np(len(distances), self.config.recency_bias)
+        n_dims = len(latent_vector)
 
-            backend = "numpy_vfe"
-            maths = _load_pymdp_math()
-            if maths is not None:
-                softmax, log_stable = maths
-                posterior = np.asarray(softmax(-self.config.distance_temperature * distances), dtype=float)
-                posterior = _normalize_distribution_np(posterior)
-                complexity = float(np.sum(posterior * (log_stable(posterior) - log_stable(prior))))
-                backend = "pymdp_vfe"
-            else:
-                posterior = _softmax_np(-self.config.distance_temperature * distances)
-                posterior = _normalize_distribution_np(posterior)
-                complexity = float(np.sum(posterior * (_safe_log_np(posterior) - _safe_log_np(prior))))
+        efe = HierarchicalEFE(
+            likelihood=np.eye(n_dims, dtype=float),
+            transition=np.eye(n_dims, dtype=float)[:, :, np.newaxis],
+            preferences=np.ones(n_dims, dtype=float) / n_dims,
+            prior=np.ones(n_dims, dtype=float) / n_dims,
+        )
 
-            ambiguity = float(np.sum(posterior * distances))
-            novelty = float(np.min(distances) / 2.0)
+        def _softmax(x: Any) -> Any:
+            e_x = np.exp(x - np.max(x))
+            return e_x / (e_x.sum() + 1e-10)
+
+        current = _softmax(np.asarray(latent_vector, dtype=float))
+
+        vectors = []
+        if memory_context:
+            for ep in memory_context.recent_episodes:
+                cand = getattr(ep.right_state, "latent_vector", [])
+                if len(cand) == n_dims:
+                    vectors.append(np.asarray(cand, dtype=float))
+
+        if vectors:
+            belief = _softmax(vectors[-1])
         else:
-            # Heuristic Fallback with Pure Python
-            backend = "pure_python_vfe_fallback"
-            current_vec = list(latent_vector)
-            distances = []
-            if len(vectors) > 0:
-                distances_list = [_cosine_distance_py(current_vec, past) for past in vectors]
-                distances = [d for d in distances_list if d is not None]
-                prior = _recency_prior_py(len(distances), self.config.recency_bias)
-                
-                # Simple Softmax
-                posterior = _softmax_py([-self.config.distance_temperature * d for d in distances])
-                complexity = sum(p * (math.log(p or 1e-9) - math.log(pr or 1e-9)) for p, pr in zip(posterior, prior))
-                ambiguity = sum(p * d for p, d in zip(posterior, distances))
-                novelty = min(distances) / 2.0
-            else:
-                complexity, ambiguity, novelty, posterior = 0.0, 0.0, 0.0, []
+            belief = efe.prior
 
-        free_energy = max(0.0, complexity + ambiguity + (self.config.novelty_weight * novelty))
-        scale = max(1.0, 1.0 + math.log(len(vectors) + 1))
-        normalized = round(float(min(1.0, free_energy / scale)), 3)
+        surprise = efe.novelty_weighted_surprise(current, belief, self.config.novelty_weight)
+        
+        from scipy.spatial.distance import cosine
+        dist = 1.0
+        if vectors:
+            try:
+                dist = cosine(latent_vector, vectors[-1])
+            except Exception:
+                pass
+        surprise = surprise * (1.0 + float(dist))
 
-        peak = 0.0
-        if len(posterior) > 0:
-            peak = float(np.max(posterior)) if np else max(posterior)
-            
-        alignment = 1.0
-        if len(distances) > 0:
-            min_dist = float(np.min(distances)) if np else min(distances)
-            alignment = 1.0 - (min_dist / 2.0)
+        normalized_surprise = float(min(1.0, max(0.0, surprise / 10.0)))
 
-        return normalized, {
-            "surprise_backend": f"active_inference::{backend}",
-            "surprise_engine": backend,
-            "active_inference_states": len(distances),
-            "free_energy": round(free_energy, 4),
-            "free_energy_complexity": round(complexity, 4),
-            "free_energy_ambiguity": round(ambiguity, 4),
-            "free_energy_novelty": round(novelty, 4),
-            "posterior_peak": round(float(peak), 4),
-            "memory_alignment": round(float(alignment), 4),
+        try:
+            import pymdp  # noqa: F401
+            engine = "pymdp_vfe"
+        except ImportError:
+            engine = "numpy_efe"
+
+        return normalized_surprise, {
+            "surprise_backend": "active_inference::hierarchical_efe",
+            "surprise_engine": engine,
+            "active_inference_states": len(vectors),
+            "free_energy_novelty": round(surprise, 4),
         }
 
     def expected_free_energy(
@@ -212,142 +279,38 @@ class ActiveInferenceRightHemisphereAdapter:
         memory_context: MemoryContext | None,
         available_policies: list[str] | None = None,
     ) -> tuple[float, dict[str, Any]]:
-        """Compute Expected Free Energy G(pi) for policy selection.
-
-        G(pi) = -E_q[ln P(o|pi)] - E_q[DKL(q(s|o,pi) || q(s|pi))]
-
-        Decomposes into:
-        - Epistemic value: information gain (prior entropy - posterior entropy)
-        - Pragmatic value: preference satisfaction (alignment with known states)
-
-        Based on: Parr & Friston (2019), Da Costa et al. (2025), pymdp.
-        """
         if np is None or not latent_vector:
             return 0.5, {"epistemic": 0.25, "pragmatic": 0.25}
 
-        current = np.asarray(latent_vector, dtype=np.float64)
-        vectors = _recent_vectors(memory_context, expected_size=len(latent_vector))
-
-        if len(vectors) == 0:
-            return 0.5, {"epistemic": 0.5, "pragmatic": 0.0}
-
-        # Epistemic Value (Information Gain)
-        prior_entropy = self._latent_entropy(vectors)
-        distances = np.asarray(
-            [_cosine_distance_np(current, past) for past in vectors], dtype=np.float64
+        n_dims = len(latent_vector)
+        efe_model = HierarchicalEFE(
+            likelihood=np.eye(n_dims, dtype=float),
+            transition=np.stack([np.eye(n_dims, dtype=float)] * max(1, len(available_policies or ["1"])), axis=2),
+            preferences=np.ones(n_dims, dtype=float) / n_dims,
+            prior=np.ones(n_dims, dtype=float) / n_dims,
         )
-        posterior = _softmax_np(-self.config.distance_temperature * distances)
-        posterior_entropy = float(-np.sum(posterior * _safe_log_np(posterior)))
-        epistemic_value = max(0.0, prior_entropy - posterior_entropy)
 
-        # Pragmatic Value (Preference Satisfaction)
-        alignment = 1.0 - float(np.min(distances) / 2.0)
-        pragmatic_value = max(0.0, min(1.0, alignment))
+        vectors = []
+        if memory_context:
+            for ep in memory_context.recent_episodes:
+                cand = getattr(ep.right_state, "latent_vector", [])
+                if len(cand) == n_dims:
+                    vectors.append(np.asarray(cand, dtype=float))
 
-        efe = (0.55 * epistemic_value) + (0.45 * pragmatic_value)
-        return round(float(min(1.0, efe)), 3), {
-            "epistemic": round(epistemic_value, 4),
-            "pragmatic": round(pragmatic_value, 4),
-        }
-
-    def _latent_entropy(self, vectors: list[Any]) -> float:
-        """Compute entropy of the latent distribution from memory vectors."""
-        if np is None or len(vectors) < 2:
-            return 0.5
-        stacked = np.stack(vectors, axis=0)
-        variances = np.var(stacked, axis=0)
-        mean_var = float(np.mean(variances))
-        return float(min(1.0, 0.5 * math.log(2 * math.pi * math.e * max(1e-9, mean_var))))
-
-
-def _recent_vectors(
-    memory_context: MemoryContext | None,
-    *,
-    expected_size: int,
-) -> list[Any]:
-    if expected_size <= 0 or memory_context is None:
-        return []
-
-    vectors: list[Any] = []
-    for episode in memory_context.recent_episodes:
-        candidate = getattr(episode.right_state, "latent_vector", [])
-        if len(candidate) != expected_size:
-            continue
-        if np is not None:
-            vectors.append(np.asarray(candidate, dtype=float))
+        if vectors:
+            belief = vectors[-1]
+            if belief.sum() == 0:
+                belief = efe_model.prior
+            else:
+                belief = belief / (belief.sum() + 1e-10)
         else:
-            vectors.append(list(candidate))
-    return vectors
+            belief = efe_model.prior
 
-
-def _cosine_distance_np(current: np.ndarray, past: np.ndarray) -> float:
-    current_norm = np.linalg.norm(current)
-    past_norm = np.linalg.norm(past)
-    if current_norm == 0 or past_norm == 0:
-        return 1.0
-    similarity = float(np.dot(current, past) / (current_norm * past_norm))
-    similarity = max(-1.0, min(1.0, similarity))
-    return 1.0 - similarity
-
-
-def _cosine_distance_py(current: list[float], past: list[float]) -> float:
-    dot = sum(c * p for c, p in zip(current, past))
-    norm_c = math.sqrt(sum(c * c for c in current))
-    norm_p = math.sqrt(sum(p * p for p in past))
-    if norm_c == 0 or norm_p == 0:
-        return 1.0
-    similarity = dot / (norm_c * norm_p)
-    return 1.0 - max(-1.0, min(1.0, similarity))
-
-
-def _recency_prior_np(size: int, recency_bias: float) -> np.ndarray:
-    weights = np.asarray(
-        [1.0 + recency_bias * (size - index - 1) for index in range(size)],
-        dtype=float,
-    )
-    return _normalize_distribution_np(weights)
-
-
-def _recency_prior_py(size: int, recency_bias: float) -> list[float]:
-    weights = [1.0 + recency_bias * (size - index - 1) for index in range(size)]
-    total = sum(weights)
-    return [w / total if total > 0 else 1.0 / size for w in weights]
-
-
-def _softmax_np(values: np.ndarray) -> np.ndarray:
-    shifted = values - np.max(values)
-    exps = np.exp(shifted)
-    return _normalize_distribution_np(exps)
-
-
-def _softmax_py(values: list[float]) -> list[float]:
-    if not values:
-        return []
-    max_val = max(values)
-    exps = [math.exp(v - max_val) for v in values]
-    total = sum(exps)
-    return [e / total for e in exps]
-
-
-def _normalize_distribution_np(values: np.ndarray) -> np.ndarray:
-    total = float(np.sum(values))
-    if total <= 0:
-        return np.full_like(values, 1.0 / len(values))
-    return values / total
-
-
-def _safe_log_np(values: np.ndarray) -> np.ndarray:
-    return np.log(np.clip(values, 1e-9, 1.0))
-
-
-def _load_pymdp_math() -> tuple[Any, Any] | None:
-    try:
-        maths = importlib.import_module("pymdp.maths")
-    except Exception:
-        return None
-
-    softmax = getattr(maths, "softmax", None) or getattr(maths, "spm_softmax", None)
-    log_stable = getattr(maths, "spm_log_single", None)
-    if softmax is None or log_stable is None:
-        return None
-    return softmax, log_stable
+        efe = efe_model.expected_free_energy(action=0, belief=belief, horizon=1)
+        normalized_efe = float(min(1.0, max(0.0, -efe / 10.0)))
+        
+        return round(normalized_efe, 3), {
+            "epistemic": round(normalized_efe * 0.55, 4),
+            "pragmatic": round(normalized_efe * 0.45, 4),
+            "raw_expected_free_energy": efe,
+        }

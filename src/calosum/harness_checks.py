@@ -192,7 +192,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.gea_experience_store": set(),
     "adapters.gea_experience_distributed": set(),
     "adapters.gea_reflection_experience": {"domain.bridge", "domain.metacognition"},
-    "adapters.left_hemisphere_rlm": {"shared.types"},
+    "adapters.left_hemisphere_rlm": {"shared.types", "shared.ports"},
     "adapters.llm_failover": {"shared.async_utils", "shared.ports", "shared.types"},
     "adapters.llm_payloads": {"shared.types"},
     "adapters.llm_qwen": {"adapters.llm_payloads", "shared.async_utils", "shared.types"},
