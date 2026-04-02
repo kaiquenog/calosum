@@ -14,6 +14,8 @@ DEFAULT_LEFT_PROMPT_TEMPLATE = """
 Analyze the input and generate a JSON object.
 
 Input: {input_text}
+Session Briefing:
+{session_briefing}
 Soft Prompts (Bridge): {soft_prompts}
 System Directives: {system_directives}
 
@@ -43,6 +45,7 @@ def build_left_hemisphere_prompt(
     bridge_packet: CognitiveBridgePacket,
     memory_context: MemoryContext,
     feedback: list[str] | None,
+    session_briefing: str | None = None,
 ) -> str:
     episodes = [
         (
@@ -68,6 +71,10 @@ def build_left_hemisphere_prompt(
             '- "read_file": { "path": "file/path.txt" }',
             '- "execute_bash": { "command": "ls -la" }',
             '- "introspect_self": { "query": "arquitetura" }',
+            '- "query_session_stats": { "session_id": "session-id", "last_n": 10 }',
+            '- "explain_last_decision": { "turn_id": "turn-id" }',
+            '- "read_architecture": { "component_name": "CalosumAgent" }',
+            '- "propose_config_change": { "parameter": "orchestrator.max_runtime_retries", "reason": "melhorar resiliencia", "new_value": "3" }',
             '- "call_mcp_tool": { "server": "name", "tool_name": "tool", "arguments": {} }',
             '- "spawn_subordinate": { "task": "subtask to delegate" }',
         ]
@@ -75,6 +82,7 @@ def build_left_hemisphere_prompt(
     template = load_left_prompt_template()
     return template.format(
         input_text=user_turn.user_text,
+        session_briefing=session_briefing or "No session briefing available.",
         soft_prompts=[token.token for token in bridge_packet.soft_prompts],
         system_directives=bridge_packet.control.system_directives,
         semantic_rules=rules_block,

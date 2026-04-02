@@ -71,7 +71,7 @@ class AgentExecutionEngine:
                 workspace,
             )
         )
-        left_result, execution_results, retry_count, critique_revision_count = await self._execute_with_retries(
+        left_result, execution_results, retry_count, critique_revision_count, critique_verdict = await self._execute_with_retries(
             user_turn=user_turn,
             bridge_packet=bridge_packet,
             memory_context=memory_context,
@@ -103,6 +103,7 @@ class AgentExecutionEngine:
             right_state=right_state, bridge_packet=bridge_packet,
             left_result=left_result, execution_results=execution_results,
             retry_count=retry_count, critique_revision_count=critique_revision_count,
+            critique_verdict=critique_verdict,
             capabilities=capabilities, variant_label=variant_label,
         )
         return AgentTurnResult(
@@ -151,10 +152,11 @@ class AgentExecutionEngine:
         left_hemisphere: LeftHemispherePort,
         left_result: LeftHemisphereResult,
         workspace: CognitiveWorkspace | None = None,
-    ) -> tuple[LeftHemisphereResult, list[ActionExecutionResult], int, int]:
+    ) -> tuple[LeftHemisphereResult, list[ActionExecutionResult], int, int, CritiqueVerdict | None]:
         retry_count = 0
         foraging_steps = 0
         critique_revision_count = 0
+        last_critique_verdict: CritiqueVerdict | None = None
         current_result = left_result
         all_execution_results = []
         cumulative_feedback = []
@@ -177,6 +179,7 @@ class AgentExecutionEngine:
                 critique_verdict = await maybe_await(
                     self.call_component(self.verifier, "averify", "verify", user_turn, current_result, execution_results, workspace)
                 )
+                last_critique_verdict = critique_verdict
 
             if workspace is not None:
                 workspace.runtime_feedback.append(
@@ -206,7 +209,7 @@ class AgentExecutionEngine:
                     finalized_summary.append("response_text_fallback=runtime_output")
                 
                 finalized_result = replace(current_result, response_text=res_text, reasoning_summary=finalized_summary)
-                return finalized_result, all_execution_results, retry_count, critique_revision_count
+                return finalized_result, all_execution_results, retry_count, critique_revision_count, last_critique_verdict
 
             if not is_valid:
                 retry_count += 1

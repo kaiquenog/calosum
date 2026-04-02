@@ -374,6 +374,17 @@ class CognitiveTelemetryBus:
 
     def dashboard_for_session(self, session_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
         if not hasattr(self.sink, "query"): raise TypeError("dashboard_for_session requires a queryable telemetry sink")
-        return {c: [{**e.payload, "_session_id": e.session_id, "_recorded_at": e.recorded_at} for e in self.sink.query(session_id=session_id, channel=c)] for c in ("felt", "thought", "decision", "execution", "reflection", "awareness")}
+        return {
+            c: [
+                {
+                    **e.payload,
+                    "_session_id": e.session_id,
+                    "_turn_id": e.turn_id,
+                    "_recorded_at": e.recorded_at,
+                }
+                for e in self.sink.query(session_id=session_id, channel=c)
+            ]
+            for c in ("felt", "thought", "decision", "execution", "reflection", "awareness")
+        }
 
     def _span_id(self, seed: str, channel: str) -> str: return hashlib.sha256(f"{seed}:{channel}".encode("utf-8")).hexdigest()[:16]

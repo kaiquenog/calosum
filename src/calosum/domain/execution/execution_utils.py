@@ -4,6 +4,7 @@ from calosum.shared.models.types import (
     AgentTurnResult,
     CognitiveBridgePacket,
     CognitiveTelemetrySnapshot,
+    CritiqueVerdict,
     LeftHemisphereResult,
     RightHemisphereState,
 )
@@ -15,6 +16,7 @@ def build_execution_telemetry(
     execution_results: list[ActionExecutionResult],
     retry_count: int,
     critique_revision_count: int,
+    critique_verdict: CritiqueVerdict | None = None,
     capabilities: dict[str, Any] | None = None,
     variant_label: str | None = None,
 ) -> CognitiveTelemetrySnapshot:
@@ -44,6 +46,13 @@ def build_execution_telemetry(
             "system_directives": left_result.telemetry.get("system_directives", []),
             "runtime_retry_count": retry_count,
             "critique_revision_count": critique_revision_count,
+            "critique_verdict": {
+                "is_valid": critique_verdict.is_valid,
+                "failure_types": [item.value for item in critique_verdict.failure_types],
+                "identified_issues": critique_verdict.identified_issues,
+                "suggested_fixes": critique_verdict.suggested_fixes,
+                "confidence": critique_verdict.confidence,
+            } if critique_verdict else None,
             "cognitive_override_detected": any(
                 "mismatch" in text.lower() or "override" in text.lower() or "false alarm" in text.lower()
                 for text in left_result.reasoning_summary

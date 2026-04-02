@@ -192,3 +192,80 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         payload = json.loads(results[0].output.get("result", ""))
         self.assertEqual(payload["status_code"], 200)
         self.assertEqual(payload["body"]["status"], "ok")
+
+    async def test_query_session_stats_reports_aggregates(self):
+        fake_agent = SimpleNamespace(
+            cognitive_dashboard=lambda _session_id: {
+                "decision": [
+                    {"tool_success_rate": 0.5, "runtime_retry_count": 2},
+                    {"tool_success_rate": 1.0, "runtime_retry_count": 0},
+                ],
+                "execution": [
+                    {"results": [{"status": "rejected", "output": {"error_type": "validation_failed"}}]}
+                ],
+                "felt": [{"surprise_score": 0.2}, {"surprise_score": 0.6}],
+            }
+        )
+        runtime = ConcreteActionRuntime(agent_accessor=lambda: (fake_agent, None))
+        left_result = LeftHemisphereResult(
+            response_text="Stats",
+            lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
+            actions=[PrimitiveAction("query_session_stats", "A->B", {"session_id": "s1"}, [])],
+            reasoning_summary=[],
+        )
+
+        results = await runtime.arun(left_result)
+        self.assertEqual(results[0].status, "executed")
+        payload = json.loads(results[0].output["result"])
+        self.assertEqual(payload["dominant_failure"], "validation_failed (1x)")
+        self.assertAlmostEqual(payload["tool_success_rate"], 0.75)
+
+    async def test_read_architecture_returns_source_and_dependencies(self):
+        runtime = ConcreteActionRuntime()
+        left_result = LeftHemisphereResult(
+            response_text="Read architecture",
+            lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
+            actions=[PrimitiveAction("read_architecture", "A->B", {"component_name": "CalosumAgent"}, [])],
+            reasoning_summary=[],
+        )
+
+        results = await runtime.arun(left_result)
+        self.assertEqual(results[0].status, "executed")
+        payload = json.loads(results[0].output["result"])
+        self.assertIn("source_code", payload)
+        self.assertIn("dependencies", payload)
+        self.assertTrue(str(payload["path"]).endswith(".py"))
+
+    async def test_propose_config_change_queues_pending_directive(self):
+        class EvolutionManagerStub:
+            def __init__(self) -> None:
+                self.pending_directives = []
+
+            def queue_directive(self, directive) -> None:
+                self.pending_directives.append(directive)
+
+        evo = EvolutionManagerStub()
+        fake_agent = SimpleNamespace(evolution_manager=evo)
+        runtime = ConcreteActionRuntime(agent_accessor=lambda: (fake_agent, None))
+        left_result = LeftHemisphereResult(
+            response_text="Propose",
+            lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
+            actions=[
+                PrimitiveAction(
+                    "propose_config_change",
+                    "A->B",
+                    {
+                        "parameter": "orchestrator.max_runtime_retries",
+                        "reason": "Reducao de falhas transientes",
+                        "new_value": "3",
+                    },
+                    [],
+                )
+            ],
+            reasoning_summary=[],
+        )
+
+        results = await runtime.arun(left_result)
+        self.assertEqual(results[0].status, "executed")
+        self.assertEqual(len(evo.pending_directives), 1)
+        self.assertEqual(evo.pending_directives[0].status, "pending")

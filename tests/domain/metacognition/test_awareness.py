@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from calosum.domain.agent.evolution import JsonlEvolutionArchive
 from calosum.domain.metacognition.introspection import IntrospectionEngine
@@ -222,6 +223,43 @@ class AwarenessTests(unittest.TestCase):
             if item.directive_type == DirectiveType.PARAMETER and item.target_component == "right_hemisphere"
         ]
         self.assertTrue(right_param)
+
+    def test_session_briefing_flags_low_success_and_pending_directives(self) -> None:
+        agent = CalosumAgent()
+        agent.cognitive_dashboard = lambda _session_id=None: {
+            "decision": [
+                {"tool_success_rate": 0.5, "runtime_retry_count": 2},
+                {"tool_success_rate": 0.6, "runtime_retry_count": 1},
+            ],
+            "execution": [
+                {
+                    "results": [
+                        {"status": "rejected", "action_type": "execute_bash", "output": {"error_type": "validation_failed"}}
+                    ]
+                }
+            ],
+            "felt": [{"surprise_score": 0.4}],
+        }
+        agent.evolution_manager.pending_directives = [
+            EvolutionDirective(
+                directive_id="pending-1",
+                directive_type=DirectiveType.PARAMETER,
+                target_component="orchestrator",
+                proposed_change={"max_runtime_retries": 3},
+                reasoning="increase retries",
+                status="pending",
+            )
+        ]
+
+        briefing = agent.build_session_briefing(
+            "session-briefing",
+            right_state=SimpleNamespace(telemetry={"jepa_uncertainty": 0.28}),
+            last_n=10,
+        )
+
+        self.assertIn("below 80% threshold", briefing)
+        self.assertIn("VALIDATION_FAILED in execute_bash", briefing)
+        self.assertIn("Active evolution directives:", briefing)
 
 
 if __name__ == "__main__":

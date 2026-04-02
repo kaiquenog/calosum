@@ -1,6 +1,8 @@
 Analyze the input and generate a JSON object.
 
 Input: {input_text}
+Session Briefing:
+{session_briefing}
 Soft Prompts (Bridge): {soft_prompts}
 System Directives: {system_directives}
 

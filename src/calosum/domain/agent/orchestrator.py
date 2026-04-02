@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from time import perf_counter
+from typing import Any
 from uuid import uuid4
 
 from calosum.shared.utils.async_utils import maybe_await, run_sync
@@ -108,6 +110,8 @@ class CalosumAgent:
         self.last_workspace_by_session: dict[str, CognitiveWorkspace] = {}
         self.latest_awareness_by_session: dict[str, SessionDiagnostic] = {}
         self._awareness_turn_counts: dict[str, int] = {}
+        self.cognitive_diary_path = Path(".calosum-runtime/cognitive_diary.jsonl")
+        self.cognitive_diary_path.parent.mkdir(parents=True, exist_ok=True)
 
         from calosum.domain.metacognition.self_model import build_self_model
         self.self_model: CognitiveArchitectureMap = build_self_model(self)
@@ -155,6 +159,11 @@ class CalosumAgent:
         right_state.telemetry["ignore_surprise_for_branching"] = ignore_surprise
         workspace.right_notes["surprise_band"] = surprise_band
         workspace.right_notes["ignore_surprise_for_branching"] = ignore_surprise
+        workspace.task_frame["session_briefing"] = self.build_session_briefing(
+            user_turn.session_id,
+            right_state=right_state,
+            last_n=10,
+        )
 
         # EFE with proper epistemic/pragmatic decomposition
         expected_free_energy = 0.5
@@ -243,6 +252,41 @@ class CalosumAgent:
     async def _awareness_loop(self, session_id: str) -> None:
         from calosum.domain.metacognition.awareness import process_awareness_loop
         await process_awareness_loop(self, session_id)
+        diagnostic = self.latest_awareness_for_session(session_id)
+        if diagnostic is None:
+            return
+        if diagnostic.failure_types:
+            dominant_failure = max(
+                diagnostic.failure_types.items(),
+                key=lambda item: item[1],
+            )
+            self._record_cognitive_diary(
+                turn_id=f"{session_id}-{diagnostic.analyzed_turns}",
+                observation=(
+                    f"Falhas recorrentes detectadas: {dominant_failure[0]} "
+                    f"({dominant_failure[1]}x nos últimos turnos)."
+                ),
+                action="anotado em workspace.left_notes[sandbox_constraints]",
+                confidence=max(0.55, min(0.98, 1.0 - diagnostic.average_surprise)),
+            )
+
+    def _record_cognitive_diary(
+        self,
+        *,
+        turn_id: str,
+        observation: str,
+        action: str,
+        confidence: float,
+    ) -> None:
+        payload = {
+            "turn_id": turn_id,
+            "observation": observation,
+            "action": action,
+            "confidence": round(max(0.0, min(1.0, confidence)), 3),
+            "recorded_at": utc_now().isoformat(),
+        }
+        with self.cognitive_diary_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     def analyze_session(self, session_id: str, *, persist: bool = False) -> SessionDiagnostic:
         from calosum.domain.metacognition.awareness import analyze_session as _analyze_session
@@ -275,6 +319,70 @@ class CalosumAgent:
             await maybe_await(self.execution_engine.call_component(self.night_trainer, "arun_training_cycle", "run_training_cycle"))
         return report
     def cognitive_dashboard(self, sid: str | None = None) -> dict[str, list[dict]]: return self.telemetry_bus.dashboard_for_session(sid)
+
+    def build_session_briefing(
+        self,
+        session_id: str,
+        *,
+        right_state: Any | None = None,
+        last_n: int = 10,
+    ) -> str:
+        dashboard = self.cognitive_dashboard(session_id)
+        decisions = list(dashboard.get("decision", []))[-last_n:]
+        felt = list(dashboard.get("felt", []))[-last_n:]
+        executions = list(dashboard.get("execution", []))[-last_n:]
+        turn_number = len(dashboard.get("decision", [])) + 1
+        def _avg(rows: list[dict[str, Any]], key: str, default: float) -> float:
+            if not rows:
+                return default
+            return sum(float(item.get(key, default)) for item in rows) / len(rows)
+        tool_success_rate = _avg(decisions, "tool_success_rate", 1.0)
+        avg_retries = _avg(decisions, "runtime_retry_count", 0.0)
+        avg_surprise = _avg(felt, "surprise_score", 0.0)
+        uncertainty = None
+        if right_state is not None:
+            uncertainty = right_state.telemetry.get("jepa_uncertainty")
+        if uncertainty is None and felt:
+            telemetry_values = [entry.get("telemetry", {}) for entry in felt]
+            uncertainty_values = [
+                float(item.get("jepa_uncertainty"))
+                for item in telemetry_values
+                if isinstance(item, dict) and item.get("jepa_uncertainty") is not None
+            ]
+            if uncertainty_values:
+                uncertainty = sum(uncertainty_values) / len(uncertainty_values)
+        uncertainty = float(uncertainty or 0.0)
+        failures: dict[tuple[str, str], int] = {}
+        for event in executions:
+            for result in event.get("results", []):
+                if result.get("status") != "rejected":
+                    continue
+                action_type = str(result.get("action_type", "unknown_tool"))
+                output = result.get("output", {})
+                if isinstance(output, dict):
+                    error_type = str(output.get("error_type", "runtime_rejection")).upper()
+                else:
+                    error_type = "RUNTIME_REJECTION"
+                key = (error_type, action_type)
+                failures[key] = failures.get(key, 0) + 1
+        dominant_failure = "none"
+        if failures:
+            (error_type, action_type), count = max(failures.items(), key=lambda item: item[1])
+            dominant_failure = f"{error_type} in {action_type} ({count}x)"
+        pending = [item for item in self.pending_directives if item.status == "pending"]
+        pending_summary = ", ".join(
+            f"{directive.target_component}:{directive.reasoning[:50].strip()}"
+            for directive in pending[:2]
+        ) if pending else "none"
+        threshold_note = "below 80% threshold" if tool_success_rate < 0.8 else "within healthy band"
+        return (
+            f"[SESSION BRIEFING - Turn {turn_number} | session: {session_id}]\n"
+            f"Tool success rate (last {last_n}): {tool_success_rate:.0%} ({threshold_note})\n"
+            f"Avg retries: {avg_retries:.2f}\n"
+            f"Dominant failure: {dominant_failure}\n"
+            f"Avg surprise: {avg_surprise:.2f} | JEPA uncertainty: {uncertainty:.2f}\n"
+            f"Active evolution directives: {pending_summary}"
+        )
 
     async def _store_selected_episode(self, result: AgentTurnResult) -> None:
         ep = MemoryEpisode(

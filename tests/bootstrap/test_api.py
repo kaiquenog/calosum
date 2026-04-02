@@ -104,6 +104,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("self_model_ref", workspace)
         self.assertIn("capability_snapshot", workspace)
         self.assertIn("pending_questions", workspace)
+        self.assertIn("session_briefing", workspace["task_frame"])
         self.assertEqual(workspace["task_frame"]["user_text"], "Hello workspace")
 
     def test_system_state_does_not_leak_other_session_workspace(self) -> None:
@@ -239,6 +240,24 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("reason=", data["response"])
         self.assertIn("memory=", data["response"])
         self.assertIn("telemetry=", data["response"])
+
+    def test_telemetry_query_answers_tool_failure_question(self) -> None:
+        session_id = "telemetry-query-session"
+        self.client.post(
+            "/v1/chat/completions",
+            json={"text": "Primeira tentativa para gerar telemetria", "session_id": session_id},
+        )
+        response = self.client.post(
+            "/v1/telemetry/query",
+            json={
+                "session_id": session_id,
+                "question": "Em quais types de tools estou falhando mais?",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertIn("answer", data)
 
     def test_chat_completions_serializes_turns_with_same_session_lane(self) -> None:
         active = 0

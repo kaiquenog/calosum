@@ -123,6 +123,11 @@ class QwenLeftHemisphereAdapter:
             bridge_packet,
             memory_context,
             runtime_feedback,
+            session_briefing=(
+                str(workspace.task_frame.get("session_briefing", ""))
+                if workspace and workspace.task_frame
+                else None
+            ),
         )
         
         if introspective_intent:

@@ -44,6 +44,11 @@ async def process_group_turn(
                 agent.right_hemisphere, "aperceive", "perceive", user_turn, memory_context, workspace
             )
         )
+    workspace.task_frame["session_briefing"] = agent.build_session_briefing(
+        user_turn.session_id,
+        right_state=right_state,
+        last_n=10,
+    )
     candidates: list[CognitiveCandidate] = []
 
     capabilities_dict = None

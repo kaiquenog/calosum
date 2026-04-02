@@ -44,6 +44,7 @@ class ConcreteActionRuntime:
         http_request = HttpRequestTool()
         mcp_tool = McpTool(self.mcp_client)
         subordinate_tool = SubordinateAgentTool(self.agent_accessor)
+        introspection_tool = IntrospectionTool(self.agent_accessor)
         
         registry.register(
             ToolSchema("respond_text", "Emit text to user", {"text": "string"}, []),
@@ -77,7 +78,43 @@ class ConcreteActionRuntime:
         registry.register(subordinate_tool.schema, subordinate_tool.execute)
         registry.register(
             ToolSchema("introspect_self", "Analyze system health, architecture, or awareness bottlenecks", {"query": "string"}, []),
-            self._execute_introspect_self
+            introspection_tool.execute
+        )
+        registry.register(
+            ToolSchema(
+                "query_session_stats",
+                "Summarize recent session metrics and dominant failures",
+                {"session_id": "string"},
+                [],
+            ),
+            introspection_tool.query_session_stats,
+        )
+        registry.register(
+            ToolSchema(
+                "explain_last_decision",
+                "Explain right_state, directives, reasoning and critique of a turn",
+                {"turn_id": "string"},
+                [],
+            ),
+            introspection_tool.explain_last_decision,
+        )
+        registry.register(
+            ToolSchema(
+                "read_architecture",
+                "Read architecture details from source code using AST (read-only)",
+                {"component_name": "string"},
+                [],
+            ),
+            introspection_tool.read_architecture,
+        )
+        registry.register(
+            ToolSchema(
+                "propose_config_change",
+                "Queue a pending config change directive for human review",
+                {"parameter": "string", "reason": "string", "new_value": "string"},
+                [],
+            ),
+            introspection_tool.propose_config_change,
         )
         registry.register(code_execution.schema, code_execution.execute)
         registry.register(http_request.schema, http_request.execute)
@@ -326,10 +363,6 @@ class ConcreteActionRuntime:
         except Exception as e:
             logger.error(f"File read failure: {e}")
             return f"File read failed: {e}"
-
-    async def _execute_introspect_self(self, payload: dict, **_: Any) -> str:
-        tool = IntrospectionTool(self.agent_accessor)
-        return await tool.execute(payload)
 
     def _pending_question_from_result(self, result: ActionExecutionResult) -> str | None:
         if result.status != "needs_approval":
