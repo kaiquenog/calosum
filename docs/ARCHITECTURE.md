@@ -51,6 +51,23 @@ Todo novo módulo Python deve ser registrado em `MODULE_RULES` dentro de `harnes
 
 O projeto também possui um componente frontend na pasta `ui/` construído com React, Vite e Tailwind. Este painel consome as rotas expostas em `bootstrap/api.py` para exibir a telemetria separada por hemisférios, execução e reflexão.
 
+## CI/CD e Gates de Qualidade
+
+O workflow em `.github/workflows/ci.yml` foi segmentado em quatro estagios:
+
+1. `lint_types`: `harness_checks`, `ruff` e `mypy --strict` focados em arquivos Python alterados.
+2. `unit_tests`: suite unitária + cobertura com gate de 80% para modulos Python novos/alterados em `src/calosum/`.
+3. `integration`: pipeline de integracao com LLM mockado e gate de latencia `p95 <= 5000 ms` em perfil `ephemeral`.
+4. `benchmark_gate`: comparacao automatica contra baseline versionado, falhando se houver regressao > 5% em `tool_success_rate`.
+
+Os artefatos gerados em cada run ficam em `docs/benchmarks/ci/` e sao publicados como artifact do CI.
+
+## Componentes Renomeados no Sprint 0
+
+- `ContextCompressor` (alias legado `CognitiveTokenizer`): `docs/components/context-compressor/ARCHITECTURE.md`
+- `CognitiveVariantSelector` (alias legado `GEAReflectionController`): `docs/components/cognitive-variant-selector/ARCHITECTURE.md`
+- Loop de adaptacao (`apply_neuroplasticity`): `docs/components/neuroplasticity-loop/ARCHITECTURE.md`
+
 ## Regras
 
 - Pacote `shared` não depende de outros pacotes internos. Serve como base de comunicação de dicionários, data classes e portas (`Protocols`).

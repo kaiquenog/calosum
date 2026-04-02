@@ -8,6 +8,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      CALOSUM_MODE: local
       CALOSUM_INFRA_PROFILE: docker
       CALOSUM_MEMORY_DIR: /data/memory
       CALOSUM_OTLP_JSONL: /data/telemetry/events.jsonl
@@ -16,12 +17,14 @@ services:
       CALOSUM_OTEL_COLLECTOR_ENDPOINT: http://otel-collector:4318
       CALOSUM_JAEGER_UI_URL: http://jaeger:16686
       CALOSUM_RIGHT_BACKEND: vjepa21
+      CALOSUM_JEPA_MODEL_PATH: /app/jepa_model
       CALOSUM_LEFT_BACKEND: rlm
       CALOSUM_BRIDGE_BACKEND: cross_attention
       # Deixa o .env ditar as configs do LLM para evitar hardcode do host.docker.internal quebrando a API da OpenAI
     volumes:
       - ../.calosum-runtime:/data
       - ../src:/app/src
+      - ../adapters/jepa_predictor:/app/jepa_model:ro
     depends_on:
       - qdrant
       - otel-collector

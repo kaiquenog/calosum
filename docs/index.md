@@ -21,6 +21,10 @@ Este diretorio e o sistema de registro do projeto.
 - [references/harness-engineering.md](references/harness-engineering.md): pesquisa usada para governanca do repositorio
 - [exec-plans/tech-debt-tracker.md](exec-plans/tech-debt-tracker.md): pendencias e debt ativo
 - [benchmarks/baseline.md](benchmarks/baseline.md): baseline comparativo obrigatório para sprints
+- [benchmarks/ci/README.md](benchmarks/ci/README.md): artefatos automáticos de benchmark por execução de CI
+- [components/context-compressor/ARCHITECTURE.md](components/context-compressor/ARCHITECTURE.md): arquitetura do componente renomeado (alias `CognitiveTokenizer`)
+- [components/cognitive-variant-selector/ARCHITECTURE.md](components/cognitive-variant-selector/ARCHITECTURE.md): arquitetura do componente renomeado (alias `GEAReflectionController`)
+- [components/neuroplasticity-loop/ARCHITECTURE.md](components/neuroplasticity-loop/ARCHITECTURE.md): arquitetura do loop `apply_neuroplasticity`
 
 ## Planos
 

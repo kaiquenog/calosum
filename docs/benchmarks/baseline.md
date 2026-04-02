@@ -28,3 +28,4 @@ Data de baseline: 2026-04-02
 ## Observações
 - Este baseline existe para evitar regressões mascaradas por complexidade arquitetural.
 - Toda proposta cross-cutting deve incluir comparação explícita contra este baseline.
+- O gate automático de CI usa baseline versionado em `docs/benchmarks/ci/baseline.json` para validar regressão de `tool_success_rate` (limite: 5%).

@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-04-02T00:00:00Z",
+  "description": "Baseline minimo para gate automatico de benchmark no CI (modo ephemeral, LLM mockado).",
+  "metrics": {
+    "tool_success_rate": 1.0
+  }
+}

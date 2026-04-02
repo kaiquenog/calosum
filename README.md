@@ -794,6 +794,12 @@ docker compose -f deploy/docker-compose.yml logs -f orchestrator
 
 O `otel-collector-config.yaml` configura o pipeline OTLP: recebimento HTTP/gRPC → processamento em batch → exportação para Jaeger.
 
+Modo local com JEPA no compose:
+
+- `CALOSUM_MODE=local`
+- `CALOSUM_JEPA_MODEL_PATH=/app/jepa_model`
+- volume read-only: `./adapters/jepa_predictor:/app/jepa_model:ro`
+
 ---
 
 ## UI de telemetria
@@ -867,6 +873,17 @@ PYTHONPATH=src .venv/bin/python examples/right_hemisphere_benchmark.py \
   --output-json docs/reports/2026-03-30-right-hemisphere-benchmark.json
 ```
 
+### CI/CD com gates de qualidade
+
+Pipeline em `.github/workflows/ci.yml`:
+
+1. `Lint + Types`: `mypy --strict`, `ruff`, `harness_checks`.
+2. `Unit Tests`: suíte unitária + gate de cobertura >= 80% em módulos novos/alterados.
+3. `Integration`: pipeline com LLM mockado; falha se `latency_p95_ms > 5000`.
+4. `Benchmark Gate`: comparação automática contra baseline; falha se regressão > 5% em `tool_success_rate`.
+
+Os resultados automáticos de benchmark de CI são gerados em `docs/benchmarks/ci/` e publicados como artefatos de cada run.
+
 **23 arquivos de teste** cobrindo todos os subsistemas principais:
 
 | Arquivo | Cobertura |
@@ -904,7 +921,7 @@ O projeto está na **Fase de Evolução do Hemisfério Direito** — tornando a 
 | Runtime seguro e loop CRITIC-like | Concluída |
 | Self-awareness (self-model, introspection, evolution, workspace) | Concluída |
 | **Evolução do Hemisfério Direito (realidade perceptiva)** | **Em andamento** |
-| Benchmark cognitivo local e gates de qualidade | Em planejamento |
+| Benchmark cognitivo local e gates de qualidade | Em execução contínua (CI gateado) |
 | Pesquisa multimodal pesada (V-JEPA ou equivalente) | Backlog de pesquisa |
 
 ### Plano ativo: Right Hemisphere Reality Upgrade

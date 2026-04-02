@@ -33,3 +33,7 @@ Substituir a selecao de variantes cognitivas baseada em pesos arbitrarios por um
 
 ## Decision Log
 - 2026-04-02: Manter fallback rule-based e legacy para degradacao segura enquanto o modelo ainda nao atinge janela minima de dados.
+
+## Summary
+- Sprint concluido em 2026-04-02 e movido para `completed/`.
+- Selecao de variantes passa a suportar caminho aprendido com fallback explicito e telemetria `selected_by`.
