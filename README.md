@@ -884,34 +884,58 @@ Pipeline em `.github/workflows/ci.yml`:
 
 Os resultados automáticos de benchmark de CI são gerados em `docs/benchmarks/ci/` e publicados como artefatos de cada run.
 
-**23 arquivos de teste** cobrindo todos os subsistemas principais:
+**64 arquivos de teste** cobrindo todos os subsistemas principais:
 
 | Arquivo | Cobertura |
 |---------|-----------|
-| `test_pipeline.py` | Integração completa do pipeline cognitivo |
-| `test_runtime.py` | Validação do StrictLambdaRuntime |
-| `test_memory.py` | Stores episódico, semântico e de grafos |
-| `test_qdrant_adapter.py` | Adapter Qdrant com busca vetorial |
-| `test_reflection.py` | GEAReflectionController e group turns |
-| `test_factory.py` | CalosumAgentBuilder e injeção de dependência |
-| `test_api.py` | Endpoints FastAPI e SSE |
-| `test_llm_adapter.py` | Adapters LLM (OpenAI, Qwen) |
-| `test_llm_failover.py` | Roteamento multi-provedor com cooldown |
-| `test_night_trainer.py` | DSPy, LoRA e OPRO-lite |
-| `test_awareness.py` | IntrospectionEngine e EvolutionProposer |
-| `test_tool_registry.py` | ToolRegistry e validação de ações |
-| `test_active_inference.py` | Cálculo de surpresa e energia livre |
-| `test_telegram_channel.py` | Canal Telegram bidirecional |
-| `test_self_model.py` | CognitiveArchitectureMap e auto-modelo |
-| `test_telemetry_otlp.py` | Exportação OTLP para Jaeger |
-| `test_knowledge_graph.py` | NanoGraphRAG e NetworkX fallback |
-| `test_right_hemisphere_hf.py` | HuggingFace sentence-transformers |
+| `integration/test_pipeline_dual_hemisphere_e2e.py` | Pipeline E2E duplo hemisfério |
+| `integration/test_pipeline.py` | Integração completa do pipeline cognitivo |
+| `integration/test_local_ui_sync.py` | Sincronização com UI local |
+| `domain/execution/test_runtime.py` | Validação do StrictLambdaRuntime |
+| `domain/execution/test_persistent_runtime.py` | Runtime persistente |
+| `domain/execution/test_runtime_extensions.py` | Extensões do runtime |
+| `domain/memory/test_memory.py` | Stores episódico, semântico e de grafos |
+| `domain/metacognition/test_reflection.py` | GEAReflectionController e group turns |
+| `domain/metacognition/test_awareness.py` | IntrospectionEngine e EvolutionProposer |
+| `domain/metacognition/test_verifier.py` | HeuristicVerifier |
+| `domain/metacognition/test_self_model.py` | CognitiveArchitectureMap e auto-modelo |
+| `adapters/hemisphere/test_right_hemisphere_hf.py` | HuggingFace sentence-transformers |
+| `adapters/hemisphere/test_right_hemisphere_heuristic_jepa.py` | JEPA heurístico |
+| `adapters/hemisphere/test_right_hemisphere_trained_jepa.py` | JEPA treinado |
+| `adapters/hemisphere/test_right_hemisphere_vjepa21.py` | V-JEPA21 multimodal |
+| `adapters/hemisphere/test_left_hemisphere_rlm.py` | RLM local |
+| `adapters/llm/test_llm_adapter.py` | Adapters LLM (OpenAI, Qwen) |
+| `adapters/llm/test_llm_failover.py` | Roteamento multi-provedor com cooldown |
+| `adapters/llm/test_llm_fusion.py` | Fusão de providers LLM |
+| `adapters/memory/test_qdrant_adapter.py` | Adapter Qdrant com busca vetorial |
+| `adapters/memory/test_text_embeddings.py` | Cadeia de fallback de embeddings |
+| `adapters/bridge/test_bridge_cross_attention.py` | Bridge cross-attention |
+| `adapters/perception/test_active_inference.py` | Cálculo de surpresa e energia livre |
+| `adapters/perception/test_quantized_embeddings.py` | Embeddings quantizados |
+| `adapters/infrastructure/test_contract_wrappers.py` | Wrappers de contrato |
+| `adapters/infrastructure/test_telemetry_otlp.py` | Exportação OTLP para Jaeger |
+| `adapters/knowledge/test_knowledge_graph.py` | NanoGraphRAG e NetworkX fallback |
+| `adapters/communication/test_telegram_channel.py` | Canal Telegram bidirecional |
+| `adapters/tools/test_tool_registry.py` | ToolRegistry e validação de ações |
+| `adapters/experience/test_gea_experience_sharing.py` | GEA experience sharing |
+| `adapters/experience/test_variant_preference.py` | Preferência por variante |
+| `adapters/night_trainer/test_night_trainer.py` | DSPy, LoRA e OPRO-lite |
+| `bootstrap/test_factory.py` | CalosumAgentBuilder e injeção de dependência |
+| `bootstrap/test_factory_backends_2026.py` | Backends 2026 |
+| `bootstrap/test_api.py` | Endpoints FastAPI e SSE |
+| `bootstrap/test_cli.py` | CLI commands |
+| `bootstrap/test_settings_dependency_mode.py` | Settings e dependency mode |
+| `bootstrap/test_agent_baseline.py` | Baseline do agente |
+| `bootstrap/test_prompt_template_loading.py` | Carregamento de templates |
+| `bootstrap/test_async_retry_and_persistence.py` | Retry assíncrono e persistência |
+| `bootstrap/test_fusion_resolver.py` | Fusion resolver |
+| `test_harness.py` | Governança AST |
 
 ---
 
-## Fase atual do projeto (Mar/2026)
+## Fase atual do projeto (Abr/2026)
 
-O projeto está na **Fase de Evolução do Hemisfério Direito** — tornando a percepção semanticamente ancorada, calibrada por memória e com provenance explícita, sem quebrar o modelo local-first.
+O projeto está na **Fase de Consolidação de Produção** — com gates de qualidade no CI, Docker alinhado ao modo JEPA, documentação viva sincronizada e base para agentes auto-conscientes de sua estrutura.
 
 ### Status por fase
 
@@ -920,22 +944,45 @@ O projeto está na **Fase de Evolução do Hemisfério Direito** — tornando a 
 | Fundação arquitetural (Ports & Adapters, harness, pipeline) | Concluída |
 | Runtime seguro e loop CRITIC-like | Concluída |
 | Self-awareness (self-model, introspection, evolution, workspace) | Concluída |
-| **Evolução do Hemisfério Direito (realidade perceptiva)** | **Em andamento** |
-| Benchmark cognitivo local e gates de qualidade | Em execução contínua (CI gateado) |
+| Evolução do Hemisfério Direito (realidade perceptiva) | Concluída |
+| **Consolidação de Produção (CI gates, Docker, docs vivas)** | **Em andamento** |
+| Meta-aprendizado arquitetural (self-modificação estrutural) | Backlog ativo |
 | Pesquisa multimodal pesada (V-JEPA ou equivalente) | Backlog de pesquisa |
 
-### Plano ativo: Right Hemisphere Reality Upgrade
+### Planos completados
 
-Sprints do plano `docs/exec-plans/active/2026-03-30-right-hemisphere-reality-upgrade.md`:
+13 planos documentam a evolução sistemática do projeto em `docs/exec-plans/completed/`:
 
-| Sprint | Entregável | Status |
-|--------|-----------|--------|
-| Sprint 0 | Telemetria padronizada: `right_backend`, `right_mode`, `degraded_reason` em todos os adapters | **Concluída** |
-| Sprint 1 | Extração afetiva calibrada: thresholds por label, confidence dinâmica, emotion_meta | **Concluída** |
-| Sprint 2 | Surprise + salience calibrados por memória (salience smoothing, novelty, feedback bias) | **Concluída** |
-| Sprint 3 | Fechamento de loop bidirecional: workspace carry-over entre turnos | **Concluída** |
-| Sprint 4 | Benchmark local com comparativo heurístico vs embedding | Próxima |
-| Sprint 5 | Adaptação contínua controlada (micro-ajustes de thresholds por reflexão) | Planejado |
+| Plano | Resumo |
+|-------|--------|
+| Dual Hemisphere 100 | Implementação completa da arquitetura de duplo hemisfério |
+| Agent Zero Report | Avaliação inicial e plano de ação |
+| Contract Wrapper Enforcement | Validação de contratos em adapters |
+| Sanitização e Redução de Entropia | Limpeza e organização do código |
+| JEPA Phase 1 | Interface e benchmark do hemisfério direito treinado |
+| JEPA Phase 2 | Predictor treinado integrado |
+| Qualidade Produção CI/Docker/Docs | Gates de qualidade, Docker local, docs sincronizadas |
+| Sprint 0 | Modo API-only e baseline local |
+| Sprint 3 | Self-monitoring e introspecção |
+| Sprint 4 | Fusão semântica JEPA + LLM |
+| Sprint 5 | Modelo de preferência por variante |
+| Tech Debt Sprint 2-6 | Tracker de dívida técnica |
+| TurboQuant Integration | Integração de quantização para performance |
+
+### Plano ativo: Verify Implementation
+
+Sprint de verificação de melhorias críticas para agentes auto-aprimoráveis:
+
+| Item | Status |
+|------|--------|
+| JEPA-RS manager | **Concluído** |
+| Bridge cross-attention training | **Concluído** |
+| Memory Qdrant latent vector integration | **Concluído** |
+| Idle foraging EFE heuristic | **Concluído** |
+| Self-model para introspecção arquitetural | Em progresso |
+| Fechamento do loop reflection-action | Em progresso |
+| Métricas de eficiência perceptiva | Em progresso |
+| Conexão GEA com evolution module | Em progresso |
 
 ### Princípios da fase atual
 
@@ -943,13 +990,14 @@ Sprints do plano `docs/exec-plans/active/2026-03-30-right-hemisphere-reality-upg
 2. **Capacidades antes de hype**: medir ganho real antes de trocar stack
 3. **Ports and Adapters**: toda evolução pesada atrás de interface
 4. **Segurança e auditabilidade**: mudanças adaptativas pequenas, rastreáveis e reversíveis
+5. **Meta-aprendizado arquitetural**: agente deve propor melhorias em sua própria estrutura
 
 ### Horizontes de roadmap
 
 | Horizonte | Período | Foco |
 |-----------|---------|------|
-| **H1** | 0–6 semanas | Hemisfério Direito realista, loop bidirecional, benchmark local |
-| **H2** | 6–12 semanas | Adaptação contínua controlada, robustez do verifier, testes de regressão cognitiva |
+| **H1** | 0–6 semanas | Consolidação de produção, CI gates, self-model estrutural |
+| **H2** | 6–12 semanas | Meta-aprendizado arquitetural, loop reflection-action completo |
 | **H3** | 12+ semanas | Protótipo multimodal real (V-JEPA/M3-JEPA) atrás de adapter; estudos A/B |
 
 ---
