@@ -11,7 +11,7 @@ from calosum.shared.models.ports import BridgeFusionPort, BridgeStateStorePort
 
 
 @dataclass(slots=True)
-class CognitiveTokenizerConfig:
+class ContextCompressorConfig:
     target_dim: int = 384
     bottleneck_tokens: int = 6
     base_temperature: float = 0.25
@@ -22,23 +22,23 @@ class CognitiveTokenizerConfig:
     temperature_bias: float = 0.0
 
 
-class CognitiveTokenizer:
+class ContextCompressor:
     """
     Traduz o estado latente continuo do JEPA para uma interface discreta.
 
     O resultado e um pacote com:
-    - soft prompts compactos;
+    - context directives compactas;
     - sinais de controle para o hemisferio esquerdo;
     - metadados suficientes para observabilidade e auditoria.
     """
 
     def __init__(
         self,
-        config: CognitiveTokenizerConfig | None = None,
+        config: ContextCompressorConfig | None = None,
         store: BridgeStateStorePort | None = None,
         fusion: BridgeFusionPort | None = None,
     ) -> None:
-        self.config = config or CognitiveTokenizerConfig()
+        self.config = config or ContextCompressorConfig()
         self.store = store
         self.fusion = fusion
         self._load_adaptation_state()
@@ -55,7 +55,7 @@ class CognitiveTokenizer:
             
             # Target dimension dinâmico via configuração
             self.latent_dim = self.config.target_dim
-            # Saída: 1 neurônio para Saliência + N neurônios para Soft Prompts
+            # Saída: 1 neurônio para Saliência + N neurônios para Context Directives
             self.output_dim = 1 + self.config.bottleneck_tokens
             
             self.projection = nn.Sequential(
@@ -166,7 +166,7 @@ class CognitiveTokenizer:
             
         # O primeiro valor é a Saliência Aprendida
         neural_salience = round(tensor_out[0], 3)
-        # O resto são os pesos dos Soft Prompts
+        # O resto são os pesos das Context Directives
         neural_weights = tensor_out[1:]
         
         tokens: list[SoftPromptToken] = []
@@ -305,3 +305,6 @@ class CognitiveTokenizer:
             params.extend(self.fusion.get_parameters())
         return params
 
+
+CognitiveTokenizerConfig = ContextCompressorConfig
+CognitiveTokenizer = ContextCompressor

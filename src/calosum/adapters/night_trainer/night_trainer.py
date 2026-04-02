@@ -38,6 +38,8 @@ class NightTrainer:
         model_name: str,
         dataset_path: Path,
         output_dir: Path,
+        lora_dataset_path: Path | None = None,
+        lora_output_dir: Path | None = None,
         *,
         api_url: str | None = None,
         api_key: str | None = None,
@@ -48,6 +50,8 @@ class NightTrainer:
         self.model_name = model_name
         self.dataset_path = dataset_path
         self.output_dir = output_dir
+        self.lora_dataset_path = lora_dataset_path or dataset_path.parent / "lora_sharegpt.jsonl"
+        self.lora_output_dir = lora_output_dir or output_dir.parent / "lora_adapters" / "latest"
         self.api_url = api_url
         self.api_key = api_key
         self.provider = provider
@@ -55,6 +59,9 @@ class NightTrainer:
         self.backend = backend.lower()
 
     def run_training_cycle(self) -> dict[str, Any]:
+        if self.backend in {"lora", "qlora"}:
+            return self._run_lora_cycle(self.backend)
+
         if not self.dataset_path.exists():
             return {"status": "skipped", "reason": "No dataset found"}
 
@@ -100,6 +107,19 @@ class NightTrainer:
         except Exception as e:
             logger.error("Night training failed: %s", e)
             return {"status": "error", "reason": str(e)}
+
+    def _run_lora_cycle(self, backend: str) -> dict[str, Any]:
+        from calosum.adapters.night_trainer.night_trainer_lora import LoraNightTrainer
+
+        trainer = LoraNightTrainer(
+            base_model_name=self.model_name,
+            dataset_path=self.lora_dataset_path,
+            output_dir=self.lora_output_dir,
+        )
+        result = trainer.run_training()
+        if result.get("status") == "success":
+            result["backend"] = backend
+        return result
 
     def _run_dspy_cycle(self) -> dict[str, Any] | None:
         from calosum.adapters.night_trainer.night_trainer_dspy import DSPyNightTrainer

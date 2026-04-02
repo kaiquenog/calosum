@@ -154,7 +154,7 @@ class ActiveInferenceRightHemisphereAdapter:
         base_state: RightHemisphereState,
         memory_context: MemoryContext | None,
     ) -> RightHemisphereState:
-        score, telemetry = self._free_energy_surprise(
+        score, telemetry = self._estimate_surprise(
             base_state.latent_vector,
             memory_context,
             baseline=base_state.surprise_score,
@@ -205,7 +205,7 @@ class ActiveInferenceRightHemisphereAdapter:
             return "embedding"
         return "heuristic"
 
-    def _free_energy_surprise(
+    def _estimate_surprise(
         self,
         latent_vector: list[float],
         memory_context: MemoryContext | None,
@@ -267,7 +267,7 @@ class ActiveInferenceRightHemisphereAdapter:
             engine = "numpy_efe"
 
         return normalized_surprise, {
-            "surprise_backend": "active_inference::hierarchical_efe",
+            "surprise_backend": "active_inference::surprise_estimator",
             "surprise_engine": engine,
             "active_inference_states": len(vectors),
             "free_energy_novelty": round(surprise, 4),

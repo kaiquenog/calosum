@@ -1,16 +1,38 @@
 from __future__ import annotations
 
-import json
+import importlib.util
 import os
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Mapping
+
+from calosum.bootstrap.infrastructure.helpers import (
+    _default_bridge_state_dir,
+    _default_evolution_archive_path,
+    _default_gea_experience_store_path,
+    _parse_bool,
+    _parse_csv_list,
+    _parse_json_mapping,
+    _path,
+    should_enable_local_persistence_defaults,
+    with_local_persistence_defaults,
+)
 class InfrastructureProfile(StrEnum):
     EPHEMERAL = "ephemeral"
     PERSISTENT = "persistent"
     DOCKER = "docker"
 
+
+class RuntimeDependencyMode(StrEnum):
+    AUTO = "auto"
+    LOCAL = "local"
+    API = "api"
+
+
+class CalosumMode(StrEnum):
+    API = "api"
+    LOCAL = "local"
 
 @dataclass(slots=True)
 class InfrastructureSettings:
@@ -41,19 +63,16 @@ class InfrastructureSettings:
     left_rlm_path: Path | None = None
     left_rlm_max_depth: int = 3
     event_bus: Any | None = None
-
     left_hemisphere_fallback_endpoint: str | None = None
     left_hemisphere_fallback_api_key: str | None = None
     left_hemisphere_fallback_model: str | None = None
     left_hemisphere_fallback_provider: str | None = None
     left_hemisphere_fallback_reasoning_effort: str | None = None
-
     # Routing Policy
     perception_model: str | None = None
     reason_model: str | None = None
     reflection_model: str | None = None
     verifier_model: str | None = None
-
     # Embedding settings
     embedding_endpoint: str | None = None
     embedding_api_key: str | None = None
@@ -66,7 +85,6 @@ class InfrastructureSettings:
     telegram_dm_policy: str = "open"
     telegram_allowlist_ids: list[str] = field(default_factory=list)
     vault: dict[str, str] | None = None
-
     # Vector quantization (TurboQuant)
     vector_quantization: str = "none"   # "none" | "turboquant"
     turboquant_bits: int = 4
@@ -74,6 +92,8 @@ class InfrastructureSettings:
     mcp_enabled: bool = False
     mcp_servers: dict[str, str] = field(default_factory=dict)
     mcp_allowlist: list[str] = field(default_factory=list)
+    dependency_mode: RuntimeDependencyMode = RuntimeDependencyMode.AUTO
+    mode: CalosumMode = CalosumMode.API
 
     @classmethod
     def from_sources(
@@ -102,6 +122,18 @@ class InfrastructureSettings:
             InfrastructureProfile.EPHEMERAL.value,
         )
         profile = InfrastructureProfile(profile_raw)
+        dependency_mode_raw = env.get(
+            "CALOSUM_DEPENDENCY_MODE",
+            env.get("CALOSUM_INSTALL_MODE", RuntimeDependencyMode.AUTO.value),
+        )
+        dependency_mode = RuntimeDependencyMode(dependency_mode_raw.strip().lower())
+        mode_raw = env.get("CALOSUM_MODE")
+        if mode_raw:
+            mode = CalosumMode(mode_raw.strip().lower())
+        elif dependency_mode == RuntimeDependencyMode.LOCAL:
+            mode = CalosumMode.LOCAL
+        else:
+            mode = CalosumMode.API
 
         memory_dir = _path(_arg("memory_dir") or env.get("CALOSUM_MEMORY_DIR"))
         otlp_jsonl = _path(_arg("otlp_jsonl") or env.get("CALOSUM_OTLP_JSONL"))
@@ -174,32 +206,55 @@ class InfrastructureSettings:
             mcp_enabled=_parse_bool(env.get("CALOSUM_MCP_ENABLED"), False),
             mcp_servers=_parse_json_mapping(env.get("CALOSUM_MCP_SERVERS")),
             mcp_allowlist=_parse_csv_list(env.get("CALOSUM_MCP_ALLOWLIST")),
+            dependency_mode=dependency_mode,
+            mode=mode,
         )
         profile_enabled_settings = settings.with_profile_defaults()
         profile_enabled_settings.validate_consistency()
         return profile_enabled_settings
 
     def validate_consistency(self) -> None:
-        try:
-            import torch
-            has_local_deps = True
-        except ImportError:
-            has_local_deps = False
+        missing_local_deps = _missing_local_dependency_stack()
+        local_features = _configured_local_features(self)
+        if self.mode == CalosumMode.API and self.dependency_mode == RuntimeDependencyMode.LOCAL:
+            raise RuntimeError(
+                "INCOHERENT CONFIGURATION: CALOSUM_MODE=api conflicts with "
+                "CALOSUM_DEPENDENCY_MODE=local. Use API mode + dependency_mode=api/auto."
+            )
+        if self.mode == CalosumMode.LOCAL and self.dependency_mode == RuntimeDependencyMode.API:
+            raise RuntimeError(
+                "INCOHERENT CONFIGURATION: CALOSUM_MODE=local conflicts with "
+                "CALOSUM_DEPENDENCY_MODE=api. Use local mode + dependency_mode=local/auto."
+            )
 
-        if not has_local_deps:
-            # Determine if any strictly local components were configured
-            right_backend = (self.right_hemisphere_backend or "").strip().lower()
-            if right_backend in {"huggingface", "vjepa21", "vljepa"}:
-                raise RuntimeError(
-                    f"INCOHERENT CONFIGURATION: right_hemisphere_backend '{right_backend}' requires local AI dependencies but they are not installed. "
-                    "Did you mean to run 'pip install calosum[local]'?"
-                )
-            
-            if self.vector_quantization == "turboquant":
-                raise RuntimeError(
-                    "INCOHERENT CONFIGURATION: vector_quantization 'turboquant' requires local AI dependencies (such as torch) but they are not installed. "
-                    "Did you mean to run 'pip install calosum[local]'?"
-                )
+        if self.dependency_mode == RuntimeDependencyMode.LOCAL and missing_local_deps:
+            raise RuntimeError(
+                "INCOHERENT CONFIGURATION: CALOSUM_DEPENDENCY_MODE=local requires optional local dependencies "
+                f"({', '.join(missing_local_deps)}), but they are not installed. "
+                "Install with 'pip install calosum[local]'."
+            )
+
+        if self.dependency_mode == RuntimeDependencyMode.API and local_features:
+            raise RuntimeError(
+                "INCOHERENT CONFIGURATION: CALOSUM_DEPENDENCY_MODE=api is API-only, but local-only runtime options "
+                f"were configured ({', '.join(local_features)}). "
+                "Use API-compatible settings only, or switch to local mode with "
+                "'CALOSUM_DEPENDENCY_MODE=local' and install 'pip install calosum[local]'."
+            )
+        if self.mode == CalosumMode.API and local_features:
+            raise RuntimeError(
+                "INCOHERENT CONFIGURATION: CALOSUM_MODE=api is API-only, but local-only runtime options "
+                f"were configured ({', '.join(local_features)}). "
+                "Use CALOSUM_MODE=local for local model stacks."
+            )
+
+        if local_features and missing_local_deps:
+            raise RuntimeError(
+                "INCOHERENT CONFIGURATION: local-only runtime options were configured "
+                f"({', '.join(local_features)}), but missing optional dependencies were detected "
+                f"({', '.join(missing_local_deps)}). "
+                "Install with 'pip install calosum[local]' or remove local-only options."
+            )
 
     def with_profile_defaults(self) -> "InfrastructureSettings":
         if self.profile == InfrastructureProfile.PERSISTENT:
@@ -256,6 +311,8 @@ class InfrastructureSettings:
                 mcp_enabled=self.mcp_enabled,
                 mcp_servers=dict(self.mcp_servers or {}),
                 mcp_allowlist=list(self.mcp_allowlist or []),
+                dependency_mode=self.dependency_mode,
+                mode=self.mode,
             )
 
         if self.profile == InfrastructureProfile.DOCKER:
@@ -314,6 +371,8 @@ class InfrastructureSettings:
                 mcp_enabled=self.mcp_enabled,
                 mcp_servers=dict(self.mcp_servers or {}),
                 mcp_allowlist=list(self.mcp_allowlist or []),
+                dependency_mode=self.dependency_mode,
+                mode=self.mode,
             )
 
         return replace(
@@ -325,97 +384,14 @@ class InfrastructureSettings:
             mcp_servers=dict(self.mcp_servers or {}),
             mcp_allowlist=list(self.mcp_allowlist or []),
         )
-
-
-def _path(value: str | os.PathLike[str] | None) -> Path | None:
-    if value is None or value == "":
-        return None
-    return Path(value)
-
-
-def _parse_csv_list(value: str | None) -> list[str]:
-    if not value:
-        return []
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def _parse_bool(value: str | None, default: bool) -> bool:
-    if value is None:
-        return default
-    lowered = value.strip().lower()
-    if lowered in {"1", "true", "yes", "on"}:
-        return True
-    if lowered in {"0", "false", "no", "off"}:
-        return False
-    return default
-
-
-def _parse_json_mapping(value: str | None) -> dict[str, str]:
-    if not value:
-        return {}
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    if not isinstance(parsed, dict):
-        return {}
-    normalized: dict[str, str] = {}
-    for key, item in parsed.items():
-        if isinstance(key, str) and isinstance(item, str):
-            if key.strip() and item.strip():
-                normalized[key.strip()] = item.strip()
-    return normalized
-def should_enable_local_persistence_defaults(
-    settings: InfrastructureSettings,
-    *,
-    args: object | None = None,
-    environ: Mapping[str, str] | None = None,
-) -> bool:
-    env = dict(environ or os.environ)
-
-    explicit_profile = getattr(args, "infra_profile", None) is not None or "CALOSUM_INFRA_PROFILE" in env
-    explicit_memory_dir = getattr(args, "memory_dir", None) is not None or "CALOSUM_MEMORY_DIR" in env
-    explicit_telemetry = getattr(args, "otlp_jsonl", None) is not None or "CALOSUM_OTLP_JSONL" in env
-
-    if explicit_profile or explicit_memory_dir or explicit_telemetry:
-        return False
-
-    return (
-        settings.profile == InfrastructureProfile.EPHEMERAL
-        and settings.memory_dir is None
-        and settings.otlp_jsonl is None
-    )
-
-
-def with_local_persistence_defaults(settings: InfrastructureSettings) -> InfrastructureSettings:
-    return replace(settings, profile=InfrastructureProfile.PERSISTENT).with_profile_defaults()
-
-
-def _default_bridge_state_dir(settings: InfrastructureSettings) -> Path:
-    if settings.memory_dir is not None:
-        return settings.memory_dir.parent / "state"
-    if settings.duckdb_path is not None:
-        return settings.duckdb_path.parent
-    return Path(".calosum-runtime/state")
-
-
-def _default_evolution_archive_path(settings: InfrastructureSettings) -> Path:
-    if settings.memory_dir is not None:
-        return settings.memory_dir.parent / "evolution" / "archive.jsonl"
-    if settings.otlp_jsonl is not None:
-        telemetry_parent = settings.otlp_jsonl.parent
-        if telemetry_parent.name == "telemetry":
-            return telemetry_parent.parent / "evolution" / "archive.jsonl"
-        return telemetry_parent / "evolution" / "archive.jsonl"
-    return Path(".calosum-runtime/evolution/archive.jsonl")
-
-
-def _default_gea_experience_store_path(settings: InfrastructureSettings) -> Path:
-    if settings.memory_dir is not None:
-        return settings.memory_dir.parent / "evolution" / "gea.sqlite"
-    if settings.otlp_jsonl is not None:
-        telemetry_parent = settings.otlp_jsonl.parent
-        if telemetry_parent.name == "telemetry":
-            return telemetry_parent.parent / "evolution" / "gea.sqlite"
-        return telemetry_parent / "evolution" / "gea.sqlite"
-    return Path(".calosum-runtime/evolution/gea.sqlite")
+def _missing_local_dependency_stack() -> list[str]:
+    required = ("torch", "peft", "transformers")
+    return [package for package in required if importlib.util.find_spec(package) is None]
+def _configured_local_features(settings: InfrastructureSettings) -> list[str]:
+    features: list[str] = []
+    right_backend = (settings.right_hemisphere_backend or "").strip().lower()
+    if right_backend in {"huggingface", "vjepa21", "vljepa"}:
+        features.append(f"right_hemisphere_backend={right_backend}")
+    if settings.vector_quantization.strip().lower() == "turboquant":
+        features.append("vector_quantization=turboquant")
+    return features

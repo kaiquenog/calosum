@@ -5,12 +5,14 @@ import unittest
 from pathlib import Path
 
 from calosum import CalosumAgentBuilder, InfrastructureSettings, UserTurn
+from calosum.bootstrap.infrastructure.settings import CalosumMode
 
 
 class DualHemisphereE2ETests(unittest.TestCase):
     def test_dual_hemisphere_stack_runs_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings = InfrastructureSettings(
+                mode=CalosumMode.LOCAL,
                 right_hemisphere_backend="vjepa21",
                 right_model_path=Path(temp_dir),
                 left_hemisphere_backend="rlm",

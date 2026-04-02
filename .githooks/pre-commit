@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+set -eu
+
+blocked_files=$(git diff --cached --name-only | grep -E '(^|/).+\.log$|(^|/)test_.*\.txt$|(^|/)pip_.*\.txt$' | grep -v '^docs/' || true)
+
+if [ -n "$blocked_files" ]; then
+  echo "Commit bloqueado: arquivos de log/txt fora de docs/ detectados:"
+  echo "$blocked_files"
+  echo "Mova para docs/ ou remova do commit."
+  exit 1
+fi

@@ -8,7 +8,8 @@ from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, Je
 from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.wiring.factory import CalosumAgentBuilder
-from calosum.domain.cognition.bridge import CognitiveTokenizer, CognitiveTokenizerConfig
+from calosum.bootstrap.wiring.agent_baseline import AgentBaseline, AgentBaselineConfig
+from calosum.domain.cognition.bridge import ContextCompressor, ContextCompressorConfig, CognitiveTokenizer, CognitiveTokenizerConfig
 from calosum.domain.cognition.left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
 from calosum.domain.memory.memory import (
     DualMemorySystem,
@@ -20,6 +21,7 @@ from calosum.domain.memory.memory import (
 from calosum.domain.metacognition.metacognition import (
     CognitiveCandidate,
     CognitiveVariantSpec,
+    CognitiveVariantSelector,
     GEAReflectionController,
     GroupTurnResult,
     ReflectionOutcome,
@@ -36,6 +38,7 @@ from calosum.domain.memory.persistent_memory import (
 from calosum.shared.models.ports import (
     ActionRuntimePort,
     BridgeFusionPort,
+    ContextCompressorPort,
     CognitiveTokenizerPort,
     ExperienceStorePort,
     LeftHemispherePort,
@@ -57,6 +60,7 @@ from calosum.domain.infrastructure.telemetry import (
 from calosum.shared.models.types import (
     ActionExecutionResult,
     AgentTurnResult,
+    ContextDirective,
     CognitiveBridgePacket,
     ConsolidationReport,
     FailureType,
@@ -84,17 +88,24 @@ __all__ = [
     "ActionRuntimePort",
     "ActiveInferenceRightHemisphereAdapter",
     "AgentTurnResult",
+    "AgentBaseline",
+    "AgentBaselineConfig",
     "BridgeFusionPort",
     "CalosumAgent",
     "CalosumAgentBuilder",
     "CalosumAgentConfig",
     "CognitiveCandidate",
     "CognitiveBridgePacket",
+    "ContextDirective",
     "CognitiveTelemetryBus",
+    "ContextCompressor",
     "CognitiveTokenizer",
+    "ContextCompressorPort",
     "CognitiveTokenizerPort",
+    "ContextCompressorConfig",
     "CognitiveTokenizerConfig",
     "CognitiveVariantSpec",
+    "CognitiveVariantSelector",
     "ConsolidationReport",
     "CrossAttentionBridgeAdapter",
     "CrossAttentionBridgeConfig",

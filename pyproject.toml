@@ -32,7 +32,7 @@ local = [
     "transformers>=4.40.0",
     "sentence-transformers>=3.0.0",
 ]
-# API-only mode (without local AI dependencies)
+# API-only mode. Intentionally excludes local model stack (torch/peft/transformers).
 api = []
 
 [project.scripts]

@@ -4,7 +4,7 @@ import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from calosum.domain.cognition.bridge import CognitiveTokenizer
+from calosum.domain.cognition.bridge import ContextCompressor
 from calosum.shared.models.types import AgentTurnResult, RightHemisphereState, UserTurn
 
 
@@ -107,9 +107,9 @@ def default_cognitive_personas(max_width: int = 3) -> list[CognitiveVariantSpec]
     return personas[:max_width]
 
 
-class GEAReflectionController:
+class CognitiveVariantSelector:
     """
-    Juiz metacognitivo inspirado em Group-Evolving Agents.
+    Juiz metacognitivo para selecao de variantes cognitivas.
 
     A funcao dele aqui e:
     - comparar variantes cognitivas competidoras;
@@ -125,10 +125,10 @@ class GEAReflectionController:
     def evaluate(
         self,
         candidates: list[CognitiveCandidate],
-        base_tokenizer: CognitiveTokenizer,
+        base_tokenizer: ContextCompressor,
     ) -> ReflectionOutcome:
         if not candidates:
-            raise ValueError("GEA reflection requires at least one candidate")
+            raise ValueError("Cognitive variant selection requires at least one candidate")
 
         scoreboard: list[ReflectionScore] = []
         pruning_reasons: dict[str, str] = {}
@@ -201,13 +201,13 @@ class GEAReflectionController:
     async def aevaluate(
         self,
         candidates: list[CognitiveCandidate],
-        base_tokenizer: CognitiveTokenizer,
+        base_tokenizer: ContextCompressor,
     ) -> ReflectionOutcome:
         return self.evaluate(candidates, base_tokenizer)
 
-    def apply_neuroplasticity(
+    def apply_config_adaptation(
         self,
-        tokenizer: CognitiveTokenizer,
+        tokenizer: ContextCompressor,
         outcome: ReflectionOutcome,
     ) -> None:
         for key, value in outcome.bridge_adjustments.items():
@@ -306,7 +306,7 @@ class GEAReflectionController:
 
         return score, reasons
 
-    def _propose_bridge_adjustments(self, selected: CognitiveCandidate, base: CognitiveTokenizer) -> dict[str, Any]:
+    def _propose_bridge_adjustments(self, selected: CognitiveCandidate, base: ContextCompressor) -> dict[str, Any]:
         overrides = dict(selected.variant.tokenizer_overrides)
         valid_keys = {"salience_threshold", "base_temperature", "max_directives", "bottleneck_tokens",
                       "salience_gain", "salience_bias", "temperature_bias"}
@@ -393,3 +393,8 @@ class GEAReflectionController:
         avg_reward = arm.mean_reward
         diversity = 1.0 - avg_reward if avg_reward > 0.7 else 0.5
         return round(max(0.0, min(1.0, diversity)), 3)
+
+    def apply_neuroplasticity(self, tokenizer: ContextCompressor, outcome: ReflectionOutcome) -> None:
+        self.apply_config_adaptation(tokenizer, outcome)
+
+GEAReflectionController = CognitiveVariantSelector

@@ -6,12 +6,14 @@ from pathlib import Path
 
 from calosum import CalosumAgentBuilder, InfrastructureSettings
 from calosum.adapters.infrastructure.contract_wrappers import ContractEnforcedLeftHemisphereAdapter
+from calosum.bootstrap.infrastructure.settings import CalosumMode
 
 
 class FactoryBackends2026Tests(unittest.TestCase):
     def test_builder_selects_vjepa_and_rlm_and_cross_attention(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings = InfrastructureSettings(
+                mode=CalosumMode.LOCAL,
                 right_hemisphere_backend="vjepa21",
                 right_model_path=Path(temp_dir),
                 left_hemisphere_backend="rlm",

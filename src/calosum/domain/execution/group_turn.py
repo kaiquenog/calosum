@@ -80,7 +80,10 @@ async def process_group_turn(
             agent.tokenizer,
         )
     )
-    agent.reflection_controller.apply_neuroplasticity(agent.tokenizer, reflection)
+    if hasattr(agent.reflection_controller, "apply_config_adaptation"):
+        agent.reflection_controller.apply_config_adaptation(agent.tokenizer, reflection)
+    else:
+        agent.reflection_controller.apply_neuroplasticity(agent.tokenizer, reflection)
     selected_candidate = next(
         item
         for item in candidates

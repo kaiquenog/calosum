@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -176,13 +177,21 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
     def test_factory_turboquant_flag(self) -> None:
         """CALOSUM_VECTOR_QUANTIZATION=turboquant causes _build_codec to return TurboQuantVectorCodec."""
-        import os
         from calosum.bootstrap.wiring.factory import _build_codec
         from calosum.adapters.perception.quantized_embeddings import TurboQuantVectorCodec
 
-        settings = InfrastructureSettings.from_sources(
-            environ={**os.environ, "CALOSUM_VECTOR_QUANTIZATION": "turboquant", "CALOSUM_TURBOQUANT_BITS": "3"}
-        )
+        with patch(
+            "calosum.bootstrap.infrastructure.settings._missing_local_dependency_stack",
+            return_value=[],
+        ):
+            settings = InfrastructureSettings.from_sources(
+                environ={
+                    **os.environ,
+                    "CALOSUM_MODE": "local",
+                    "CALOSUM_VECTOR_QUANTIZATION": "turboquant",
+                    "CALOSUM_TURBOQUANT_BITS": "3",
+                }
+            )
         codec = _build_codec(settings)
         self.assertIsNotNone(codec)
         self.assertIsInstance(codec, TurboQuantVectorCodec)
@@ -216,6 +225,19 @@ class InfrastructureBuilderTests(unittest.TestCase):
         builder = CalosumAgentBuilder(InfrastructureSettings().with_profile_defaults())
         agent = builder.build()
         self.assertTrue(hasattr(agent, "interceptor_manager"))
+
+    def test_factory_rejects_lora_backend_in_api_mode(self) -> None:
+        settings = InfrastructureSettings.from_sources(
+            environ={
+                "CALOSUM_MODE": "api",
+                "CALOSUM_NIGHT_TRAINER_BACKEND": "lora",
+            }
+        )
+        builder = CalosumAgentBuilder(settings.with_profile_defaults())
+        with patch.dict(os.environ, {"CALOSUM_NIGHT_TRAINER_BACKEND": "lora"}):
+            with self.assertRaises(RuntimeError) as ctx:
+                builder.build_night_trainer()
+        self.assertIn("CALOSUM_MODE=api disables LoRA/QLoRA", str(ctx.exception))
 
 
 if __name__ == "__main__":

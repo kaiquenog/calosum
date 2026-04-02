@@ -31,7 +31,7 @@ class RightHemispherePort(Protocol):
 
 
 @runtime_checkable
-class CognitiveTokenizerPort(Protocol):
+class ContextCompressorPort(Protocol):
     def translate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket: ...
     async def atranslate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket: ...
 
@@ -128,7 +128,11 @@ class ReflectionControllerPort(Protocol):
         base_tokenizer: Any,
     ) -> "ReflectionOutcome": ...
 
+    def apply_config_adaptation(self, tokenizer: Any, outcome: "ReflectionOutcome") -> None: ...
     def apply_neuroplasticity(self, tokenizer: Any, outcome: "ReflectionOutcome") -> None: ...
+
+
+CognitiveTokenizerPort = ContextCompressorPort
 
 
 @runtime_checkable

@@ -20,6 +20,7 @@ Este diretorio e o sistema de registro do projeto.
 - [product-specs/index.md](product-specs/index.md): objetivos e escopo funcional do sistema
 - [references/harness-engineering.md](references/harness-engineering.md): pesquisa usada para governanca do repositorio
 - [exec-plans/tech-debt-tracker.md](exec-plans/tech-debt-tracker.md): pendencias e debt ativo
+- [benchmarks/baseline.md](benchmarks/baseline.md): baseline comparativo obrigatório para sprints
 
 ## Planos
 

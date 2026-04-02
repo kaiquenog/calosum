@@ -49,6 +49,8 @@ pip_install_log.txt
 test_full_log.txt
 test_output.txt
 *.log
+test_*.txt
+pip_*.txt
 
 # Cache do matplotlib (gerado durante testes)
 .matplotlib/

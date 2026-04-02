@@ -19,8 +19,8 @@ from calosum.adapters.perception.multimodal_perception import LocalClipVisionAda
 from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
-from calosum.bootstrap.infrastructure.settings import InfrastructureSettings
-from calosum.domain.metacognition.metacognition import GEAReflectionController
+from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureSettings
+from calosum.domain.metacognition.metacognition import CognitiveVariantSelector
 from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA
 
 logger = logging.getLogger(__name__)
@@ -41,10 +41,10 @@ def resolve_bridge_fusion(settings: InfrastructureSettings):
 
 def resolve_reflection_controller(settings: InfrastructureSettings):
     if not settings.gea_sharing_enabled:
-        return GEAReflectionController()
+        return CognitiveVariantSelector()
 
     if settings.gea_experience_store_path is None:
-        return GEAReflectionController()
+        return CognitiveVariantSelector()
 
     store = GraphGeaExperienceStore(
         GeaExperienceGraphConfig(path=settings.gea_experience_store_path)

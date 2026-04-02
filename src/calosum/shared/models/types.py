@@ -211,10 +211,13 @@ class RightHemisphereState:
 
 
 @dataclass(slots=True)
-class SoftPromptToken:
+class ContextDirective:
     token: str
     weight: float
     provenance: str
+
+
+SoftPromptToken = ContextDirective
 
 
 @dataclass(slots=True)
@@ -243,7 +246,7 @@ class CognitiveBridgePacket:
     """
 
     context_id: str
-    soft_prompts: list[SoftPromptToken]
+    soft_prompts: list[ContextDirective]
     control: BridgeControlSignal
     salience: float
     latent_vector: list[float] = field(default_factory=list)

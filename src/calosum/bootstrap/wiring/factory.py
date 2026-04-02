@@ -21,7 +21,7 @@ from calosum.domain.memory.persistent_memory import (
     JsonlSemanticStore,
     PersistentDualMemorySystem,
 )
-from calosum.bootstrap.infrastructure.settings import InfrastructureProfile, InfrastructureSettings
+from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureProfile, InfrastructureSettings
 from calosum.bootstrap.wiring.backend_resolvers import (
     resolve_bridge_fusion,
     resolve_left_hemisphere,
@@ -44,6 +44,14 @@ def _build_codec(settings: InfrastructureSettings):
     return None
 
 
+def _validate_mode_consistency(settings: InfrastructureSettings) -> None:
+    backend = (settings.left_hemisphere_backend or "").strip().lower()
+    if settings.mode == CalosumMode.API and backend == "rlm":
+        raise RuntimeError(
+            "INCOHERENT CONFIGURATION: CALOSUM_MODE=api cannot use local backend left_hemisphere_backend=rlm."
+        )
+
+
 @dataclass(slots=True)
 class CalosumAgentBuilder:
     settings: InfrastructureSettings
@@ -54,6 +62,7 @@ class CalosumAgentBuilder:
     _last_right_hemisphere_model_name: str | None = field(default=None, init=False, repr=False)
 
     def build(self, agent_accessor: Any | None = None) -> CalosumAgent:
+        _validate_mode_consistency(self.settings)
         interceptor_manager = InterceptorManager([AuditLogInterceptor()])
         left_hemisphere = self.build_left_hemisphere()
         right_hemisphere = self.build_right_hemisphere()
@@ -237,15 +246,24 @@ class CalosumAgentBuilder:
         import os
         from calosum.adapters.night_trainer.night_trainer import NightTrainer
 
+        requested_backend = os.getenv("CALOSUM_NIGHT_TRAINER_BACKEND", "dspy").strip().lower()
+        if self.settings.mode == CalosumMode.API and requested_backend in {"lora", "qlora"}:
+            raise RuntimeError(
+                "INCOHERENT CONFIGURATION: CALOSUM_MODE=api disables LoRA/QLoRA night training. "
+                "Use CALOSUM_MODE=local for LoRA/QLoRA."
+            )
+        effective_backend = "dspy" if self.settings.mode == CalosumMode.API else requested_backend
         return NightTrainer(
             model_name=self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct",
             dataset_path=self._runtime_root() / "nightly_data" / "dspy_dataset.jsonl",
             output_dir=self._runtime_root() / "dspy_artifacts" / "latest",
+            lora_dataset_path=self._runtime_root() / "nightly_data" / "lora_sharegpt.jsonl",
+            lora_output_dir=self._runtime_root() / "lora_adapters" / "latest",
             api_url=self.settings.left_hemisphere_endpoint,
             api_key=self.settings.left_hemisphere_api_key,
             provider=self.settings.left_hemisphere_provider,
             reasoning_effort=self.settings.left_hemisphere_reasoning_effort,
-            backend=os.getenv("CALOSUM_NIGHT_TRAINER_BACKEND", "dspy"),
+            backend=effective_backend,
         )
 
     def build_mcp_client(self) -> HttpMcpClientAdapter | None:

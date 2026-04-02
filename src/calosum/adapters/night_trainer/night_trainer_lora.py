@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import json
 import logging
@@ -20,7 +22,7 @@ class LoraNightTrainer:
         base_model_name: str,
         dataset_path: Path,
         output_dir: Path,
-    ):
+    ) -> None:
         self.base_model_name = base_model_name
         self.dataset_path = dataset_path
         self.output_dir = output_dir
@@ -62,9 +64,9 @@ class LoraNightTrainer:
                 "examples_trained": len(dataset)
             }
             
-        except Exception as e:
-            logger.error(f"LoRA training failed: {e}")
-            return {"status": "error", "reason": str(e)}
+        except Exception as exc:
+            logger.error("LoRA training failed: %s", exc)
+            return {"status": "error", "reason": str(exc)}
 
     def _load_dataset(self) -> list[dict[str, Any]]:
         dataset: list[dict[str, Any]] = []

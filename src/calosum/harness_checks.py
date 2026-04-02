@@ -127,7 +127,12 @@ MODULE_RULES: dict[str, set[str]] = {
     },
 
     # BOOTSTRAP
-    "bootstrap.infrastructure.settings": set(),
+    "bootstrap.infrastructure.settings": {
+        "bootstrap.infrastructure.helpers",
+    },
+    "bootstrap.infrastructure.helpers": {
+        "bootstrap.infrastructure.settings",
+    },
     "bootstrap.wiring.backend_resolvers": {
         "adapters.perception.active_inference",
         "adapters.bridge.bridge_cross_attention",
@@ -151,6 +156,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.perception.active_inference",
         "adapters.execution.action_runtime",
         "adapters.bridge.bridge_store",
+        "bootstrap.wiring.agent_baseline",
         "bootstrap.wiring.backend_resolvers",
         "adapters.knowledge.knowledge_graph_nanorag",
         "adapters.communication.latent_exchange",
@@ -174,6 +180,13 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.infrastructure.telemetry",
         "shared.models.ports",
         "shared.models.types"
+    },
+    "bootstrap.wiring.agent_baseline": {
+        "adapters.execution.action_runtime",
+        "adapters.llm.llm_qwen",
+        "adapters.memory.text_embeddings",
+        "bootstrap.infrastructure.settings",
+        "shared.models.types",
     },
     "bootstrap.infrastructure.jepa_rs_manager": {"shared.models.types"},
     "bootstrap.entry.cli": {
@@ -231,7 +244,10 @@ MODULE_RULES: dict[str, set[str]] = {
     },
     "adapters.memory.memory_qdrant_serializers": {"shared.models.types", "shared.models.ports"},
     "adapters.memory.text_embeddings": {"shared.utils.async_utils", "shared.models.ports"},
-    "adapters.night_trainer.night_trainer": {"adapters.night_trainer.night_trainer_dspy"},
+    "adapters.night_trainer.night_trainer": {
+        "adapters.night_trainer.night_trainer_dspy",
+        "adapters.night_trainer.night_trainer_lora",
+    },
     "adapters.night_trainer.night_trainer_dspy": set(),
     "adapters.night_trainer.night_trainer_lora": set(),
     "adapters.perception.active_inference": {"shared.models.types", "domain.cognition.right_hemisphere"},
@@ -258,6 +274,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.hemisphere.right_hemisphere_vjepa21",
         "adapters.hemisphere.right_hemisphere_vljepa",
         "bootstrap.wiring.factory",
+        "bootstrap.wiring.agent_baseline",
         "domain.cognition.bridge",
         "domain.cognition.left_hemisphere",
         "domain.memory.memory",
