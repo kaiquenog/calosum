@@ -32,6 +32,10 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - `CALOSUM_RIGHT_JEPARS_BINARY`: Opcional. Binario do backend Rust `jepa-rs`.
 - `CALOSUM_BRIDGE_BACKEND`: Opcional. Seleciona a fusao do corpus caloso (`heuristic` ou `cross_attention`).
 - `CALOSUM_LEFT_PROMPT_PATH`: Opcional. Caminho para template externo de prompt base do hemisferio esquerdo (prompt-as-data).
+- `CALOSUM_FUSION_ENABLED`: Opcional. Liga/desliga fusao semantica JEPA+LLM no hemisferio esquerdo.
+- `CALOSUM_FUSION_CANDIDATES`: Opcional. Numero de candidatos gerados por turno quando fusao estiver ativa (padrao: 3).
+- `CALOSUM_FUSION_SELECTION_MODE`: Opcional. Modo de selecao (`guided` para JEPA-guided, `random` para controle B).
+- `CALOSUM_FUSION_UNCERTAINTY_THRESHOLD`: Opcional. Trigger maximo de incerteza JEPA para ativar custo extra da fusao (padrao: 0.5).
 - `CALOSUM_MCP_ENABLED`: Opcional. Liga suporte a chamadas MCP no runtime (`call_mcp_tool`).
 - `CALOSUM_MCP_SERVERS`: Opcional. JSON `{ "nome":"http://host:porta/mcp" }` com endpoints MCP via HTTP.
 - `CALOSUM_MCP_ALLOWLIST`: Opcional. Lista CSV de servidores MCP permitidos (controle de seguranca).
@@ -53,6 +57,7 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - Nada é salvo no disco. Ideal para rodar a suíte de testes rápidos.
 - Se a stack opcional de `transformers`/`sentence-transformers` não estiver disponível, o bootstrap faz fallback para o hemisfério direito heurístico sem abortar a inicialização.
 - Se voce iniciar explicitamente API ou chat com este perfil configurado, a UI nao enxergara eventos de outros processos porque a telemetria fica isolada em memoria.
+- A fusao JEPA+LLM fica desabilitada por padrao para evitar custo extra de chamadas LLM (pode ser habilitada via `CALOSUM_FUSION_ENABLED=true`).
 
 ### 2. Persistent
 `CALOSUM_INFRA_PROFILE=persistent`

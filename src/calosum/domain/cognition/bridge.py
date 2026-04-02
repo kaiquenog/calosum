@@ -254,6 +254,7 @@ class ContextCompressor:
                 "salience_gain": self.config.salience_gain,
                 "salience_bias": self.config.salience_bias,
                 "temperature_bias": self.config.temperature_bias,
+                "jepa_uncertainty": float(right_state.telemetry.get("jepa_uncertainty", 1.0)),
             },
         )
 

@@ -134,7 +134,8 @@ class QwenLeftHemisphereAdapter:
             prompt += "\n\nO usuário fez uma pergunta sobre o seu próprio estado ou arquitetura. Utilize a ferramenta 'introspect_self' passando a query correspondente para obter dados reais antes de responder."
             
         prompt = augment_prompt_with_compiled_artifact(prompt, self.compiled_prompt_artifact)
-        request = self._build_request(prompt)
+        temperature = self._resolve_temperature(bridge_packet)
+        request = self._build_request(prompt, temperature=temperature)
 
         try:
             response = await self._post_with_retry(request["url"], request["payload"])
@@ -240,32 +241,61 @@ class QwenLeftHemisphereAdapter:
             ])
         return await self.areason(user_turn, bridge_packet, memory_context, feedback, attempt, workspace)
 
-    def _build_request(self, prompt: str) -> dict[str, Any]:
+    def _build_request(self, prompt: str, *, temperature: float | None = None) -> dict[str, Any]:
         api_mode = self._resolve_api_mode()
         resolved_model = self._resolve_model_name(api_mode)
 
         if api_mode == "openai_responses":
             return {
                 "api_mode": api_mode, "resolved_model": resolved_model,
-                "url": self._responses_url(), "payload": build_openai_responses_payload(prompt, resolved_model, self.config.max_tokens, self.config.reasoning_effort),
+                "url": self._responses_url(),
+                "payload": build_openai_responses_payload(
+                    prompt,
+                    resolved_model,
+                    self.config.max_tokens,
+                    self.config.reasoning_effort,
+                    temperature,
+                ),
             }
 
         if api_mode == "openai_chat":
             return {
                 "api_mode": api_mode, "resolved_model": resolved_model,
-                "url": self._chat_completions_url(), "payload": build_openai_chat_payload(prompt, resolved_model, self.config.max_tokens),
+                "url": self._chat_completions_url(),
+                "payload": build_openai_chat_payload(
+                    prompt,
+                    resolved_model,
+                    self.config.max_tokens,
+                    temperature,
+                ),
             }
 
         if api_mode == "openrouter":
             return {
                 "api_mode": api_mode, "resolved_model": resolved_model,
-                "url": self._chat_completions_url(), "payload": build_openai_chat_payload(prompt, resolved_model, self.config.max_tokens),
+                "url": self._chat_completions_url(),
+                "payload": build_openai_chat_payload(
+                    prompt,
+                    resolved_model,
+                    self.config.max_tokens,
+                    temperature,
+                ),
             }
 
         return {
             "api_mode": api_mode, "resolved_model": resolved_model,
-            "url": self._chat_completions_url(), "payload": build_compatible_chat_payload(prompt, resolved_model, self.config.max_tokens),
+            "url": self._chat_completions_url(),
+            "payload": build_compatible_chat_payload(
+                prompt,
+                resolved_model,
+                self.config.max_tokens,
+                temperature,
+            ),
         }
+
+    def _resolve_temperature(self, bridge_packet: CognitiveBridgePacket) -> float:
+        candidate = float(bridge_packet.control.target_temperature)
+        return round(min(1.5, max(0.0, candidate)), 3)
 
     def _resolve_api_mode(self) -> str:
         provider = self.config.provider.strip().lower()

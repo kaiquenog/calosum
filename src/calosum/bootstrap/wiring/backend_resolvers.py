@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
@@ -14,12 +15,13 @@ from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, Rl
 from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import HeuristicJEPAAdapter
 from calosum.adapters.hemisphere.right_hemisphere_trained_jepa import TrainedJEPAAdapter
 from calosum.adapters.llm.llm_failover import ResilientLeftHemisphereAdapter
+from calosum.adapters.llm.llm_fusion import MultiSampleFusionConfig, MultiSampleFusionLeftHemisphereAdapter
 from calosum.adapters.llm.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.adapters.perception.multimodal_perception import LocalClipVisionAdapter
 from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
-from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureSettings
+from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureProfile, InfrastructureSettings
 from calosum.domain.metacognition.metacognition import CognitiveVariantSelector
 
 def resolve_vision_adapter() -> LocalClipVisionAdapter:
@@ -82,14 +84,17 @@ def resolve_left_hemisphere(
                 or settings.left_hemisphere_reasoning_effort
             ),
         )
+        resilient = ResilientLeftHemisphereAdapter([primary, fallback])
         return (
             ContractEnforcedLeftHemisphereAdapter(
-                ResilientLeftHemisphereAdapter([primary, fallback])
+                _with_fusion_if_enabled(resilient, settings)
             ),
             "resilient_failover_adapter",
         )
 
-    return ContractEnforcedLeftHemisphereAdapter(primary), _legacy_left_backend_name(settings)
+    return ContractEnforcedLeftHemisphereAdapter(
+        _with_fusion_if_enabled(primary, settings)
+    ), _legacy_left_backend_name(settings)
 
 
 def resolve_right_hemisphere(
@@ -212,6 +217,56 @@ def _build_qwen(
 def _active_inference_right(base_adapter: Any) -> ActiveInferenceRightHemisphereAdapter:
     wrapped = ContractEnforcedRightHemisphereAdapter(base_adapter)
     return ActiveInferenceRightHemisphereAdapter(wrapped)
+
+
+def _with_fusion_if_enabled(provider: Any, settings: InfrastructureSettings) -> Any:
+    enabled_default = settings.profile != InfrastructureProfile.EPHEMERAL
+    enabled = _env_bool("CALOSUM_FUSION_ENABLED", enabled_default)
+    if not enabled:
+        return provider
+    candidates = max(1, _env_int("CALOSUM_FUSION_CANDIDATES", 3))
+    threshold = _env_float("CALOSUM_FUSION_UNCERTAINTY_THRESHOLD", 0.5)
+    mode_raw = os.getenv("CALOSUM_FUSION_SELECTION_MODE", "guided").strip().lower()
+    mode = "random" if mode_raw in {"random", "control_b", "treatment_b"} else "guided"
+    config = MultiSampleFusionConfig(
+        enabled=enabled,
+        n_candidates=candidates,
+        uncertainty_threshold=max(0.0, min(1.0, threshold)),
+        selection_mode=mode,
+    )
+    return MultiSampleFusionLeftHemisphereAdapter(provider=provider, config=config)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
 
 
 def _legacy_left_backend_name(settings: InfrastructureSettings) -> str:

@@ -289,7 +289,13 @@ def extract_chat_content(data: dict[str, Any]) -> str:
     return content.strip()
 
 
-def build_openai_responses_payload(prompt: str, model: str, max_tokens: int, reasoning_effort: str | None = None) -> dict[str, Any]:
+def build_openai_responses_payload(
+    prompt: str,
+    model: str,
+    max_tokens: int,
+    reasoning_effort: str | None = None,
+    temperature: float | None = None,
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": model,
         "input": prompt,
@@ -305,10 +311,17 @@ def build_openai_responses_payload(prompt: str, model: str, max_tokens: int, rea
     }
     if reasoning_effort:
         payload["reasoning"] = {"effort": reasoning_effort}
+    if temperature is not None:
+        payload["temperature"] = temperature
     return payload
 
-def build_openai_chat_payload(prompt: str, model: str, max_tokens: int) -> dict[str, Any]:
-    return {
+def build_openai_chat_payload(
+    prompt: str,
+    model: str,
+    max_tokens: int,
+    temperature: float | None = None,
+) -> dict[str, Any]:
+    payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": "You are a logical neuro-symbolic agent. Output valid JSON only, corresponding to LeftHemisphereResult format."},
@@ -323,11 +336,20 @@ def build_openai_chat_payload(prompt: str, model: str, max_tokens: int) -> dict[
                 "schema": left_hemisphere_result_schema(),
             },
         },
-        "temperature": 0.1,
     }
+    if temperature is not None:
+        payload["temperature"] = temperature
+    else:
+        payload["temperature"] = 0.1
+    return payload
 
-def build_compatible_chat_payload(prompt: str, model: str, max_tokens: int) -> dict[str, Any]:
-    return {
+def build_compatible_chat_payload(
+    prompt: str,
+    model: str,
+    max_tokens: int,
+    temperature: float | None = None,
+) -> dict[str, Any]:
+    payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": "You are a logical neuro-symbolic agent. Output valid JSON only."},
@@ -336,3 +358,6 @@ def build_compatible_chat_payload(prompt: str, model: str, max_tokens: int) -> d
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
+    if temperature is not None:
+        payload["temperature"] = temperature
+    return payload
