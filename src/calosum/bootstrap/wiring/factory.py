@@ -6,7 +6,7 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
-from calosum.adapters.action_runtime import ConcreteActionRuntime
+from calosum.adapters.execution.action_runtime import ConcreteActionRuntime
 from calosum.adapters.tools.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
 from calosum.adapters.communication.telemetry_otlp import OTLPHTTPTraceSink
 from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig

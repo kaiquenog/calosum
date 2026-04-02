@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from calosum.adapters.action_runtime import ConcreteActionRuntime
+from calosum.adapters.execution.action_runtime import ConcreteActionRuntime
 from calosum.shared.utils.tools import ToolRegistry, ToolSchema
 from calosum.shared.models.types import ActionExecutionResult, LeftHemisphereResult, PrimitiveAction, TypedLambdaProgram
 

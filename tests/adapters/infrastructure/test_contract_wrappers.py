@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from calosum.adapters.contract_wrappers import (
+from calosum.adapters.infrastructure.contract_wrappers import (
     ContractEnforcedLeftHemisphereAdapter,
     ContractEnforcedRightHemisphereAdapter,
 )

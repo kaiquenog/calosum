@@ -6,7 +6,7 @@ from typing import Any
 
 from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
 from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter
-from calosum.adapters.contract_wrappers import (
+from calosum.adapters.infrastructure.contract_wrappers import (
     ContractEnforcedLeftHemisphereAdapter,
     ContractEnforcedRightHemisphereAdapter,
 )

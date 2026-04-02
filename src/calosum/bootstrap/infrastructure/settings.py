@@ -175,7 +175,31 @@ class InfrastructureSettings:
             mcp_servers=_parse_json_mapping(env.get("CALOSUM_MCP_SERVERS")),
             mcp_allowlist=_parse_csv_list(env.get("CALOSUM_MCP_ALLOWLIST")),
         )
-        return settings.with_profile_defaults()
+        profile_enabled_settings = settings.with_profile_defaults()
+        profile_enabled_settings.validate_consistency()
+        return profile_enabled_settings
+
+    def validate_consistency(self) -> None:
+        try:
+            import torch
+            has_local_deps = True
+        except ImportError:
+            has_local_deps = False
+
+        if not has_local_deps:
+            # Determine if any strictly local components were configured
+            right_backend = (self.right_hemisphere_backend or "").strip().lower()
+            if right_backend in {"huggingface", "vjepa21", "vljepa"}:
+                raise RuntimeError(
+                    f"INCOHERENT CONFIGURATION: right_hemisphere_backend '{right_backend}' requires local AI dependencies but they are not installed. "
+                    "Did you mean to run 'pip install calosum[local]'?"
+                )
+            
+            if self.vector_quantization == "turboquant":
+                raise RuntimeError(
+                    "INCOHERENT CONFIGURATION: vector_quantization 'turboquant' requires local AI dependencies (such as torch) but they are not installed. "
+                    "Did you mean to run 'pip install calosum[local]'?"
+                )
 
     def with_profile_defaults(self) -> "InfrastructureSettings":
         if self.profile == InfrastructureProfile.PERSISTENT:

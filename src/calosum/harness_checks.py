@@ -22,6 +22,8 @@ SEMANTIC_PACKAGES = [
     "domain/execution",
     "domain/infrastructure",
     "adapters",
+    "adapters/execution",
+    "adapters/infrastructure",
     "bootstrap",
     "bootstrap/entry",
     "bootstrap/wiring",
@@ -129,7 +131,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "bootstrap.wiring.backend_resolvers": {
         "adapters.perception.active_inference",
         "adapters.bridge.bridge_cross_attention",
-        "adapters.contract_wrappers",
+        "adapters.infrastructure.contract_wrappers",
         "adapters.experience.gea_experience_graph",
         "adapters.experience.gea_experience_store",
         "adapters.experience.gea_reflection_experience",
@@ -147,7 +149,7 @@ MODULE_RULES: dict[str, set[str]] = {
     },
     "bootstrap.wiring.factory": {
         "adapters.perception.active_inference",
-        "adapters.action_runtime",
+        "adapters.execution.action_runtime",
         "adapters.bridge.bridge_store",
         "bootstrap.wiring.backend_resolvers",
         "adapters.knowledge.knowledge_graph_nanorag",
@@ -194,7 +196,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "bootstrap.entry.__main__": {"bootstrap.entry.cli"},
 
     # ADAPTERS
-    "adapters.action_runtime": {
+    "adapters.execution.action_runtime": {
         "adapters.tools.http_request", "adapters.tools.code_execution", "adapters.tools.introspection",
         "adapters.tools.mcp_tool", "adapters.tools.persistent_shell", "adapters.tools.subordinate_agent",
         "shared.utils.async_utils", "shared.utils.tools", "shared.models.types",
@@ -204,7 +206,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.communication.channel_telegram": {"shared.models.types"},
     "adapters.communication.latent_exchange": {"shared.models.ports", "domain.infrastructure.event_bus"},
     "adapters.communication.telemetry_otlp": {"domain.infrastructure.telemetry"},
-    "adapters.contract_wrappers": {"shared.models.types"},
+    "adapters.infrastructure.contract_wrappers": {"shared.models.types"},
     "adapters.experience.gea_experience_distributed": set(),
     "adapters.experience.gea_experience_graph": {"shared.models.ports"},
     "adapters.experience.gea_experience_store": set(),

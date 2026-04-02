@@ -34,7 +34,8 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
    - **`communication/`**: `channel_telegram.py`, `telemetry_otlp.py`.
    - **`experience/`**: `gea_experience_store.py`, `gea_experience_distributed.py`.
    - **`night_trainer/`**: `night_trainer.py`, `night_trainer_dspy.py`.
-   - **Root**: `action_runtime.py`, `contract_wrappers.py`.
+   - **`execution/`**: `action_runtime.py`.
+   - **`infrastructure/`**: `contract_wrappers.py`.
 4. **`bootstrap/`** (`settings.py`, `backend_resolvers.py`, `factory.py`, `context.py`, `cli.py`, `api.py`, `routers/system.py`, `routers/chat.py`, `routers/telemetry.py`, `__main__.py`)
    Entrada da aplicação. `factory.py` instancia adapters, constrói `capability_snapshot` real e injeta tudo no domain via `CalosumAgentBuilder`. `backend_resolvers.py` centraliza a lógica de seleção de backends por feature flags (hemisferio direito, esquerdo e bridge), mantendo `factory.py` desacoplado das decisões de routing. `context.py` concentra singletons/cache e resolução de settings para API. `routers/*` mantém as rotas FastAPI segmentadas por domínio HTTP. O pacote `bootstrap` segue sendo o único ponto autorizado a acoplar adapters e domain.
 

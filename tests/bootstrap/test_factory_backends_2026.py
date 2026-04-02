@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from calosum import CalosumAgentBuilder, InfrastructureSettings
-from calosum.adapters.contract_wrappers import ContractEnforcedLeftHemisphereAdapter
+from calosum.adapters.infrastructure.contract_wrappers import ContractEnforcedLeftHemisphereAdapter
 
 
 class FactoryBackends2026Tests(unittest.TestCase):

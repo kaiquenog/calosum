@@ -23,7 +23,7 @@ Atualizado em: 2026-03-31
 |---|---|---|
 | `adapters/memory_qdrant.py` | 393 | 2026-03-31 |
 | `shared/types.py` | 391 | 2026-03-31 |
-| `adapters/contract_wrappers.py` | 387 | 2026-03-31 |
+| `adapters/infrastructure/contract_wrappers.py` | 387 | 2026-03-31 |
 | `domain/telemetry.py` | 379 | 2026-03-31 |
 
 ### 🟡 Pendentes de sprint dedicada
@@ -45,4 +45,4 @@ Atualizado em: 2026-03-31
 - **2026-03-31** — Warning `MPLCONFIGDIR`: corrigido em `tests/__init__.py` (compatível com `unittest discover` e pytest).
 - **2026-03-31** — Ghost rules `final_prod_val`, `verify_v3`, `debug_numpy` e `domain.tool_registry` removidas do `MODULE_RULES`.
 - **2026-03-31** — Warning `tensor.detach()` em `bridge_cross_attention.py` corrigido.
-- **2026-03-30** — Contratos de backend padronizados via `adapters/contract_wrappers.py`.
+- **2026-03-30** — Contratos de backend padronizados via `adapters/infrastructure/contract_wrappers.py`.

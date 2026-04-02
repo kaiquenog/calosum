@@ -56,7 +56,7 @@ no harness não aparecem na documentação:
 
 **adapters/** — ausentes do ARCHITECTURE.md:
 - `bridge_cross_attention.py`
-- `contract_wrappers.py`
+- `adapters/infrastructure/contract_wrappers.py`
 - `gea_experience_distributed.py`
 - `gea_experience_store.py`
 - `gea_reflection_experience.py`
@@ -86,7 +86,7 @@ Monitoramento ativo necessário:
 | `domain/evolution.py` | 394 | 🟠 6 linhas da violação |
 | `adapters/memory_qdrant.py` | 393 | 🟠 7 linhas da violação |
 | `shared/types.py` | 391 | 🟡 9 linhas da violação |
-| `adapters/contract_wrappers.py` | 387 | 🟡 |
+| `adapters/infrastructure/contract_wrappers.py` | 387 | 🟡 |
 | `domain/telemetry.py` | 379 | 🟡 |
 | `bootstrap/settings.py` | 354 | 🟢 confortável |
 

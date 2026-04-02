@@ -4,7 +4,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from calosum.adapters.action_runtime import ConcreteActionRuntime
+from calosum.adapters.execution.action_runtime import ConcreteActionRuntime
 from calosum.adapters.tools.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
 from calosum.domain.infrastructure.interceptors import AuditLogInterceptor, InterceptorManager
 from calosum.shared.models.types import (

@@ -13,7 +13,7 @@ from calosum import (
     PersistentDualMemorySystem,
     RightHemisphereJEPA,
 )
-from calosum.adapters.contract_wrappers import ContractEnforcedRightHemisphereAdapter
+from calosum.adapters.infrastructure.contract_wrappers import ContractEnforcedRightHemisphereAdapter
 from calosum.domain.infrastructure.telemetry import OTLPJsonlTelemetrySink
 
 
