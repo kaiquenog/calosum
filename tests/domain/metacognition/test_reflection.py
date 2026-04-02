@@ -178,6 +178,36 @@ class ReflectionTests(unittest.TestCase):
             any("fronteira de acoes" in directive for directive in directives_by_variant["pragmatico"])
         )
 
+    def test_process_turn_ignores_surprise_when_uncertainty_is_high(self) -> None:
+        class HighUncertaintyRightHemisphere:
+            def perceive(self, user_turn, memory_context=None, workspace=None):
+                return RightHemisphereState(
+                    context_id=user_turn.turn_id,
+                    latent_vector=[0.1] * 16,
+                    salience=0.5,
+                    emotional_labels=["neutral"],
+                    world_hypotheses={"interaction_complexity": 0.2, "semantic_density": 0.1},
+                    confidence=0.4,
+                    surprise_score=0.92,
+                    telemetry={
+                        "surprise_source": "jepa_prediction_error",
+                        "jepa_uncertainty": 0.91,
+                        "ignore_surprise_for_branching": True,
+                    },
+                )
+
+            async def aperceive(self, user_turn, memory_context=None, workspace=None):
+                return self.perceive(user_turn, memory_context, workspace)
+
+        agent = CalosumAgent(right_hemisphere=HighUncertaintyRightHemisphere())
+        result = agent.process_turn(
+            UserTurn(
+                session_id="uncertain-session",
+                user_text="Pedido simples que nao deveria disparar branching por surpresa.",
+            )
+        )
+        self.assertFalse(hasattr(result, "candidates"))
+
     def test_group_turn_executes_variants_in_parallel(self) -> None:
         class StaticRightHemisphere:
             def perceive(self, user_turn, memory_context=None, workspace=None):

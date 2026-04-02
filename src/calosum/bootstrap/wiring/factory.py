@@ -133,12 +133,14 @@ class CalosumAgentBuilder:
         except Exception as exc:
             logger.warning("Falling back to heuristic right hemisphere adapter: %s", exc)
             from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
-            from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA
+            from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import (
+                HeuristicJEPAAdapter,
+            )
 
-            base_adapter = RightHemisphereJEPA(vision_adapter=vision_adapter)
+            base_adapter = HeuristicJEPAAdapter()
             setattr(base_adapter, "degraded_reason", f"resolver_fallback:{exc.__class__.__name__}")
-            self._last_right_hemisphere_backend = "active_inference_heuristic_fallback"
-            self._last_right_hemisphere_model_name = "jepa"
+            self._last_right_hemisphere_backend = "active_inference_heuristic_jepa_fallback"
+            self._last_right_hemisphere_model_name = "heuristic-jepa-phase1"
             return ActiveInferenceRightHemisphereAdapter(base_adapter)
 
     def build_memory_system(self):
@@ -297,17 +299,13 @@ class CalosumAgentBuilder:
         return "in_memory"
 
     def _right_hemisphere_health(self) -> ComponentHealth:
-        return (
-            ComponentHealth.DEGRADED
-            if self._last_right_hemisphere_backend in {"active_inference_heuristic_fallback"}
-            else ComponentHealth.HEALTHY
-        )
+        return ComponentHealth.DEGRADED if self._last_right_hemisphere_backend in {"active_inference_heuristic_jepa_fallback"} else ComponentHealth.HEALTHY
 
     def _right_hemisphere_backend_name(self) -> str:
-        return self._last_right_hemisphere_backend or "active_inference_with_optional_huggingface"
+        return self._last_right_hemisphere_backend or "active_inference_heuristic_jepa_phase1"
 
     def _right_hemisphere_model_name(self) -> str:
-        return self._last_right_hemisphere_model_name or self.settings.perception_model or "jepa"
+        return self._last_right_hemisphere_model_name or self.settings.perception_model or "heuristic-jepa-phase1"
 
     def _left_hemisphere_backend_name(self) -> str:
         return self._last_left_hemisphere_backend or self._left_hemisphere_backend_name_from_settings()
@@ -344,10 +342,13 @@ class CalosumAgentBuilder:
 
     def _routing_resolution(self, snapshot: CapabilityDescriptor) -> dict[str, dict[str, Any]]:
         r_m, l_m = snapshot.right_hemisphere, snapshot.left_hemisphere
+        perception_active = r_m.model_name if r_m else None
+        if perception_active in {"heuristic-jepa-phase1", "trained-jepa-v1.0", "jepa"}:
+            perception_active = "jepa"
         refl_req = self.settings.reflection_model or l_m.model_name if l_m else None
         refl_sh = l_m is not None and refl_req == l_m.model_name
         return {
-            "perception": {"active": r_m.model_name if r_m else None, "backend": r_m.backend if r_m else None},
+            "perception": {"active": perception_active, "backend": r_m.backend if r_m else None},
             "reason": {"active": l_m.model_name if l_m else None, "backend": l_m.backend if l_m else None},
             "reflection": {"active": l_m.model_name if refl_sh and l_m else None, "shared": refl_sh},
             "verifier": {"active": "heuristic_verifier", "shared": False},

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Protocol, TYPE_CHECKING, runtime_checkable
 
+from calosum.shared.models.jepa import ContextEmbedding, ResponsePrediction, SurpriseScore
 from calosum.shared.models.types import (
     ActionExecutionResult,
     AgentTurnResult,
@@ -28,6 +29,13 @@ class ChannelPort(Protocol):
 class RightHemispherePort(Protocol):
     def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState: ...
     async def aperceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState: ...
+
+
+@runtime_checkable
+class JEPARightHemispherePort(Protocol):
+    async def encode_context(self, turns: list[UserTurn]) -> ContextEmbedding: ...
+    async def predict_response_embedding(self, ctx: ContextEmbedding) -> ResponsePrediction: ...
+    async def compute_surprise(self, ctx: ContextEmbedding, actual_response: str) -> SurpriseScore: ...
 
 
 @runtime_checkable

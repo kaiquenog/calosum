@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-from pathlib import Path
 from typing import Any
 
 from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
@@ -13,6 +11,8 @@ from calosum.adapters.infrastructure.contract_wrappers import (
 from calosum.adapters.experience.gea_experience_graph import GeaExperienceGraphConfig, GraphGeaExperienceStore
 from calosum.adapters.experience.gea_reflection_experience import ExperienceAwareGEAReflectionController
 from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import HeuristicJEPAAdapter
+from calosum.adapters.hemisphere.right_hemisphere_trained_jepa import TrainedJEPAAdapter
 from calosum.adapters.llm.llm_failover import ResilientLeftHemisphereAdapter
 from calosum.adapters.llm.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.adapters.perception.multimodal_perception import LocalClipVisionAdapter
@@ -21,10 +21,6 @@ from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, 
 from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureSettings
 from calosum.domain.metacognition.metacognition import CognitiveVariantSelector
-from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA
-
-logger = logging.getLogger(__name__)
-
 
 def resolve_vision_adapter() -> LocalClipVisionAdapter:
     return LocalClipVisionAdapter()
@@ -105,35 +101,44 @@ def resolve_right_hemisphere(
     requested_model = (settings.perception_model or "").strip()
 
     if backend in {"", "legacy", "auto"}:
-        if requested_model.lower() == "jepa":
-            base = RightHemisphereJEPA(vision_adapter=vision_adapter)
-            setattr(base, "degraded_reason", None)
-            return _active_inference_right(base), "active_inference_jepa_policy", "jepa"
+        if settings.mode == CalosumMode.LOCAL:
+            trained = TrainedJEPAAdapter()
+            if trained.is_available:
+                return (
+                    _active_inference_right(trained),
+                    "active_inference_trained_jepa_phase2",
+                    trained.config.model_name,
+                )
+        base = HeuristicJEPAAdapter()
+        return (
+            _active_inference_right(base),
+            "active_inference_heuristic_jepa_phase1",
+            "heuristic-jepa-phase1",
+        )
 
-        try:
-            from calosum.adapters.hemisphere.right_hemisphere_hf import (
-                HuggingFaceRightHemisphereAdapter,
-                HuggingFaceRightHemisphereConfig,
+    if backend == "trained_jepa":
+        trained = TrainedJEPAAdapter()
+        if trained.is_available:
+            return (
+                _active_inference_right(trained),
+                "active_inference_trained_jepa_phase2",
+                trained.config.model_name,
             )
+        base = HeuristicJEPAAdapter()
+        setattr(base, "degraded_reason", f"trained_jepa_unavailable:{trained.degraded_reason}")
+        return (
+            _active_inference_right(base),
+            "active_inference_heuristic_jepa_phase1_fallback",
+            "heuristic-jepa-phase1",
+        )
 
-            cfg = HuggingFaceRightHemisphereConfig(
-                embedding_model_name=requested_model or "paraphrase-multilingual-MiniLM-L12-v2"
-            )
-            base = HuggingFaceRightHemisphereAdapter(cfg, codec=codec)
-            return (
-                _active_inference_right(base),
-                "active_inference_huggingface",
-                cfg.embedding_model_name,
-            )
-        except Exception as exc:
-            logger.warning("Falling back to heuristic right hemisphere adapter: %s", exc)
-            base = RightHemisphereJEPA(vision_adapter=vision_adapter)
-            setattr(base, "degraded_reason", f"hf_stack_unavailable:{exc.__class__.__name__}")
-            return (
-                _active_inference_right(base),
-                "active_inference_heuristic_fallback",
-                "jepa",
-            )
+    if backend == "heuristic_jepa":
+        base = HeuristicJEPAAdapter()
+        return (
+            _active_inference_right(base),
+            "active_inference_heuristic_jepa_phase1",
+            "heuristic-jepa-phase1",
+        )
 
     if backend == "vjepa21":
         base = VJepa21RightHemisphereAdapter(

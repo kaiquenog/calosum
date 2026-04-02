@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "model_name": "trained-jepa-v1.0",
+  "sources": [
+    "OpenAssistant/oasst2",
+    "Anthropic/hh-rlhf",
+    "HuggingFaceH4/ultrachat_200k"
+  ],
+  "encoder": {
+    "name": "sentence-transformers/all-MiniLM-L6-v2",
+    "frozen": true,
+    "backend": "lexical"
+  },
+  "training": {
+    "train_pairs": 640,
+    "val_pairs": 160,
+    "batch_size": 256,
+    "epochs": 10,
+    "patience": 3,
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "warmup_steps": 500
+  },
+  "metrics": {
+    "ranking_accuracy": 1.0,
+    "uncertainty_surprise_alignment": 0.574999988079071,
+    "best_val_loss": 0.47427651286125183,
+    "target_gate": {
+      "ranking_accuracy_gte": 0.75,
+      "uncertainty_alignment_gte": 0.7
+    },
+    "gate_passed": false
+  },
+  "artifacts": {
+    "checkpoint": "adapters/jepa_predictor/v1.0/predictor.pt",
+    "train_input": "adapters/jepa_predictor/v1.0/data/train_expanded.jsonl",
+    "val_input": "adapters/jepa_predictor/v1.0/data/val_expanded.jsonl"
+  },
+  "timestamp_utc": "2026-04-02T22:15:54.379792+00:00"
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from calosum import CalosumAgentBuilder, InfrastructureSettings
 from calosum.adapters.infrastructure.contract_wrappers import ContractEnforcedLeftHemisphereAdapter
@@ -47,6 +48,49 @@ class FactoryBackends2026Tests(unittest.TestCase):
         description = builder.describe(agent)
 
         self.assertEqual(description["right_hemisphere_backend"], "active_inference_jepars")
+
+    def test_builder_uses_trained_jepa_by_default_in_local_mode_when_available(self) -> None:
+        class _FakeTrainedJEPAAdapter:
+            def __init__(self):
+                self.is_available = True
+                self.config = type("Cfg", (), {"model_name": "trained-jepa-v1.0"})()
+
+        settings = InfrastructureSettings(
+            mode=CalosumMode.LOCAL,
+            right_hemisphere_backend="auto",
+        ).with_profile_defaults()
+        builder = CalosumAgentBuilder(settings)
+
+        with patch(
+            "calosum.bootstrap.wiring.backend_resolvers.TrainedJEPAAdapter",
+            _FakeTrainedJEPAAdapter,
+        ):
+            agent = builder.build()
+            description = builder.describe(agent)
+
+        self.assertEqual(description["right_hemisphere_backend"], "active_inference_trained_jepa_phase2")
+
+    def test_builder_falls_back_to_heuristic_when_trained_jepa_backend_is_unavailable(self) -> None:
+        class _UnavailableTrainedJEPAAdapter:
+            def __init__(self):
+                self.is_available = False
+                self.degraded_reason = "checkpoint_missing"
+                self.config = type("Cfg", (), {"model_name": "trained-jepa-v1.0"})()
+
+        settings = InfrastructureSettings(
+            mode=CalosumMode.LOCAL,
+            right_hemisphere_backend="trained_jepa",
+        ).with_profile_defaults()
+        builder = CalosumAgentBuilder(settings)
+
+        with patch(
+            "calosum.bootstrap.wiring.backend_resolvers.TrainedJEPAAdapter",
+            _UnavailableTrainedJEPAAdapter,
+        ):
+            agent = builder.build()
+            description = builder.describe(agent)
+
+        self.assertEqual(description["right_hemisphere_backend"], "active_inference_heuristic_jepa_phase1_fallback")
 
 
 if __name__ == "__main__":

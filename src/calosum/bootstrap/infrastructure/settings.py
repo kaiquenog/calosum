@@ -390,7 +390,7 @@ def _missing_local_dependency_stack() -> list[str]:
 def _configured_local_features(settings: InfrastructureSettings) -> list[str]:
     features: list[str] = []
     right_backend = (settings.right_hemisphere_backend or "").strip().lower()
-    if right_backend in {"huggingface", "vjepa21", "vljepa"}:
+    if right_backend in {"huggingface", "vjepa21", "vljepa", "trained_jepa"}:
         features.append(f"right_hemisphere_backend={right_backend}")
     if settings.vector_quantization.strip().lower() == "turboquant":
         features.append("vector_quantization=turboquant")

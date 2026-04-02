@@ -39,6 +39,15 @@ class _WorkspaceAwareRightHemisphere(_StaticRightHemisphere):
         return super().perceive(user_turn, memory_context)
 
 
+class _JepaPredictiveRight(_StaticRightHemisphere):
+    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None) -> RightHemisphereState:
+        state = super().perceive(user_turn, memory_context)
+        state.telemetry["surprise_source"] = "jepa_prediction_error"
+        state.telemetry["prediction_method"] = "jepa_heuristic"
+        state.telemetry["jepa_uncertainty"] = 0.2
+        return state
+
+
 def _episode(text: str, latent_vector: list[float]) -> MemoryEpisode:
     turn = UserTurn(session_id="memory", user_text=text, observed_at=datetime.now(timezone.utc))
     right_state = RightHemisphereState(
@@ -137,6 +146,18 @@ class ActiveInferenceAdapterTests(unittest.TestCase):
         )
 
         self.assertIs(base.last_workspace, workspace_marker)
+
+    def test_active_inference_preserves_jepa_prediction_error_surprise(self) -> None:
+        state = ActiveInferenceRightHemisphereAdapter(
+            _JepaPredictiveRight([1.0, 0.0, 0.0], surprise_score=0.37)
+        ).perceive(
+            UserTurn(session_id="s", user_text="familiar"),
+            MemoryContext(recent_episodes=[_episode("familiar", [1.0, 0.0, 0.0])]),
+        )
+        self.assertEqual(state.surprise_score, 0.37)
+        self.assertEqual(state.telemetry["surprise_source"], "jepa_prediction_error")
+        self.assertEqual(state.telemetry["surprise_backend"], "jepa_prediction_error")
+        self.assertEqual(state.telemetry["surprise_engine"], "predictive_embedding_error")
 
 
 if __name__ == "__main__":

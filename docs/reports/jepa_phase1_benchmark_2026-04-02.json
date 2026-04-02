@@ -1,0 +1,14 @@
+{
+  "dataset": "docs/benchmarks/jepa_phase1/annotated_turns.jsonl",
+  "result": {
+    "total_turns": 200,
+    "ranking_top1_accuracy": 1.0,
+    "off_topic_surprise_rate": 1.0,
+    "ranking_gate_passed": true,
+    "off_topic_gate_passed": true,
+    "ranking_correct": 200,
+    "off_topic_high_surprise_count": 200,
+    "average_good_surprise": 0.524,
+    "average_off_topic_surprise": 0.632
+  }
+}

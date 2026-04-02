@@ -154,6 +154,23 @@ class ActiveInferenceRightHemisphereAdapter:
         base_state: RightHemisphereState,
         memory_context: MemoryContext | None,
     ) -> RightHemisphereState:
+        source = str(base_state.telemetry.get("surprise_source", ""))
+        if source == "jepa_prediction_error":
+            merged_telemetry = dict(base_state.telemetry)
+            merged_telemetry.update(self._describe_base_adapter(base_state))
+            merged_telemetry.setdefault("surprise_backend", "jepa_prediction_error")
+            merged_telemetry.setdefault("surprise_engine", "predictive_embedding_error")
+            return RightHemisphereState(
+                context_id=base_state.context_id,
+                latent_vector=list(base_state.latent_vector),
+                salience=base_state.salience,
+                emotional_labels=list(base_state.emotional_labels),
+                world_hypotheses=dict(base_state.world_hypotheses),
+                confidence=base_state.confidence,
+                surprise_score=base_state.surprise_score,
+                telemetry=merged_telemetry,
+            )
+
         score, telemetry = self._estimate_surprise(
             base_state.latent_vector,
             memory_context,

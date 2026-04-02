@@ -9,10 +9,10 @@ from unittest.mock import patch
 from calosum import (
     ActiveInferenceRightHemisphereAdapter,
     CalosumAgentBuilder,
+    HeuristicJEPAAdapter,
     InfrastructureProfile,
     InfrastructureSettings,
     PersistentDualMemorySystem,
-    RightHemisphereJEPA,
 )
 from calosum.adapters.infrastructure.contract_wrappers import ContractEnforcedRightHemisphereAdapter
 from calosum.domain.infrastructure.telemetry import OTLPJsonlTelemetrySink
@@ -53,19 +53,18 @@ class InfrastructureBuilderTests(unittest.TestCase):
         builder = CalosumAgentBuilder(settings)
 
         with patch(
-            "calosum.adapters.hemisphere.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
+            "calosum.bootstrap.wiring.factory.resolve_right_hemisphere",
             side_effect=RuntimeError("missing optional model stack"),
         ):
             agent = builder.build()
 
         description = builder.describe()
         self.assertIsInstance(agent.right_hemisphere, ActiveInferenceRightHemisphereAdapter)
-        self.assertIsInstance(agent.right_hemisphere.base_adapter, ContractEnforcedRightHemisphereAdapter)
-        self.assertIsInstance(agent.right_hemisphere.base_adapter.provider, RightHemisphereJEPA)
-        self.assertEqual(description["right_hemisphere_backend"], "active_inference_heuristic_fallback")
+        self.assertIsInstance(agent.right_hemisphere.base_adapter, HeuristicJEPAAdapter)
+        self.assertEqual(description["right_hemisphere_backend"], "active_inference_heuristic_jepa_fallback")
         self.assertEqual(
-            getattr(agent.right_hemisphere.base_adapter.provider, "degraded_reason", None),
-            "hf_stack_unavailable:RuntimeError",
+            getattr(agent.right_hemisphere.base_adapter, "degraded_reason", None),
+            "resolver_fallback:RuntimeError",
         )
 
     def test_docker_profile_resolves_infra_defaults(self) -> None:
@@ -133,7 +132,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
         self.assertEqual(snapshot.left_hemisphere.provider, "openai")
         self.assertEqual(snapshot.left_hemisphere.backend, "openai_responses_adapter")
         
-        self.assertEqual(snapshot.right_hemisphere.model_name, "jepa")
+        self.assertEqual(snapshot.right_hemisphere.model_name, "heuristic-jepa-phase1")
         self.assertEqual(snapshot.knowledge_graph.model_name, "nanorag")
 
         # The description should contain the snapshot serialized
@@ -171,8 +170,8 @@ class InfrastructureBuilderTests(unittest.TestCase):
         description = builder.describe(agent)
 
         self.assertIsInstance(agent.right_hemisphere.base_adapter, ContractEnforcedRightHemisphereAdapter)
-        self.assertIsInstance(agent.right_hemisphere.base_adapter.provider, RightHemisphereJEPA)
-        self.assertEqual(description["right_hemisphere_backend"], "active_inference_jepa_policy")
+        self.assertIsInstance(agent.right_hemisphere.base_adapter.provider, HeuristicJEPAAdapter)
+        self.assertEqual(description["right_hemisphere_backend"], "active_inference_heuristic_jepa_phase1")
         self.assertEqual(description["routing_resolution"]["perception"]["active"], "jepa")
 
     def test_factory_turboquant_flag(self) -> None:

@@ -142,6 +142,19 @@ class CalosumAgent:
 
         # Active Inference V2/V3: Branching based on VFE/EFE
         surprise_score = getattr(right_state, "surprise_score", 0.0)
+        uncertainty = float(right_state.telemetry.get("jepa_uncertainty", 0.0))
+        ignore_surprise = bool(right_state.telemetry.get("ignore_surprise_for_branching", False)) or uncertainty > 0.7
+        effective_surprise = 0.0 if ignore_surprise else surprise_score
+        if surprise_score < 0.3:
+            surprise_band = "low"
+        elif surprise_score <= 0.6:
+            surprise_band = "medium"
+        else:
+            surprise_band = "high"
+        right_state.telemetry["surprise_band"] = surprise_band
+        right_state.telemetry["ignore_surprise_for_branching"] = ignore_surprise
+        workspace.right_notes["surprise_band"] = surprise_band
+        workspace.right_notes["ignore_surprise_for_branching"] = ignore_surprise
 
         # EFE with proper epistemic/pragmatic decomposition
         expected_free_energy = 0.5
@@ -157,7 +170,7 @@ class CalosumAgent:
 
         needs_branching = (
             self.config.branching_budget.max_depth > 0
-            and (surprise_score > self.config.surprise_threshold or expected_free_energy > 0.75)
+            and (effective_surprise > 0.6 or expected_free_energy > 0.75)
         )
 
         if needs_branching:

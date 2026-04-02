@@ -5,6 +5,14 @@ from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeA
 from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
 from calosum.adapters.perception.multimodal_perception import LocalClipVisionAdapter, LocalClipVisionConfig
 from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
+from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import (
+    HeuristicJEPAAdapter,
+    HeuristicJEPAConfig,
+)
+from calosum.adapters.hemisphere.right_hemisphere_trained_jepa import (
+    TrainedJEPAAdapter,
+    TrainedJEPAConfig,
+)
 from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.wiring.factory import CalosumAgentBuilder
@@ -41,12 +49,14 @@ from calosum.shared.models.ports import (
     ContextCompressorPort,
     CognitiveTokenizerPort,
     ExperienceStorePort,
+    JEPARightHemispherePort,
     LeftHemispherePort,
     MemorySystemPort,
     ReflectionControllerPort,
     RightHemispherePort,
     TelemetryBusPort,
 )
+from calosum.shared.models.jepa import ContextEmbedding, ResponsePrediction, SurpriseScore
 from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA, RightHemisphereJEPAConfig
 from calosum.domain.execution.runtime import StrictLambdaRuntime, StrictLambdaRuntimeConfig
 from calosum.shared.utils.serialization import dump_json, to_json, to_primitive
@@ -115,6 +125,10 @@ __all__ = [
     "FailureType",
     "GEAReflectionController",
     "GroupTurnResult",
+    "HeuristicJEPAAdapter",
+    "HeuristicJEPAConfig",
+    "TrainedJEPAAdapter",
+    "TrainedJEPAConfig",
     "InMemoryEpisodicStore",
     "InMemorySemanticGraphStore",
     "InMemorySemanticStore",
@@ -123,6 +137,7 @@ __all__ = [
     "InfrastructureSettings",
     "JepaRsConfig",
     "JepaRsRightHemisphereAdapter",
+    "JEPARightHemispherePort",
     "JsonlEpisodicStore",
     "JsonlSemanticGraphStore",
     "JsonlSemanticStore",
@@ -142,6 +157,7 @@ __all__ = [
     "OTLPJsonlTelemetrySink",
     "PersistentDualMemorySystem",
     "PrimitiveAction",
+    "ResponsePrediction",
     "ReflectionControllerPort",
     "RightHemisphereJEPA",
     "RightHemispherePort",
@@ -158,10 +174,12 @@ __all__ = [
     "StrictLambdaRuntimeConfig",
     "TelemetryBusPort",
     "TelemetryEvent",
+    "SurpriseScore",
     "to_json",
     "to_primitive",
     "TypedLambdaProgram",
     "UserTurn",
+    "ContextEmbedding",
     "VJepa21Config",
     "VJepa21RightHemisphereAdapter",
     "VLJepaConfig",

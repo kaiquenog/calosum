@@ -44,6 +44,22 @@ class DependencyModeConsistencyTests(unittest.TestCase):
         self.assertIn("CALOSUM_DEPENDENCY_MODE=api", str(ctx.exception))
         self.assertIn("right_hemisphere_backend=huggingface", str(ctx.exception))
 
+    def test_api_mode_rejects_trained_jepa_backend(self) -> None:
+        with patch(
+            "calosum.bootstrap.infrastructure.settings._missing_local_dependency_stack",
+            return_value=[],
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                InfrastructureSettings.from_sources(
+                    environ={
+                        "CALOSUM_DEPENDENCY_MODE": "api",
+                        "CALOSUM_RIGHT_BACKEND": "trained_jepa",
+                        "CALOSUM_VECTOR_QUANTIZATION": "none",
+                    }
+                )
+
+        self.assertIn("right_hemisphere_backend=trained_jepa", str(ctx.exception))
+
     def test_api_mode_rejects_turboquant(self) -> None:
         with patch(
             "calosum.bootstrap.infrastructure.settings._missing_local_dependency_stack",
