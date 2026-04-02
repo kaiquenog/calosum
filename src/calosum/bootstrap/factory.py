@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from calosum.adapters.action_runtime import ConcreteActionRuntime
-from calosum.adapters.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
-from calosum.adapters.telemetry_otlp import OTLPHTTPTraceSink
-from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
+from calosum.adapters.tools.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
+from calosum.adapters.communication.telemetry_otlp import OTLPHTTPTraceSink
+from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 from calosum.domain.event_bus import InternalEventBus
 from calosum.domain.evolution import JsonlEvolutionArchive
 from calosum.domain.interceptors import AuditLogInterceptor, InterceptorManager
@@ -30,7 +30,7 @@ from calosum.bootstrap.backend_resolvers import (
     resolve_vision_adapter,
 )
 from calosum.domain.telemetry import CognitiveTelemetryBus, CompositeTelemetrySink, InMemoryTelemetrySink, OTLPJsonlTelemetrySink
-from calosum.adapters.latent_exchange import InternalLatentExchangeAdapter
+from calosum.adapters.communication.latent_exchange import InternalLatentExchangeAdapter
 from calosum.shared.types import CapabilityDescriptor, ComponentHealth
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 def _build_codec(settings: InfrastructureSettings):
     """Instantiate a VectorCodecPort if vector_quantization flag is set."""
     if settings.vector_quantization == "turboquant":
-        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+        from calosum.adapters.perception.quantized_embeddings import TurboQuantVectorCodec
         return TurboQuantVectorCodec(bits=settings.turboquant_bits)
     return None
 
@@ -58,7 +58,7 @@ class CalosumAgentBuilder:
         left_hemisphere = self.build_left_hemisphere()
         right_hemisphere = self.build_right_hemisphere()
         from calosum.domain.bridge import CognitiveTokenizer
-        from calosum.adapters.bridge_store import LocalBridgeStateStore
+        from calosum.adapters.bridge.bridge_store import LocalBridgeStateStore
         bridge_store = None
         if self.settings.bridge_state_dir is not None:
             bridge_store = LocalBridgeStateStore(base_dir=self.settings.bridge_state_dir)
@@ -104,7 +104,7 @@ class CalosumAgentBuilder:
             return adapter
         except Exception as exc:
             logger.warning("Falling back to default left hemisphere adapter: %s", exc)
-            from calosum.adapters.llm_qwen import QwenLeftHemisphereAdapter
+            from calosum.adapters.llm.llm_qwen import QwenLeftHemisphereAdapter
 
             self._last_left_hemisphere_backend = "openai_compatible_chat_adapter_default"
             return QwenLeftHemisphereAdapter()
@@ -123,7 +123,7 @@ class CalosumAgentBuilder:
             return adapter
         except Exception as exc:
             logger.warning("Falling back to heuristic right hemisphere adapter: %s", exc)
-            from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
+            from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
             from calosum.domain.right_hemisphere import RightHemisphereJEPA
 
             base_adapter = RightHemisphereJEPA(vision_adapter=vision_adapter)
@@ -133,13 +133,13 @@ class CalosumAgentBuilder:
             return ActiveInferenceRightHemisphereAdapter(base_adapter)
 
     def build_memory_system(self):
-        from calosum.adapters.night_trainer import LocalDatasetExporter
+        from calosum.adapters.night_trainer.night_trainer import LocalDatasetExporter
         from calosum.domain.memory import SleepModeConsolidator
         exporter = LocalDatasetExporter(self._runtime_root() / "nightly_data")
         graph_store = self.build_graph_store()
         if self.settings.vector_db_url:
             try:
-                from calosum.adapters.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
+                from calosum.adapters.memory.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
                 embedder = self.build_text_embedder()
                 codec = _build_codec(self.settings)
                 return QdrantDualMemoryAdapter(
@@ -181,7 +181,7 @@ class CalosumAgentBuilder:
         elif self.settings.duckdb_path is not None:
             storage_path = self.settings.duckdb_path.parent / "knowledge_graph.jsonl"
         try:
-            from calosum.adapters.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
+            from calosum.adapters.knowledge.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
             store = NanoGraphRAGKnowledgeGraphStore(storage_path=storage_path)
             self._last_knowledge_graph_backend = store.backend_name
             return store
@@ -235,7 +235,7 @@ class CalosumAgentBuilder:
 
     def build_night_trainer(self) -> Any:
         import os
-        from calosum.adapters.night_trainer import NightTrainer
+        from calosum.adapters.night_trainer.night_trainer import NightTrainer
 
         return NightTrainer(
             model_name=self.settings.left_hemisphere_model or "Qwen/Qwen-3.5-9B-Instruct",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import unittest
 
-from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
+from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 
 
 class _FakeResponse:
@@ -60,7 +60,7 @@ class TextEmbeddingAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_embed_with_codec(self) -> None:
         """embed_texts_compressed uses codec to compress each vector."""
-        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+        from calosum.adapters.perception.quantized_embeddings import TurboQuantVectorCodec
 
         codec = TurboQuantVectorCodec(bits=3)
         adapter = TextEmbeddingAdapter(

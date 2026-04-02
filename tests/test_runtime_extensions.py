@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from calosum.adapters.action_runtime import ConcreteActionRuntime
-from calosum.adapters.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
+from calosum.adapters.tools.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
 from calosum.domain.interceptors import AuditLogInterceptor, InterceptorManager
 from calosum.shared.types import (
     CognitiveWorkspace,
@@ -66,7 +66,7 @@ class RuntimeExtensionsTests(unittest.IsolatedAsyncioTestCase):
         runtime = ConcreteActionRuntime(mcp_client=client)
         fake_body = json.dumps({"jsonrpc": "2.0", "id": "1", "result": {"ok": True}})
         with patch(
-            "calosum.adapters.mcp_client.urllib_request.urlopen",
+            "calosum.adapters.tools.mcp_client.urllib_request.urlopen",
             return_value=_FakeHttpResponse(fake_body),
         ):
             result = await runtime.arun(

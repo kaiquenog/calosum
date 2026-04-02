@@ -39,7 +39,7 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     if settings.telegram_bot_token:
         try:
-            from calosum.adapters.channel_telegram import TelegramChannelAdapter
+            from calosum.adapters.communication.channel_telegram import TelegramChannelAdapter
             logger.info("Inicializando Telegram Channel Adapter...")
             telegram_adapter = TelegramChannelAdapter(
                 settings.telegram_bot_token,

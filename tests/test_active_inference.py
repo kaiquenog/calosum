@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
+from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
 from calosum.shared.types import MemoryContext, MemoryEpisode, RightHemisphereState, UserTurn
 
 

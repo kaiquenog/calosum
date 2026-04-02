@@ -7,7 +7,7 @@ from pathlib import Path
 from calosum.domain.evolution import JsonlEvolutionArchive
 from calosum.domain.introspection import IntrospectionEngine
 from calosum.domain.orchestrator import CalosumAgent
-from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
+from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
 from calosum.domain.right_hemisphere import RightHemisphereJEPA
 from calosum.shared.types import DirectiveType, EvolutionDirective
 

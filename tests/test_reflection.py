@@ -57,7 +57,7 @@ class ReflectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)
 
-            from calosum.adapters.bridge_store import LocalBridgeStateStore
+            from calosum.adapters.bridge.bridge_store import LocalBridgeStateStore
             store = LocalBridgeStateStore(
                 weights_path=base / "bridge_weights.pt",
                 adaptation_path=base / "bridge_config.json",

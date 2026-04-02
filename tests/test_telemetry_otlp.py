@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock, patch
 
-from calosum.adapters.telemetry_otlp import OTLPHTTPTraceSink
+from calosum.adapters.communication.telemetry_otlp import OTLPHTTPTraceSink
 from calosum.domain.telemetry import TelemetryEvent
 
 
@@ -24,7 +24,7 @@ class OtlpTelemetryAdapterTests(unittest.TestCase):
         response = Mock()
         response.raise_for_status = Mock()
 
-        with patch("calosum.adapters.telemetry_otlp.httpx.post", return_value=response) as post:
+        with patch("calosum.adapters.communication.telemetry_otlp.httpx.post", return_value=response) as post:
             sink.emit(event)
 
         post.assert_called_once()
@@ -51,7 +51,7 @@ class OtlpTelemetryAdapterTests(unittest.TestCase):
             span_id="29a38a4115211474",
         )
 
-        with patch("calosum.adapters.telemetry_otlp.httpx.post", side_effect=RuntimeError("collector down")):
+        with patch("calosum.adapters.communication.telemetry_otlp.httpx.post", side_effect=RuntimeError("collector down")):
             sink.emit(event)
 
 

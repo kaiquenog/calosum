@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from calosum.adapters.channel_telegram import TelegramChannelAdapter
+from calosum.adapters.communication.channel_telegram import TelegramChannelAdapter
 
 
 class TelegramPolicyTests(unittest.TestCase):

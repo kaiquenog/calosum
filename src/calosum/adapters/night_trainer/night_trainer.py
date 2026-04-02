@@ -102,7 +102,7 @@ class NightTrainer:
             return {"status": "error", "reason": str(e)}
 
     def _run_dspy_cycle(self) -> dict[str, Any] | None:
-        from calosum.adapters.night_trainer_dspy import DSPyNightTrainer
+        from calosum.adapters.night_trainer.night_trainer_dspy import DSPyNightTrainer
 
         try:
             trainer = DSPyNightTrainer(

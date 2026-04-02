@@ -4,21 +4,21 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
-from calosum.adapters.bridge_cross_attention import CrossAttentionBridgeAdapter
+from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
+from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter
 from calosum.adapters.contract_wrappers import (
     ContractEnforcedLeftHemisphereAdapter,
     ContractEnforcedRightHemisphereAdapter,
 )
-from calosum.adapters.gea_experience_graph import GeaExperienceGraphConfig, GraphGeaExperienceStore
-from calosum.adapters.gea_reflection_experience import ExperienceAwareGEAReflectionController
-from calosum.adapters.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
-from calosum.adapters.llm_failover import ResilientLeftHemisphereAdapter
-from calosum.adapters.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
-from calosum.adapters.multimodal_perception import LocalClipVisionAdapter
-from calosum.adapters.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
-from calosum.adapters.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
-from calosum.adapters.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
+from calosum.adapters.experience.gea_experience_graph import GeaExperienceGraphConfig, GraphGeaExperienceStore
+from calosum.adapters.experience.gea_reflection_experience import ExperienceAwareGEAReflectionController
+from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.llm.llm_failover import ResilientLeftHemisphereAdapter
+from calosum.adapters.llm.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
+from calosum.adapters.perception.multimodal_perception import LocalClipVisionAdapter
+from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
+from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
+from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.settings import InfrastructureSettings
 from calosum.domain.metacognition import GEAReflectionController
 from calosum.domain.right_hemisphere import RightHemisphereJEPA
@@ -111,7 +111,7 @@ def resolve_right_hemisphere(
             return _active_inference_right(base), "active_inference_jepa_policy", "jepa"
 
         try:
-            from calosum.adapters.right_hemisphere_hf import (
+            from calosum.adapters.hemisphere.right_hemisphere_hf import (
                 HuggingFaceRightHemisphereAdapter,
                 HuggingFaceRightHemisphereConfig,
             )
@@ -168,7 +168,7 @@ def resolve_right_hemisphere(
         return _active_inference_right(base), "active_inference_jepars", "jepa-rs"
 
     if backend == "huggingface":
-        from calosum.adapters.right_hemisphere_hf import (
+        from calosum.adapters.hemisphere.right_hemisphere_hf import (
             HuggingFaceRightHemisphereAdapter,
             HuggingFaceRightHemisphereConfig,
         )

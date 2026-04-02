@@ -36,7 +36,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
             builder = CalosumAgentBuilder(settings)
             with patch(
-                "calosum.adapters.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
+                "calosum.adapters.hemisphere.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
                 return_value=_FakeRightHemisphere(),
             ):
                 agent = builder.build()
@@ -52,7 +52,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
         builder = CalosumAgentBuilder(settings)
 
         with patch(
-            "calosum.adapters.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
+            "calosum.adapters.hemisphere.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
             side_effect=RuntimeError("missing optional model stack"),
         ):
             agent = builder.build()
@@ -150,7 +150,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
         builder = CalosumAgentBuilder(settings)
 
         with patch(
-            "calosum.adapters.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
+            "calosum.adapters.hemisphere.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
             return_value=_FakeRightHemisphere(),
         ):
             agent = builder.build()
@@ -178,7 +178,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
         """CALOSUM_VECTOR_QUANTIZATION=turboquant causes _build_codec to return TurboQuantVectorCodec."""
         import os
         from calosum.bootstrap.factory import _build_codec
-        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+        from calosum.adapters.perception.quantized_embeddings import TurboQuantVectorCodec
 
         settings = InfrastructureSettings.from_sources(
             environ={**os.environ, "CALOSUM_VECTOR_QUANTIZATION": "turboquant", "CALOSUM_TURBOQUANT_BITS": "3"}

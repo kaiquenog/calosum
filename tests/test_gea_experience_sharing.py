@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 
 from calosum import CalosumAgent, CognitiveVariantSpec, UserTurn
-from calosum.adapters.gea_experience_store import GeaExperienceStoreConfig, SqliteGeaExperienceStore
-from calosum.adapters.gea_reflection_experience import ExperienceAwareGEAReflectionController
+from calosum.adapters.experience.gea_experience_store import GeaExperienceStoreConfig, SqliteGeaExperienceStore
+from calosum.adapters.experience.gea_reflection_experience import ExperienceAwareGEAReflectionController
 
 
 class GeaExperienceSharingTests(unittest.TestCase):

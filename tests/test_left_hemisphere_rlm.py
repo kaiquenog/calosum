@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from calosum.adapters.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
 from calosum.shared.types import (
     BridgeControlSignal,
     CognitiveBridgePacket,

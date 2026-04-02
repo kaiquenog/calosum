@@ -5,7 +5,7 @@ import math
 import random
 import unittest
 
-from calosum.adapters.quantized_embeddings import (
+from calosum.adapters.perception.quantized_embeddings import (
     QJLResidualEncoder,
     PolarQuantEncoder,
     TurboQuantVectorCodec,

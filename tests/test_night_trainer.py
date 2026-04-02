@@ -7,7 +7,7 @@ import types
 import unittest
 from pathlib import Path
 
-from calosum.adapters.night_trainer import NightTrainer
+from calosum.adapters.night_trainer.night_trainer import NightTrainer
 
 
 class NightTrainerTests(unittest.TestCase):

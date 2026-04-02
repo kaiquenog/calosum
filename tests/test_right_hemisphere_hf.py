@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 import types
-from calosum.adapters.right_hemisphere_hf import HuggingFaceRightHemisphereAdapter, HuggingFaceRightHemisphereConfig
+from calosum.adapters.hemisphere.right_hemisphere_hf import HuggingFaceRightHemisphereAdapter, HuggingFaceRightHemisphereConfig
 from calosum.shared.types import UserTurn, Modality, MultimodalSignal
 
 class TestHuggingFaceRightHemisphere(unittest.TestCase):
@@ -148,7 +148,7 @@ class TestHuggingFaceRightHemisphere(unittest.TestCase):
         """When codec is set, _calculate_surprise uses inner_product_approx."""
         import types
         from unittest.mock import MagicMock
-        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+        from calosum.adapters.perception.quantized_embeddings import TurboQuantVectorCodec
 
         fake_transformers = types.ModuleType("transformers")
         fake_transformers.logging = types.SimpleNamespace(set_verbosity_error=lambda: None)

@@ -5,8 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from calosum.adapters.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
-from calosum.adapters.memory_qdrant_serializers import (
+from calosum.adapters.memory.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
+from calosum.adapters.memory.memory_qdrant_serializers import (
     episode_from_point,
     episode_payload,
 )
@@ -128,8 +128,8 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
         _FakeQdrantState.created_configs = {}
 
     async def test_build_context_prefers_semantically_similar_episode(self) -> None:
-        with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
-            "calosum.adapters.memory_qdrant.AsyncQdrantClient",
+        with patch("calosum.adapters.memory.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
+            "calosum.adapters.memory.memory_qdrant.AsyncQdrantClient",
             FakeAsyncQdrantClient,
         ):
             adapter = QdrantDualMemoryAdapter(
@@ -152,8 +152,8 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(context.recent_episodes[0].right_state.latent_vector)
 
     async def test_sleep_mode_promotes_rules_that_are_retrieved_by_vector_search(self) -> None:
-        with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
-            "calosum.adapters.memory_qdrant.AsyncQdrantClient",
+        with patch("calosum.adapters.memory.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
+            "calosum.adapters.memory.memory_qdrant.AsyncQdrantClient",
             FakeAsyncQdrantClient,
         ):
             adapter = QdrantDualMemoryAdapter(
@@ -176,8 +176,8 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(triple.predicate == "biases_response_toward" for triple in context.knowledge_triples))
 
     async def test_build_context_scopes_episodes_to_same_session_when_available(self) -> None:
-        with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
-            "calosum.adapters.memory_qdrant.AsyncQdrantClient",
+        with patch("calosum.adapters.memory.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
+            "calosum.adapters.memory.memory_qdrant.AsyncQdrantClient",
             FakeAsyncQdrantClient,
         ):
             adapter = QdrantDualMemoryAdapter(
@@ -229,12 +229,12 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_store_with_codec_payload(self) -> None:
         """When codec is set, astore_episode adds latent_vector_compressed to payload."""
-        from calosum.adapters.quantized_embeddings import TurboQuantVectorCodec
+        from calosum.adapters.perception.quantized_embeddings import TurboQuantVectorCodec
 
         codec = TurboQuantVectorCodec(bits=3)
 
-        with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
-            "calosum.adapters.memory_qdrant.AsyncQdrantClient", FakeAsyncQdrantClient,
+        with patch("calosum.adapters.memory.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
+            "calosum.adapters.memory.memory_qdrant.AsyncQdrantClient", FakeAsyncQdrantClient,
         ):
             adapter = QdrantDualMemoryAdapter(
                 QdrantAdapterConfig(url="http://fake-qdrant"),
@@ -257,8 +257,8 @@ class QdrantAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     def test_qdrant_scalar_quantization_flag(self) -> None:
         """When scalar_quantization=True, create_collection is called with a quantization_config."""
-        with patch("calosum.adapters.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
-            "calosum.adapters.memory_qdrant.AsyncQdrantClient", FakeAsyncQdrantClient,
+        with patch("calosum.adapters.memory.memory_qdrant.QdrantClient", FakeQdrantClient), patch(
+            "calosum.adapters.memory.memory_qdrant.AsyncQdrantClient", FakeAsyncQdrantClient,
         ):
             QdrantDualMemoryAdapter(
                 QdrantAdapterConfig(url="http://fake-qdrant", scalar_quantization=True),

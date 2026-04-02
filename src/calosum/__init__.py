@@ -1,12 +1,12 @@
 """Public package surface for the Calosum cognitive architecture."""
 
-from calosum.adapters.active_inference import ActiveInferenceRightHemisphereAdapter
-from calosum.adapters.bridge_cross_attention import CrossAttentionBridgeAdapter, CrossAttentionBridgeConfig
-from calosum.adapters.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
-from calosum.adapters.multimodal_perception import LocalClipVisionAdapter, LocalClipVisionConfig
-from calosum.adapters.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
-from calosum.adapters.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
-from calosum.adapters.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
+from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
+from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter, CrossAttentionBridgeConfig
+from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.perception.multimodal_perception import LocalClipVisionAdapter, LocalClipVisionConfig
+from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
+from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
+from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.factory import CalosumAgentBuilder
 from calosum.domain.bridge import CognitiveTokenizer, CognitiveTokenizerConfig
 from calosum.domain.left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
@@ -75,7 +75,7 @@ from calosum.shared.types import (
 )
 
 try:
-    from calosum.adapters.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
+    from calosum.adapters.knowledge.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
 except Exception:  # pragma: no cover - optional dependency surface
     NanoGraphRAGKnowledgeGraphStore = None  # type: ignore[assignment]
 

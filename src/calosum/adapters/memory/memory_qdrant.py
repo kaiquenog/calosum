@@ -18,14 +18,14 @@ from qdrant_client.models import (
 )
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from calosum.adapters.memory_qdrant_serializers import (
+from calosum.adapters.memory.memory_qdrant_serializers import (
     episode_document,
     episode_from_point,
     episode_payload,
     rule_document,
     rule_from_point,
 )
-from calosum.adapters.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
+from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 from calosum.domain.memory import InMemorySemanticGraphStore
 from calosum.shared.async_utils import run_sync
 from calosum.shared.types import (

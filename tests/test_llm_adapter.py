@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 
-from calosum.adapters.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
+from calosum.adapters.llm.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.shared.types import (
     BridgeControlSignal,
     CognitiveBridgePacket,
