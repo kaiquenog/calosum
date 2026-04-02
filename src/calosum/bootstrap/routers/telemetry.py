@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from calosum.bootstrap.context import get_agent
+from calosum.bootstrap.entry.context import get_agent
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/telemetry")

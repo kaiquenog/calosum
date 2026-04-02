@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from calosum.shared.ports import LatentExchangePort
-from calosum.domain.event_bus import InternalEventBus, CognitiveEvent
+from calosum.shared.models.ports import LatentExchangePort
+from calosum.domain.infrastructure.event_bus import InternalEventBus, CognitiveEvent
 
 logger = logging.getLogger(__name__)
 

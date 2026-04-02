@@ -7,7 +7,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from calosum.shared.types import KnowledgeTriple, UserTurn
+from calosum.shared.models.types import KnowledgeTriple, UserTurn
 
 
 @dataclass(slots=True)

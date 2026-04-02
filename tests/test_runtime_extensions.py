@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 from calosum.adapters.action_runtime import ConcreteActionRuntime
 from calosum.adapters.tools.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
-from calosum.domain.interceptors import AuditLogInterceptor, InterceptorManager
-from calosum.shared.types import (
+from calosum.domain.infrastructure.interceptors import AuditLogInterceptor, InterceptorManager
+from calosum.shared.models.types import (
     CognitiveWorkspace,
     LeftHemisphereResult,
     PrimitiveAction,

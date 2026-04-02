@@ -3,9 +3,9 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
-from calosum.shared.serialization import to_primitive
-from calosum.shared.types import UserTurn
-from calosum.bootstrap.context import get_agent, _run_in_session_lane
+from calosum.shared.utils.serialization import to_primitive
+from calosum.shared.models.types import UserTurn
+from calosum.bootstrap.entry.context import get_agent, _run_in_session_lane
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/chat")
@@ -16,7 +16,7 @@ async def chat_completions(request: Request) -> JSONResponse:
         data: dict[str, Any] = await request.json()
     except Exception:
         data = {}
-    from calosum.shared.types import MultimodalSignal, Modality
+    from calosum.shared.models.types import MultimodalSignal, Modality
     signals = []
     if "signals" in data:
         for s in data["signals"]:

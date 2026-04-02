@@ -5,9 +5,9 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from calosum.domain.event_bus import CognitiveEvent, InternalEventBus
-from calosum.domain.multiagent import ExecutorRole, PlannerRole, VerifierRole
-from calosum.shared.tools import ToolSchema
+from calosum.domain.infrastructure.event_bus import CognitiveEvent, InternalEventBus
+from calosum.domain.agent.multiagent import ExecutorRole, PlannerRole, VerifierRole
+from calosum.shared.utils.tools import ToolSchema
 
 
 class SubordinateAgentTool:

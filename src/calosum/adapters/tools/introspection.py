@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from typing import Any
-from calosum.shared.types import ComponentHealth
+from calosum.shared.models.types import ComponentHealth
 
 logger = logging.getLogger(__name__)
 

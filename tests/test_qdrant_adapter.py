@@ -10,7 +10,7 @@ from calosum.adapters.memory.memory_qdrant_serializers import (
     episode_from_point,
     episode_payload,
 )
-from calosum.shared.types import (
+from calosum.shared.models.types import (
     BridgeControlSignal,
     CognitiveBridgePacket,
     LeftHemisphereResult,

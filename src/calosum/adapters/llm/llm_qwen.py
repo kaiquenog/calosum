@@ -22,8 +22,8 @@ from calosum.adapters.llm.llm_payloads import (
     load_compiled_prompt_artifact,
 )
 from calosum.adapters.llm.llm_payload_parser import parse_to_result, fallback_result
-from calosum.shared.async_utils import run_sync
-from calosum.shared.types import (
+from calosum.shared.utils.async_utils import run_sync
+from calosum.shared.models.types import (
     ActionExecutionResult,
     CognitiveBridgePacket,
     LeftHemisphereResult,

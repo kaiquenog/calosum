@@ -11,4 +11,4 @@ RUN pip install --no-cache-dir .
 ENV PYTHONPATH=/app/src
 EXPOSE 8000
 
-CMD ["python3", "-m", "calosum.bootstrap.api"]
+CMD ["python3", "-m", "calosum.bootstrap.entry.api"]

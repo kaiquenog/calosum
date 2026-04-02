@@ -10,7 +10,7 @@ from calosum.adapters.perception.quantized_embeddings import (
     PolarQuantEncoder,
     TurboQuantVectorCodec,
 )
-from calosum.shared.ports import VectorCodecPort
+from calosum.shared.models.ports import VectorCodecPort
 
 
 def _random_unit_vector(dim: int, seed: int = 42) -> list[float]:

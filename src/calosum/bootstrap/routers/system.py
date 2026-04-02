@@ -1,8 +1,8 @@
 import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from calosum.shared.serialization import to_primitive
-from calosum.bootstrap.context import get_agent, get_builder
+from calosum.shared.utils.serialization import to_primitive
+from calosum.bootstrap.entry.context import get_agent, get_builder
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/system")

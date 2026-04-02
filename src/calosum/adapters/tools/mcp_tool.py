@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from calosum.shared.tools import ToolSchema
+from calosum.shared.utils.tools import ToolSchema
 
 
 class McpTool:

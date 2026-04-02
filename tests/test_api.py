@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from calosum.bootstrap import api as api_module
-from calosum.shared.types import DirectiveType, EvolutionDirective
+from calosum.bootstrap.entry import api as api_module
+from calosum.shared.models.types import DirectiveType, EvolutionDirective
 
 
 class ApiIntegrationTests(unittest.TestCase):

@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from calosum.shared.tools import ToolSchema
+from calosum.shared.utils.tools import ToolSchema
 
 
 class HttpRequestPayload(BaseModel):

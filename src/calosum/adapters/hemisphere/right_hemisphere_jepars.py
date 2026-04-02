@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-from calosum.shared.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
+from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
 
 
 @dataclass(slots=True)

@@ -7,8 +7,8 @@ from typing import Any
 
 import numpy as np
 
-from calosum.shared.ports import RightHemispherePort, VectorCodecPort, VisionEmbeddingPort
-from calosum.shared.types import (
+from calosum.shared.models.ports import RightHemispherePort, VectorCodecPort, VisionEmbeddingPort
+from calosum.shared.models.types import (
     CognitiveWorkspace,
     ComponentHealth,
     MemoryContext,

@@ -6,7 +6,7 @@ from calosum.adapters.contract_wrappers import (
     ContractEnforcedLeftHemisphereAdapter,
     ContractEnforcedRightHemisphereAdapter,
 )
-from calosum.shared.types import (
+from calosum.shared.models.types import (
     BridgeControlSignal,
     CognitiveBridgePacket,
     LeftHemisphereResult,

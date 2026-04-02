@@ -7,7 +7,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from calosum.shared.tools import ToolSchema
+from calosum.shared.utils.tools import ToolSchema
 
 _BLOCKED_CALLS = {
     "__import__",

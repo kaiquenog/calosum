@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from calosum.shared.ports import BridgeStateStorePort
+from calosum.shared.models.ports import BridgeStateStorePort
 
 
 class LocalBridgeStateStore(BridgeStateStorePort):

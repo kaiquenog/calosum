@@ -6,10 +6,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from calosum.bootstrap.api import resolve_api_settings
-from calosum.bootstrap.cli import _resolve_settings, build_parser
-from calosum.bootstrap.settings import InfrastructureProfile, InfrastructureSettings
-from calosum.domain.telemetry import OTLPJsonlTelemetrySink, TelemetryEvent
+from calosum.bootstrap.entry.api import resolve_api_settings
+from calosum.bootstrap.entry.cli import _resolve_settings, build_parser
+from calosum.bootstrap.infrastructure.settings import InfrastructureProfile, InfrastructureSettings
+from calosum.domain.infrastructure.telemetry import OTLPJsonlTelemetrySink, TelemetryEvent
 
 
 class LocalUiTelemetrySyncTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class LocalUiTelemetrySyncTests(unittest.TestCase):
         args = build_parser().parse_args(["chat"])
 
         with patch(
-            "calosum.bootstrap.cli.InfrastructureSettings.from_sources",
+            "calosum.bootstrap.entry.cli.InfrastructureSettings.from_sources",
             return_value=InfrastructureSettings(),
         ):
             with patch.dict(os.environ, {}, clear=True):
@@ -29,7 +29,7 @@ class LocalUiTelemetrySyncTests(unittest.TestCase):
 
     def test_api_defaults_to_persistent_local_observability(self) -> None:
         with patch(
-            "calosum.bootstrap.api.InfrastructureSettings.from_sources",
+            "calosum.bootstrap.entry.api.InfrastructureSettings.from_sources",
             return_value=InfrastructureSettings(),
         ):
             with patch.dict(os.environ, {}, clear=True):

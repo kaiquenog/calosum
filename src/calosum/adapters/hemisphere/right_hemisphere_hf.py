@@ -5,10 +5,10 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-from calosum.shared.types import MemoryContext, Modality, RightHemisphereState, UserTurn, CognitiveWorkspace
+from calosum.shared.models.types import MemoryContext, Modality, RightHemisphereState, UserTurn, CognitiveWorkspace
 
 if TYPE_CHECKING:
-    from calosum.shared.ports import VectorCodecPort
+    from calosum.shared.models.ports import VectorCodecPort
 
 logger = logging.getLogger(__name__)
 

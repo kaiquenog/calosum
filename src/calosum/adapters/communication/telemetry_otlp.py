@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from calosum.domain.telemetry import TelemetryEvent, event_to_otlp_trace_envelope
+from calosum.domain.infrastructure.telemetry import TelemetryEvent, event_to_otlp_trace_envelope
 
 logger = logging.getLogger(__name__)
 

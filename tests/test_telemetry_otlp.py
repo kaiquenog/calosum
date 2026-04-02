@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from calosum.adapters.communication.telemetry_otlp import OTLPHTTPTraceSink
-from calosum.domain.telemetry import TelemetryEvent
+from calosum.domain.infrastructure.telemetry import TelemetryEvent
 
 
 class OtlpTelemetryAdapterTests(unittest.TestCase):

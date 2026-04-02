@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 
 from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter
-from calosum.domain.bridge import CognitiveTokenizer
-from calosum.shared.types import RightHemisphereState
+from calosum.domain.cognition.bridge import CognitiveTokenizer
+from calosum.shared.models.types import RightHemisphereState
 
 
 class CrossAttentionBridgeTests(unittest.TestCase):

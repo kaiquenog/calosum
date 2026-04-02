@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
-from calosum.shared.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
+from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
 
 
 @dataclass(slots=True)

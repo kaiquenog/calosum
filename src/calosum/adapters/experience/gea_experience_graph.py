@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from calosum.shared.ports import ExperienceStorePort
+from calosum.shared.models.ports import ExperienceStorePort
 
 @dataclass
 class ExperienceEdge:

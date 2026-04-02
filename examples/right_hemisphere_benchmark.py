@@ -13,7 +13,7 @@ from typing import Any
 from unittest.mock import patch
 
 from calosum.adapters.right_hemisphere_hf import HuggingFaceRightHemisphereAdapter, HuggingFaceRightHemisphereConfig
-from calosum.domain.right_hemisphere import RightHemisphereJEPA
+from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA
 from calosum.shared.types import UserTurn
 
 

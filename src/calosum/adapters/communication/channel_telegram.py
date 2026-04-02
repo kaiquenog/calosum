@@ -15,7 +15,7 @@ except Exception as exc:  # pragma: no cover - optional dependency path
     filters = None  # type: ignore[assignment]
     _TELEGRAM_IMPORT_ERROR = exc
 
-from calosum.shared.types import UserTurn
+from calosum.shared.models.types import UserTurn
 
 logger = logging.getLogger(__name__)
 

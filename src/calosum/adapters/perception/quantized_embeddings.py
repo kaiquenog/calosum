@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 import struct
 
-from calosum.shared.ports import VectorCodecPort
+from calosum.shared.models.ports import VectorCodecPort
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import asyncio
 import json
 import unittest
 from calosum.adapters.action_runtime import ConcreteActionRuntime
-from calosum.shared.types import LeftHemisphereResult, PrimitiveAction, TypedLambdaProgram, CognitiveWorkspace
+from calosum.shared.models.types import LeftHemisphereResult, PrimitiveAction, TypedLambdaProgram, CognitiveWorkspace
 
 class TestPersistentRuntime(unittest.IsolatedAsyncioTestCase):
     async def test_bash_persistence(self):

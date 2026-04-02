@@ -11,7 +11,7 @@ try:
 except ImportError:
     np = None  # type: ignore
 
-from calosum.shared.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
+from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
 
 
 @dataclass(slots=True)

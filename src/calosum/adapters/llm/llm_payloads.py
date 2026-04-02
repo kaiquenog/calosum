@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from calosum.shared.types import CognitiveBridgePacket, MemoryContext, UserTurn
+from calosum.shared.models.types import CognitiveBridgePacket, MemoryContext, UserTurn
 
 logger = logging.getLogger(__name__)
 

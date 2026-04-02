@@ -10,9 +10,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from calosum.shared.ports import VectorCodecPort
+    from calosum.shared.models.ports import VectorCodecPort
 
-from calosum.shared.types import (
+from calosum.shared.models.types import (
     BridgeControlSignal,
     CognitiveBridgePacket,
     LeftHemisphereResult,

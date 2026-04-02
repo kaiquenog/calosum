@@ -7,8 +7,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-from calosum.shared.ports import LeftHemispherePort
-from calosum.shared.types import (
+from calosum.shared.models.ports import LeftHemispherePort
+from calosum.shared.models.types import (
     ActionExecutionResult,
     CognitiveBridgePacket,
     CognitiveWorkspace,

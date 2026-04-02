@@ -7,8 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from calosum.adapters.action_runtime import ConcreteActionRuntime
-from calosum.shared.tools import ToolRegistry, ToolSchema
-from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult, PrimitiveAction, TypedLambdaProgram
+from calosum.shared.utils.tools import ToolRegistry, ToolSchema
+from calosum.shared.models.types import ActionExecutionResult, LeftHemisphereResult, PrimitiveAction, TypedLambdaProgram
 
 
 class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):

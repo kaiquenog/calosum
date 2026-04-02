@@ -11,9 +11,9 @@ from urllib.parse import urlparse
 import httpx
 
 if TYPE_CHECKING:
-    from calosum.shared.ports import VectorCodecPort
+    from calosum.shared.models.ports import VectorCodecPort
 
-from calosum.shared.async_utils import run_sync
+from calosum.shared.utils.async_utils import run_sync
 
 logger = logging.getLogger(__name__)
 

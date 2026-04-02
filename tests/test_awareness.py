@@ -4,12 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from calosum.domain.evolution import JsonlEvolutionArchive
-from calosum.domain.introspection import IntrospectionEngine
-from calosum.domain.orchestrator import CalosumAgent
+from calosum.domain.agent.evolution import JsonlEvolutionArchive
+from calosum.domain.metacognition.introspection import IntrospectionEngine
+from calosum.domain.agent.orchestrator import CalosumAgent
 from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
-from calosum.domain.right_hemisphere import RightHemisphereJEPA
-from calosum.shared.types import DirectiveType, EvolutionDirective
+from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA
+from calosum.shared.models.types import DirectiveType, EvolutionDirective
 
 
 class AwarenessTests(unittest.TestCase):
@@ -214,7 +214,7 @@ class AwarenessTests(unittest.TestCase):
             },
             pending_directive_count=0,
         )
-        from calosum.domain.evolution import EvolutionProposer
+        from calosum.domain.agent.evolution import EvolutionProposer
 
         directives = EvolutionProposer().propose(diagnostic)
         right_param = [

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from calosum.shared.tools import ToolSchema
+from calosum.shared.utils.tools import ToolSchema
 
 
 logger = logging.getLogger(__name__)

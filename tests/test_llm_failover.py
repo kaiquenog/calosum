@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from calosum.adapters.llm.llm_failover import ResilientLeftHemisphereAdapter
-from calosum.shared.types import (
+from calosum.shared.models.types import (
     BridgeControlSignal,
     CognitiveBridgePacket,
     LeftHemisphereResult,

@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from calosum.domain.bridge import CognitiveTokenizer
-from calosum.domain.metacognition import (
+from calosum.domain.cognition.bridge import CognitiveTokenizer
+from calosum.domain.metacognition.metacognition import (
     CognitiveCandidate,
     GEAReflectionController,
     ReflectionOutcome,

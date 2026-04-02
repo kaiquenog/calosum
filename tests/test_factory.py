@@ -14,7 +14,7 @@ from calosum import (
     RightHemisphereJEPA,
 )
 from calosum.adapters.contract_wrappers import ContractEnforcedRightHemisphereAdapter
-from calosum.domain.telemetry import OTLPJsonlTelemetrySink
+from calosum.domain.infrastructure.telemetry import OTLPJsonlTelemetrySink
 
 
 class _FakeRightHemisphere:
@@ -177,7 +177,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
     def test_factory_turboquant_flag(self) -> None:
         """CALOSUM_VECTOR_QUANTIZATION=turboquant causes _build_codec to return TurboQuantVectorCodec."""
         import os
-        from calosum.bootstrap.factory import _build_codec
+        from calosum.bootstrap.wiring.factory import _build_codec
         from calosum.adapters.perception.quantized_embeddings import TurboQuantVectorCodec
 
         settings = InfrastructureSettings.from_sources(
@@ -190,7 +190,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
     def test_factory_no_codec_when_flag_none(self) -> None:
         """Default settings produce no codec (vector_quantization=none)."""
-        from calosum.bootstrap.factory import _build_codec
+        from calosum.bootstrap.wiring.factory import _build_codec
 
         env = {"CALOSUM_VECTOR_QUANTIZATION": "none", "CALOSUM_TURBOQUANT_BITS": "4"}
         settings = InfrastructureSettings.from_sources(environ=env)

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from calosum.adapters.llm.llm_payloads import build_left_hemisphere_prompt, load_left_prompt_template
-from calosum.shared.types import (
+from calosum.shared.models.types import (
     BridgeControlSignal,
     CognitiveBridgePacket,
     MemoryContext,

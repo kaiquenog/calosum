@@ -9,9 +9,9 @@ from calosum.adapters.tools.introspection import IntrospectionTool
 from calosum.adapters.tools.mcp_tool import McpTool
 from calosum.adapters.tools.persistent_shell import PersistentShellTool
 from calosum.adapters.tools.subordinate_agent import SubordinateAgentTool
-from calosum.shared.async_utils import run_sync
-from calosum.shared.tools import ToolRegistry, ToolSchema, build_runtime_contract_audit_report
-from calosum.shared.types import ActionExecutionResult, LeftHemisphereResult, ToolDescriptor, CognitiveWorkspace
+from calosum.shared.utils.async_utils import run_sync
+from calosum.shared.utils.tools import ToolRegistry, ToolSchema, build_runtime_contract_audit_report
+from calosum.shared.models.types import ActionExecutionResult, LeftHemisphereResult, ToolDescriptor, CognitiveWorkspace
 
 logger = logging.getLogger(__name__)
 

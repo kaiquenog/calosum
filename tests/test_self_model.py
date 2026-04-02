@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import unittest
-from calosum.domain.orchestrator import CalosumAgent
-from calosum.domain.self_model import build_self_model
-from calosum.shared.types import (
+from calosum.domain.agent.orchestrator import CalosumAgent
+from calosum.domain.metacognition.self_model import build_self_model
+from calosum.shared.models.types import (
     CapabilityDescriptor,
     CognitiveArchitectureMap,
     ComponentHealth,

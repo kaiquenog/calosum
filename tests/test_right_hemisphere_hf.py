@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 import types
 from calosum.adapters.hemisphere.right_hemisphere_hf import HuggingFaceRightHemisphereAdapter, HuggingFaceRightHemisphereConfig
-from calosum.shared.types import UserTurn, Modality, MultimodalSignal
+from calosum.shared.models.types import UserTurn, Modality, MultimodalSignal
 
 class TestHuggingFaceRightHemisphere(unittest.TestCase):
     def test_perceive_returns_state_with_embeddings(self) -> None:

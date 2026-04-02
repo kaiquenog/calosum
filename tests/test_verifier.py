@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from calosum.domain.verifier import HeuristicVerifier
-from calosum.shared.types import (
+from calosum.domain.infrastructure.verifier import HeuristicVerifier
+from calosum.shared.models.types import (
     ActionExecutionResult,
     FailureType,
     LeftHemisphereResult,

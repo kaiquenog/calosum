@@ -5,9 +5,9 @@ import time
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from calosum.shared.async_utils import maybe_await, run_sync
-from calosum.shared.ports import LeftHemispherePort
-from calosum.shared.types import (
+from calosum.shared.utils.async_utils import maybe_await, run_sync
+from calosum.shared.models.ports import LeftHemispherePort
+from calosum.shared.models.types import (
     ActionExecutionResult,
     CognitiveBridgePacket,
     LeftHemisphereResult,

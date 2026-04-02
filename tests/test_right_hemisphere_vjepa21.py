@@ -8,7 +8,7 @@ from pathlib import Path
 from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
-from calosum.shared.types import UserTurn
+from calosum.shared.models.types import UserTurn
 
 
 class RightHemisphere2026AdaptersTests(unittest.TestCase):

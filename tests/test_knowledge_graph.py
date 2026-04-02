@@ -6,7 +6,7 @@ from pathlib import Path
 import json
 
 from calosum.adapters.knowledge.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
-from calosum.shared.types import KnowledgeTriple, UserTurn
+from calosum.shared.models.types import KnowledgeTriple, UserTurn
 
 
 class KnowledgeGraphAdapterTests(unittest.TestCase):

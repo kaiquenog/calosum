@@ -1,5 +1,5 @@
 from typing import Any
-from calosum.shared.types import LeftHemisphereResult, TypedLambdaProgram, PrimitiveAction
+from calosum.shared.models.types import LeftHemisphereResult, TypedLambdaProgram, PrimitiveAction
 
 def parse_to_result(
     parsed: dict[str, Any],

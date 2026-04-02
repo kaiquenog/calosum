@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from calosum.shared.ports import VisionEmbeddingPort
+from calosum.shared.models.ports import VisionEmbeddingPort
 
 
 @dataclass(slots=True)

@@ -7,17 +7,17 @@ from calosum.adapters.perception.multimodal_perception import LocalClipVisionAda
 from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
-from calosum.bootstrap.factory import CalosumAgentBuilder
-from calosum.domain.bridge import CognitiveTokenizer, CognitiveTokenizerConfig
-from calosum.domain.left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
-from calosum.domain.memory import (
+from calosum.bootstrap.wiring.factory import CalosumAgentBuilder
+from calosum.domain.cognition.bridge import CognitiveTokenizer, CognitiveTokenizerConfig
+from calosum.domain.cognition.left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
+from calosum.domain.memory.memory import (
     DualMemorySystem,
     InMemoryEpisodicStore,
     InMemorySemanticGraphStore,
     InMemorySemanticStore,
     SleepModeConsolidator,
 )
-from calosum.domain.metacognition import (
+from calosum.domain.metacognition.metacognition import (
     CognitiveCandidate,
     CognitiveVariantSpec,
     GEAReflectionController,
@@ -25,15 +25,15 @@ from calosum.domain.metacognition import (
     ReflectionOutcome,
     ReflectionScore,
 )
-from calosum.domain.multiagent import ExecutorRole, PlannerRole, VerifierRole
-from calosum.domain.orchestrator import CalosumAgent, CalosumAgentConfig
-from calosum.domain.persistent_memory import (
+from calosum.domain.agent.multiagent import ExecutorRole, PlannerRole, VerifierRole
+from calosum.domain.agent.orchestrator import CalosumAgent, CalosumAgentConfig
+from calosum.domain.memory.persistent_memory import (
     JsonlEpisodicStore,
     JsonlSemanticGraphStore,
     JsonlSemanticStore,
     PersistentDualMemorySystem,
 )
-from calosum.shared.ports import (
+from calosum.shared.models.ports import (
     ActionRuntimePort,
     BridgeFusionPort,
     CognitiveTokenizerPort,
@@ -44,17 +44,17 @@ from calosum.shared.ports import (
     RightHemispherePort,
     TelemetryBusPort,
 )
-from calosum.domain.right_hemisphere import RightHemisphereJEPA, RightHemisphereJEPAConfig
-from calosum.domain.runtime import StrictLambdaRuntime, StrictLambdaRuntimeConfig
-from calosum.shared.serialization import dump_json, to_json, to_primitive
-from calosum.bootstrap.settings import InfrastructureProfile, InfrastructureSettings
-from calosum.domain.telemetry import (
+from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA, RightHemisphereJEPAConfig
+from calosum.domain.execution.runtime import StrictLambdaRuntime, StrictLambdaRuntimeConfig
+from calosum.shared.utils.serialization import dump_json, to_json, to_primitive
+from calosum.bootstrap.infrastructure.settings import InfrastructureProfile, InfrastructureSettings
+from calosum.domain.infrastructure.telemetry import (
     CognitiveTelemetryBus,
     InMemoryTelemetrySink,
     OTLPJsonlTelemetrySink,
     TelemetryEvent,
 )
-from calosum.shared.types import (
+from calosum.shared.models.types import (
     ActionExecutionResult,
     AgentTurnResult,
     CognitiveBridgePacket,

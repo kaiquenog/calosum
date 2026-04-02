@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import numpy as np
 
 from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
-from calosum.shared.types import MemoryContext, MemoryEpisode, RightHemisphereState, UserTurn
+from calosum.shared.models.types import MemoryContext, MemoryEpisode, RightHemisphereState, UserTurn
 
 
 class _StaticRightHemisphere:

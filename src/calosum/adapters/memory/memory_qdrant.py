@@ -26,9 +26,9 @@ from calosum.adapters.memory.memory_qdrant_serializers import (
     rule_from_point,
 )
 from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
-from calosum.domain.memory import InMemorySemanticGraphStore
-from calosum.shared.async_utils import run_sync
-from calosum.shared.types import (
+from calosum.domain.memory.memory import InMemorySemanticGraphStore
+from calosum.shared.utils.async_utils import run_sync
+from calosum.shared.models.types import (
     ConsolidationReport,
     KnowledgeTriple,
     MemoryContext,
@@ -38,9 +38,9 @@ from calosum.shared.types import (
 )
 
 if TYPE_CHECKING:
-    from calosum.shared.ports import VectorCodecPort
+    from calosum.shared.models.ports import VectorCodecPort
 
-from calosum.shared.ports import DatasetExporterPort
+from calosum.shared.models.ports import DatasetExporterPort
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +186,7 @@ class QdrantDualMemoryAdapter:
         return run_sync(self.asleep_mode())
 
     async def asleep_mode(self) -> ConsolidationReport:
-        from calosum.domain.memory import SleepModeConsolidator
+        from calosum.domain.memory.memory import SleepModeConsolidator
 
         points, _ = await self.aclient.scroll(
             collection_name=self.config.episodes_collection,

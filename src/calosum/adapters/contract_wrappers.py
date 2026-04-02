@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from calosum.shared.types import (
+from calosum.shared.models.types import (
     ActionExecutionResult,
     CognitiveBridgePacket,
     CognitiveWorkspace,
