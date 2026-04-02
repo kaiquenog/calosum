@@ -22,6 +22,7 @@ dependencies = [
     "nano-graphrag",
     "gensim>=4.0.0",
     "dspy",
+    "lightgbm>=4.6.0",
     "python-telegram-bot>=21.0",
 ]
 

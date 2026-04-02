@@ -229,7 +229,12 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.experience.gea_experience_distributed": set(),
     "adapters.experience.gea_experience_graph": {"shared.models.ports"},
     "adapters.experience.gea_experience_store": set(),
-    "adapters.experience.gea_reflection_experience": {"domain.cognition.bridge", "domain.metacognition.metacognition"},
+    "adapters.experience.gea_reflection_experience": {
+        "adapters.experience.variant_preference",
+        "domain.cognition.bridge",
+        "domain.metacognition.metacognition",
+    },
+    "adapters.experience.variant_preference": set(),
     "adapters.hemisphere.left_hemisphere_rlm": {"shared.models.types", "shared.models.ports"},
     "adapters.hemisphere.right_hemisphere_heuristic_jepa": {"shared.models.jepa", "shared.models.types"},
     "adapters.hemisphere.right_hemisphere_trained_jepa": {"shared.models.jepa", "shared.models.types"},

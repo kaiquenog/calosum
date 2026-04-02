@@ -55,6 +55,7 @@ class StrategyArm:
 class ReflectionOutcome:
     selected_variant_id: str
     scoreboard: list[ReflectionScore]
+    selected_by: str = "legacy"
     bridge_adjustments: dict[str, Any] = field(default_factory=dict)
     selected_metrics: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
@@ -179,7 +180,6 @@ class CognitiveVariantSelector:
             f"context_type={context_type}",
             f"bandit_reward={reward:.3f}",
         ]
-        
         cost_metrics = {
             "branch_count": len(candidates),
             "variants_evaluated": len(candidates),

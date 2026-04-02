@@ -33,7 +33,7 @@
 
 - `process_turn`: telemetria obrigatória por turno; snapshot deve incluir capabilities
 - `runtime_retry_count`: observável por decisão via `AgentTurnResult.retry_count`
-- `group_turn`: resultado selecionado deve registrar variant_id e reflection event
+- `group_turn`: resultado selecionado deve registrar `variant_id`, `selected_by` (`learned_model|rule_based|legacy`) e reflection event
 - `sleep_mode`: não pode perder regras ou triplas já consolidadas
 
 ## Operação

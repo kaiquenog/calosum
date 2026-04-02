@@ -1,7 +1,7 @@
 # Fusion A/B Test (Sprint 4)
 
 Data: 2026-04-02
-Status: protocolo implementado, rodada oficial pendente de execucao com judge externo.
+Status: rodada executada (10 turnos) com judge externo; gate estatistico ainda nao atingido.
 
 ## Objetivo
 Validar se a fusao JEPA-guided melhora coerencia semantica versus baseline sem fusao e versus controle randomico.
@@ -26,8 +26,17 @@ Trigger de custo extra: fusao so dispara quando `jepa_uncertainty < 0.5`.
 - Criterio estatistico: p < 0.05.
 
 ## Resultado Atual
-- Rodada oficial ainda nao executada neste commit.
-- O codigo de fusao, telemetria e toggles de experimento ja estao integrados para execucao do protocolo.
+- Execucao: `PYTHONPATH=src ./.venv/bin/python3 scripts/fusion_ab_test.py --limit 10 --judge-max-retries 1 --judge-throttle-s 0 --output-json docs/reports/fusion_ab_test_2026-04-02.json`
+- Judge model: `gpt-5-mini`
+- Controle: score medio `1.0`, p50 `2362.539 ms`, p95 `5135.09 ms`
+- Tratamento A: score medio `1.0`, p50 `2401.696 ms`, p95 `4912.705 ms`
+- Tratamento B: score medio `1.0`, p50 `2340.698 ms`, p95 `4843.311 ms`
+- Estatistica:
+  - A vs Controle: `mean_diff=0.0`, `p=1.0`
+  - A vs B: `mean_diff=0.0`, `p=1.0`
+- Gate Sprint 4: **nao passou** nesta rodada.
+
+Observacao: para conclusao formal do gate com o protocolo completo, falta rodada de 50 turnos e confirmacao de p<0.05.
 
 ## Telemetria Esperada
 Em `left_result.telemetry`:

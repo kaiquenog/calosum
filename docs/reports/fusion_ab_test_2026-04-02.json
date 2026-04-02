@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-04-02T23:13:27.721752+00:00",
+  "dataset_path": "docs/benchmarks/jepa_phase1/annotated_turns.jsonl",
+  "turns_evaluated": 10,
+  "judge_model": "gpt-5-mini",
+  "control": {
+    "avg_judge_score": 1.0,
+    "avg_tool_success_rate": 1.0,
+    "latency_p50_ms": 2362.539,
+    "latency_p95_ms": 5135.09
+  },
+  "treatment_a": {
+    "avg_judge_score": 1.0,
+    "avg_tool_success_rate": 1.0,
+    "latency_p50_ms": 2401.696,
+    "latency_p95_ms": 4912.705
+  },
+  "treatment_b": {
+    "avg_judge_score": 1.0,
+    "avg_tool_success_rate": 1.0,
+    "latency_p50_ms": 2340.698,
+    "latency_p95_ms": 4843.311
+  },
+  "a_vs_control": {
+    "mean_diff": 0.0,
+    "p_value_one_sided": 1.0,
+    "n": 10
+  },
+  "a_vs_b": {
+    "mean_diff": 0.0,
+    "p_value_one_sided": 1.0,
+    "n": 10
+  },
+  "gate_passed": false
+}

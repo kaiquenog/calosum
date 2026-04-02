@@ -11,6 +11,7 @@ from calosum.adapters.infrastructure.contract_wrappers import (
 )
 from calosum.adapters.experience.gea_experience_graph import GeaExperienceGraphConfig, GraphGeaExperienceStore
 from calosum.adapters.experience.gea_reflection_experience import ExperienceAwareGEAReflectionController
+from calosum.adapters.experience.gea_reflection_experience import LearnedPreferenceGEAReflectionController
 from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import HeuristicJEPAAdapter
 from calosum.adapters.hemisphere.right_hemisphere_trained_jepa import TrainedJEPAAdapter
@@ -22,7 +23,6 @@ from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, Je
 from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
 from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureProfile, InfrastructureSettings
-from calosum.domain.metacognition.metacognition import CognitiveVariantSelector
 
 def resolve_vision_adapter() -> LocalClipVisionAdapter:
     return LocalClipVisionAdapter()
@@ -39,10 +39,10 @@ def resolve_bridge_fusion(settings: InfrastructureSettings):
 
 def resolve_reflection_controller(settings: InfrastructureSettings):
     if not settings.gea_sharing_enabled:
-        return CognitiveVariantSelector()
+        return LearnedPreferenceGEAReflectionController()
 
     if settings.gea_experience_store_path is None:
-        return CognitiveVariantSelector()
+        return LearnedPreferenceGEAReflectionController()
 
     store = GraphGeaExperienceStore(
         GeaExperienceGraphConfig(path=settings.gea_experience_store_path)

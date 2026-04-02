@@ -25,8 +25,10 @@ Implementar fusao semantica genuina JEPA+LLM: JEPA prediz embedding alvo, LLM ge
 - [x] Ajuste no adapter LLM para usar `target_temperature` do bridge packet.
 - [x] Testes unitarios iniciais da fusao e resolver.
 - [ ] Execucao do A/B test formal com LLM-as-judge e analise estatistica p<0.05.
+  - Rodada parcial concluida em 2026-04-02 com `limit=10` (resultado sem ganho estatistico).
 
 ## Decision Log
 - 2026-04-02: Fusao foi encapsulada no adapter de LLM para evitar alterar `orchestrator.py` e `agent_execution.py`, que ja estao no limite de tamanho de modulo.
 - 2026-04-02: Trigger de fusao usa `jepa_uncertainty` propagada em `bridge_packet.control.annotations` para manter contratos existentes.
 - 2026-04-02: `ephemeral` desabilita fusao por default para evitar custo extra de chamadas LLM; perfis persistentes/docker habilitam por default com override por env.
+- 2026-04-02: Benchmark A/B executado em modo parcial (`10` turnos) com `gpt-5-mini` como judge; scores uniformes (1.0) indicam necessidade de ajuste no protocolo de avaliação antes do gate final.

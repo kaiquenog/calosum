@@ -50,6 +50,7 @@ class ReflectionTests(unittest.TestCase):
         )
         self.assertEqual(result.reflection.cost_metrics["branch_count"], len(result.candidates))
         self.assertGreaterEqual(result.reflection.cost_metrics["total_latency_ms"], 0.0)
+        self.assertIn(result.reflection.selected_by, {"learned_model", "rule_based", "legacy"})
         dashboard = agent.cognitive_dashboard(turn.session_id)
         self.assertEqual(len(dashboard["reflection"]), 1)
 
