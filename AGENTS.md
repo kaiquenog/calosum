@@ -15,11 +15,11 @@ Este arquivo e um mapa curto do repositorio. Nao e a documentacao completa.
 ### Python Backend
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -t . # All tests
-PYTHONPATH=src python3 -m unittest tests/test_factory.py # Single file
-PYTHONPATH=src python3 -m calosum.harness_checks # Governance (or `calosum-harness`)
-PYTHONPATH=src python3 -m calosum.bootstrap.cli chat # CLI (or `calosum`)
-PYTHONPATH=src python3 -m calosum.bootstrap.api # API Server
+PYTHONPATH=src ./.venv/bin/python3 -m unittest discover -s tests -t . # All tests
+PYTHONPATH=src ./.venv/bin/python3 -m unittest tests/bootstrap/test_factory.py # Single file
+PYTHONPATH=src ./.venv/bin/python3 -m calosum.harness_checks # Governance (or `calosum-harness`)
+PYTHONPATH=src ./.venv/bin/python3 -m calosum.bootstrap.cli chat # CLI (or `calosum`)
+PYTHONPATH=src ./.venv/bin/python3 -m calosum.bootstrap.api # API Server
 ```
 
 ### TypeScript UI
@@ -40,8 +40,8 @@ docker compose -f deploy/docker-compose.yml ps # Health
 
 ### Pre-Commit Checklist
 
-1. `PYTHONPATH=src python3 -m calosum.harness_checks` — governance checks
-2. `PYTHONPATH=src python3 -m unittest discover -s tests -t .` — all tests pass
+1. `PYTHONPATH=src ./.venv/bin/python3 -m calosum.harness_checks` — governance checks
+2. `PYTHONPATH=src ./.venv/bin/python3 -m unittest discover -s tests -t .` — all tests pass
 3. For UI changes: `cd ui && npm run lint && npm run build`
 
 ## Code Style

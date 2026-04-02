@@ -16,10 +16,25 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
 
 1. **`shared/`** (`types.py`, `ports.py`, `tools.py`, `async_utils.py`, `schemas.py`, `serialization.py`)
    Tipos compartilhados, contratos de dados, `ToolRegistry` e utilitários puros de serialização. Inclui os descritores de Sprint 0: `CapabilityDescriptor`, `ModelDescriptor`, `ToolDescriptor`, `ComponentHealth`. Ports centrais: `LeftHemispherePort`, `RightHemispherePort`, `BridgeFusionPort`, `ExperienceStorePort`, `ActionRuntimePort`, `MemorySystemPort`, `ReflectionControllerPort`, `TelemetryBusPort`.
-2. **`domain/`** (`agent_config.py`, `agent_execution.py`, `bridge.py`, `differentiable_logic.py`, `directive_guardrails.py`, `event_bus.py`, `evolution.py`, `execution_utils.py`, `idle_foraging.py`, `introspection.py`, `introspection_capabilities.py`, `left_hemisphere.py`, `memory.py`, `metacognition.py`, `multiagent.py`, `orchestrator.py`, `persistent_memory.py`, `right_hemisphere.py`, `runtime.py`, `runtime_dsl.py`, `self_model.py`, `telemetry.py`, `verifier.py`, `workspace.py`)
-   Modelos de negócios do agente neuro-simbólico. Pura lógica sem detalhes I/O diretos. `agent_execution.py` concentra o loop de retry/repair; `orchestrator.py` decide entre turno simples e group turn via threshold de surpresa/ambiguidade; `evolution.py` gerencia auto-evolução de parâmetros via GEA; `metacognition.py` centraliza reflexão e seleção de variantes; `introspection_capabilities.py` expõe snapshot de capacidades; `idle_foraging.py` implementa busca epistêmica passiva; `directive_guardrails.py` valida diretivas de evolução; `differentiable_logic.py` provê lógica fuzzy/LTN.
-3. **`adapters/`** (`action_runtime.py`, `active_inference.py`, `bridge_cross_attention.py`, `bridge_store.py`, `channel_telegram.py`, `contract_wrappers.py`, `gea_experience_distributed.py`, `gea_experience_store.py`, `gea_reflection_experience.py`, `knowledge_graph_nanorag.py`, `latent_exchange.py`, `left_hemisphere_rlm.py`, `llm_failover.py`, `llm_payloads.py`, `llm_qwen.py`, `mcp_client.py`, `memory_qdrant.py`, `multimodal_perception.py`, `night_trainer.py`, `night_trainer_dspy.py`, `night_trainer_lora.py`, `right_hemisphere_hf.py`, `right_hemisphere_jepars.py`, `right_hemisphere_vjepa21.py`, `right_hemisphere_vljepa.py`, `telemetry_otlp.py`, `text_embeddings.py`, `tools/code_execution.py`, `tools/http_request.py`, `tools/introspection.py`, `tools/mcp_tool.py`, `tools/persistent_shell.py`, `tools/subordinate_agent.py`)
-   Implementações concretas dos ports. Todo código que depende de SDKs externos (torch, transformers, peft, qdrant-client, dspy, openai, httpx, telegram) reside aqui exclusivamente. Backends do hemisférico direito: `right_hemisphere_hf.py` (HuggingFace), `right_hemisphere_vjepa21.py` (V-JEPA 2.1), `right_hemisphere_vljepa.py` (VL-JEPA multimodal), `right_hemisphere_jepars.py` (Rust/Burn JEPA-rs). Backend esquerdo alternativo: `left_hemisphere_rlm.py` (RLM recursivo). Bridge: `bridge_cross_attention.py` (fusão por cross-attention aprendida). GEA: `gea_experience_store.py`, `gea_experience_distributed.py`, `gea_reflection_experience.py`. Wrappers: `contract_wrappers.py` (enforcement de contratos por hemisferio).
+2. **`domain/`** (subfolders: `agent/`, `cognition/`, `execution/`, `infrastructure/`, `memory/`, `metacognition/`)
+   Modelos de negócios do agente neuro-simbólico. Pura lógica sem detalhes I/O diretos.
+   - **`agent/`**: `orchestrator.py` (coordenação do loop cognitivo), `evolution.py` (evolução via GEA), `idle_foraging.py` (busca epistêmica passiva), `multiagent.py` (comunicação entre agentes), `agent_config.py`, `directive_guardrails.py`.
+   - **`cognition/`**: `left_hemisphere.py` (lógica simbólica/RLM), `right_hemisphere.py` (percepção neural), `bridge.py` (fusão de hemisférios), `differentiable_logic.py` (lógica fuzzy/LTN).
+   - **`execution/`**: `agent_execution.py` (retry/repair), `runtime.py` (instância de ferramentas), `workspace.py` (contexto operacional), `execution_utils.py`, `runtime_dsl.py`, `group_turn.py`.
+   - **`infrastructure/`**: `event_bus.py`, `telemetry.py`, `verifier.py`, `interceptors.py` (hooks observacionais).
+   - **`memory/`**: `memory.py` (lógica de memória episódica), `persistent_memory.py`.
+   - **`metacognition/`**: `metacognition.py` (reflexão central), `self_model.py` (auto-representação), `awareness.py`, `introspection.py` (diagnóstico interno), `introspection_capabilities.py` (snapshot de capacidades).
+3. **`adapters/`** (subfolders: `llm/`, `memory/`, `hemisphere/`, `tools/`, `perception/`, `bridge/`, `communication/`, `experience/`, `night_trainer/`, `knowledge/`)
+   Implementações concretas dos ports. Todo código que depende de SDKs externos (torch, transformers, peft, qdrant-client, dspy, openai, httpx, telegram) reside aqui exclusivamente.
+   - **`llm/`**: `llm_qwen.py`, `llm_failover.py`, `llm_payload_parser.py` (extraído para conformidade de harness).
+   - **`memory/`**: `memory_qdrant.py` (vetores latentes), `text_embeddings.py` (vectorizers).
+   - **`hemisphere/`**: `right_hemisphere_hf.py`, `right_hemisphere_vjepa21.py`, `right_hemisphere_vljepa.py`, `right_hemisphere_jepars.py` (Rust/Burn), `left_hemisphere_rlm.py`.
+   - **`tools/`**: `code_execution.py`, `persistent_shell.py`, `mcp_tool.py`, `mcp_client.py`, `subordinate_agent.py`.
+   - **`perception/`**: `active_inference.py`, `multimodal_perception.py`, `quantized_embeddings.py` (TurboQuant).
+   - **`communication/`**: `channel_telegram.py`, `telemetry_otlp.py`.
+   - **`experience/`**: `gea_experience_store.py`, `gea_experience_distributed.py`.
+   - **`night_trainer/`**: `night_trainer.py`, `night_trainer_dspy.py`.
+   - **Root**: `action_runtime.py`, `contract_wrappers.py`.
 4. **`bootstrap/`** (`settings.py`, `backend_resolvers.py`, `factory.py`, `context.py`, `cli.py`, `api.py`, `routers/system.py`, `routers/chat.py`, `routers/telemetry.py`, `__main__.py`)
    Entrada da aplicação. `factory.py` instancia adapters, constrói `capability_snapshot` real e injeta tudo no domain via `CalosumAgentBuilder`. `backend_resolvers.py` centraliza a lógica de seleção de backends por feature flags (hemisferio direito, esquerdo e bridge), mantendo `factory.py` desacoplado das decisões de routing. `context.py` concentra singletons/cache e resolução de settings para API. `routers/*` mantém as rotas FastAPI segmentadas por domínio HTTP. O pacote `bootstrap` segue sendo o único ponto autorizado a acoplar adapters e domain.
 
@@ -29,7 +44,7 @@ No dominio, `interceptors.py` formaliza o contrato de hooks cognitivos observaci
 
 Fora das quatro camadas principais, o repositório mantém `harness_checks.py` na raiz do pacote `calosum` como utilitário de governança. Ele não faz parte do runtime do agente; sua função é validar artefatos obrigatórios, planos, limites de módulo (<400 linhas) e fronteiras de importação via AST.
 
-Todo novo módulo Python deve ser registrado em `MODULE_RULES` dentro de `harness_checks.py` com o conjunto explícito de imports internos permitidos. Módulos sem regra geram violação `missing_module_rule` que quebra o build. Consulte `docs/references/harness-engineering.md` para a lista completa de checks e seus códigos de erro.
+Todo novo módulo Python deve ser registrado em `MODULE_RULES` dentro de `harness_checks.py`. O sistema de testes também segue esta estrutura modular em `tests/`, dividido em `tests/domain/`, `tests/adapters/`, `tests/bootstrap/`, `tests/shared/` e `tests/integration/`. Consulte `docs/references/harness-engineering.md` para a lista completa de checks e seus códigos de erro.
 
 ## Interface de Usuário (UI)
 
