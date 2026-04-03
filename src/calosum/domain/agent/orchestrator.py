@@ -137,11 +137,6 @@ class CalosumAgent:
         from calosum.domain.agent.orchestrator_briefing import build_session_briefing
         workspace.task_frame["session_briefing"] = build_session_briefing(self, user_turn.session_id, right_state=right_state)
 
-        if self.config.branching_budget.max_depth > 0 and (effective_surprise > 0.6 or semantic_density > 0.85):
-            await maybe_await(self.memory_system.asave_workspace(user_turn.session_id, workspace))
-            return await self.aprocess_group_turn(user_turn, default_cognitive_personas(self.config.branching_budget.max_width), 
-                                               _precomputed_memory=memory_context, _precomputed_right=right_state, _precomputed_workspace=workspace)
-
         capabilities_dict = None
         if self.capability_snapshot:
             from dataclasses import asdict
@@ -157,6 +152,8 @@ class CalosumAgent:
         await self.event_bus.publish(CognitiveEvent("ExecutionEvent", result, user_turn.turn_id))
         await self._store_selected_episode(result)
         await maybe_await(self.execution_engine.call_component(self.telemetry_bus, "arecord_turn", "record_turn", result))
+        
+        # Awareness loop remains for observability but now strictly linear
         await self._awareness_loop(user_turn.session_id, workspace)
 
         if self.latent_exchange:
@@ -165,26 +162,12 @@ class CalosumAgent:
         await maybe_await(self.memory_system.asave_workspace(user_turn.session_id, workspace))
         return result
 
-    def process_group_turn(self, user_turn: UserTurn, variants: list[CognitiveVariantSpec]) -> GroupTurnResult:
-        return run_sync(self.aprocess_group_turn(user_turn, variants))
-
-    async def aprocess_group_turn(self, user_turn: UserTurn, variants: list[CognitiveVariantSpec], 
-                                  _precomputed_memory: Any | None = None, _precomputed_right: Any | None = None, 
-                                  _precomputed_workspace: CognitiveWorkspace | None = None) -> GroupTurnResult:
-        from calosum.domain.execution.group_turn import process_group_turn as _pgt
-        return await _pgt(self, user_turn, variants, _precomputed_memory=_precomputed_memory, 
-                        _precomputed_right=_precomputed_right, _precomputed_workspace=_precomputed_workspace)
-
     async def _awareness_loop(self, session_id: str, workspace: CognitiveWorkspace | None = None) -> None:
-        from calosum.domain.metacognition.awareness import process_awareness_loop
-        await process_awareness_loop(self, session_id, workspace)
-        diagnostic = await self.alatest_awareness_for_session(session_id)
-        if diagnostic and diagnostic.failure_types:
-            dominant_failure = max(diagnostic.failure_types.items(), key=lambda item: item[1])
-            from calosum.domain.agent.orchestrator_utils import record_cognitive_diary
-            record_cognitive_diary(self.cognitive_diary_path, turn_id=f"{session_id}-{diagnostic.analyzed_turns}",
-                                 observation=f"Falhas recorrentes: {dominant_failure[0]} ({dominant_failure[1]}x).",
-                                 action="anotado em workspace", confidence=max(0.55, min(0.98, 1.0 - diagnostic.average_surprise)))
+        try:
+            from calosum.domain.metacognition.awareness import process_awareness_loop
+            await process_awareness_loop(self, session_id, workspace)
+        except Exception:
+            pass # Awareness should not crash the main turn
 
     def analyze_session(self, session_id: str, *, persist: bool = False) -> SessionDiagnostic:
         return run_sync(self.aanalyze_session(session_id, persist=persist))
@@ -218,6 +201,8 @@ class CalosumAgent:
     def sleep_mode(self): return run_sync(self.asleep_mode())
     async def asleep_mode(self):
         report = await maybe_await(self.execution_engine.call_component(self.memory_system, "asleep_mode", "sleep_mode"))
+        if self.night_trainer:
+            await maybe_await(self.execution_engine.call_component(self.night_trainer, "arun_training_cycle", "run_training_cycle"))
         await self.event_bus.publish(CognitiveEvent("SleepModeCompletedEvent", report, "system-loop"))
         return report
 

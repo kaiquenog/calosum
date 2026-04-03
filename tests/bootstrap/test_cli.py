@@ -52,6 +52,8 @@ class CliIntegrationTests(unittest.TestCase):
             scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
 
             env = os.environ.copy()
+            env["CALOSUM_IGNORE_DOTENV"] = "true"
+            env["CALOSUM_VECTOR_QUANTIZATION"] = "none"
             env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
             env["CALOSUM_LEFT_ENDPOINT"] = "http://127.0.0.1:9999/v1/chat/completions"
             env["CALOSUM_PERCEPTION_MODEL"] = "jepa"
@@ -74,7 +76,7 @@ class CliIntegrationTests(unittest.TestCase):
                 text=True,
             )
 
-            self.assertTrue((memory_dir / "episodic.jsonl").exists())
+            self.assertTrue((memory_dir / "calosum.db").exists())
             self.assertTrue(otlp_path.exists())
 
         payload = json.loads(completed.stdout)

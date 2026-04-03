@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from calosum.shared.utils.tools import ToolSchema
+from calosum.adapters.execution.docker_sandbox import DockerToolSandbox
 
 _BLOCKED_CALLS = {
     "__import__",

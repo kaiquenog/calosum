@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from calosum.domain.agent.evolution import JsonlEvolutionArchive
 from calosum.domain.metacognition.introspection import IntrospectionEngine
 from calosum.domain.agent.orchestrator import CalosumAgent
-from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
+from calosum.adapters.perception.simple_distance import SimpleDistanceSurpriseAdapter
 from calosum.domain.cognition.input_perception import InputPerceptionJEPA
 from calosum.shared.models.types import DirectiveType, EvolutionDirective
 
@@ -168,13 +168,13 @@ class AwarenessTests(unittest.TestCase):
 
     def test_right_hemisphere_parameter_directive_is_clamped_and_audited(self) -> None:
         agent = CalosumAgent(
-            right_hemisphere=ActiveInferenceRightHemisphereAdapter(InputPerceptionJEPA()),
+            right_hemisphere=SimpleDistanceSurpriseAdapter(InputPerceptionJEPA()),
         )
         wrapper_config = getattr(agent.right_hemisphere, "config")
         base_config = getattr(getattr(agent.right_hemisphere, "base_adapter"), "config")
         initial_step = base_config.salience_max_step
         initial_alpha = base_config.salience_smoothing_alpha
-        initial_novelty = wrapper_config.novelty_weight
+        initial_ema = wrapper_config.ema_alpha
 
         directive = EvolutionDirective(
             directive_id="directive-right-params",
@@ -184,7 +184,7 @@ class AwarenessTests(unittest.TestCase):
                 "salience_max_step": 0.9,
                 "salience_smoothing_alpha": 0.99,
                 "salience_window_size": 99,
-                "novelty_weight": 0.99,
+                "ema_alpha": 0.99,
                 "model_name": "forbidden-topology-like-change",
             },
             reasoning="Tune right hemisphere safely",
@@ -201,7 +201,7 @@ class AwarenessTests(unittest.TestCase):
         # Guardrail: bounded and small deltas only.
         self.assertLessEqual(base_config.salience_max_step - initial_step, 0.1 + 1e-9)
         self.assertLessEqual(base_config.salience_smoothing_alpha - initial_alpha, 0.2 + 1e-9)
-        self.assertLessEqual(wrapper_config.novelty_weight - initial_novelty, 0.2 + 1e-9)
+        self.assertLessEqual(wrapper_config.ema_alpha - initial_ema, 0.1 + 1e-9)
         self.assertLessEqual(base_config.salience_window_size, 12)
 
     def test_evolution_proposer_prefers_parameter_tuning_for_surprise_trend(self) -> None:
@@ -251,7 +251,9 @@ class AwarenessTests(unittest.TestCase):
             )
         ]
 
-        briefing = agent.build_session_briefing(
+        from calosum.domain.agent.orchestrator_briefing import build_session_briefing
+        briefing = build_session_briefing(
+            agent,
             "session-briefing",
             right_state=SimpleNamespace(telemetry={"jepa_uncertainty": 0.28}),
             last_n=10,

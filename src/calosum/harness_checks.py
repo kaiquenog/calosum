@@ -100,7 +100,6 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.metacognition.self_model": {"domain.agent.orchestrator", "shared.models.types"},
     "domain.infrastructure.verifier": {"shared.models.schemas", "shared.models.types"},
     "domain.metacognition.awareness": {"shared.models.types", "domain.metacognition.introspection", "domain.agent.orchestrator", "domain.agent.directive_guardrails", "shared.utils.async_utils"},
-    "domain.execution.group_turn": {"shared.utils.async_utils", "shared.models.types", "domain.execution.workspace", "domain.metacognition.metacognition", "domain.metacognition.awareness", "domain.agent.orchestrator"},
     "domain.agent.orchestrator_briefing": set(),
     "domain.agent.orchestrator_utils": {"shared.models.types"},
     "domain.agent.orchestrator": {
@@ -114,7 +113,6 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.agent.evolution",
         "domain.agent.directive_guardrails",
         "domain.execution.agent_execution",
-        "domain.execution.group_turn",
         "domain.agent.idle_foraging",
         "domain.metacognition.introspection",
         "domain.cognition.action_planner",
@@ -138,7 +136,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "bootstrap.infrastructure.settings",
     },
     "bootstrap.wiring.backend_resolvers": {
-        "adapters.perception.active_inference",
+        "adapters.perception.simple_distance",
         "adapters.bridge.bridge_cross_attention",
         "adapters.infrastructure.contract_wrappers",
         "adapters.experience.gea_experience_graph",
@@ -160,7 +158,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.cognition.input_perception",
     },
     "bootstrap.wiring.factory": {
-        "adapters.perception.active_inference",
+        "adapters.perception.simple_distance",
         "adapters.execution.tool_runtime",
         "adapters.bridge.bridge_store",
         "adapters.memory.sql_memory",
@@ -267,11 +265,9 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.memory.text_embeddings": {"shared.utils.async_utils", "shared.models.ports"},
     "adapters.night_trainer.night_trainer": {
         "adapters.night_trainer.night_trainer_dspy",
-        "adapters.night_trainer.night_trainer_lora",
     },
     "adapters.night_trainer.night_trainer_dspy": set(),
-    "adapters.night_trainer.night_trainer_lora": set(),
-    "adapters.perception.active_inference": {"shared.models.types", "domain.cognition.input_perception"},
+    "adapters.perception.simple_distance": {"shared.models.types", "shared.models.jepa", "shared.models.ports"},
     "adapters.perception.multimodal_perception": {"shared.models.ports"},
     "adapters.perception.quantized_embeddings": {"shared.models.ports"},
     "adapters.tools.introspection": {"shared.models.types", "shared.utils.async_utils"},
@@ -287,7 +283,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "__main__": {"bootstrap.entry.cli"},
     "__init__": {
         "adapters.knowledge.knowledge_graph_nanorag",
-        "adapters.perception.active_inference",
+        "adapters.perception.simple_distance",
         "adapters.bridge.bridge_cross_attention",
         "adapters.hemisphere.action_planner_rlm",
         "adapters.perception.multimodal_perception",
@@ -349,7 +345,28 @@ def run_harness_checks(repo_root: Path | None = None) -> HarnessReport:
     issues.extend(_check_package_docstrings(root))
     issues.extend(_check_shared_domain_runtime_imports(root))
     issues.extend(_check_adapter_isolation(root))
+    issues.extend(_check_forbidden_domain_patterns(root))
     return HarnessReport(passed=not issues, issues=issues)
+
+
+def _check_forbidden_domain_patterns(root: Path) -> list[HarnessIssue]:
+    """Valida a ausência de lógica de treinamento e dependências de ML no core (domain)."""
+    forbidden_patterns = ["torch.", "nn.Module", "train("]
+    issues = []
+    domain_dir = root / "src" / "calosum" / "domain"
+    for p in sorted(domain_dir.rglob("*.py")):
+        try:
+            source = p.read_text(encoding="utf-8")
+            for pattern in forbidden_patterns:
+                if pattern in source:
+                    issues.append(HarnessIssue(
+                        "forbidden_domain_pattern",
+                        f"Domain module contains forbidden ML/training pattern: {pattern}",
+                        str(p.relative_to(root))
+                    ))
+        except Exception:
+            continue
+    return issues
 
 
 def _check_adapter_isolation(root: Path) -> list[HarnessIssue]:

@@ -28,14 +28,14 @@ class FactoryBackends2026Tests(unittest.TestCase):
             agent = builder.build()
             description = builder.describe(agent)
 
-            self.assertEqual(description["right_hemisphere_backend"], "active_inference_vjepa21")
+            self.assertEqual(description["right_hemisphere_backend"], "distance_vjepa21")
             self.assertEqual(description["left_hemisphere_backend"], "rlm_recursive_adapter")
             self.assertIsInstance(agent.left_hemisphere, ContractEnforcedLeftHemisphereAdapter)
             self.assertEqual(
                 agent.left_hemisphere.provider.__class__.__name__,
                 "RlmLeftHemisphereAdapter",
             )
-            self.assertEqual(agent.reflection_controller.__class__.__name__, "ExperienceAwareGEAReflectionController")
+            self.assertEqual(agent.reflection_controller.__class__.__name__, "LinearReflectionController")
 
     def test_builder_supports_jepars_backend_selection(self) -> None:
         settings = InfrastructureSettings(
@@ -47,7 +47,7 @@ class FactoryBackends2026Tests(unittest.TestCase):
         agent = builder.build()
         description = builder.describe(agent)
 
-        self.assertEqual(description["right_hemisphere_backend"], "active_inference_jepars")
+        self.assertEqual(description["right_hemisphere_backend"], "distance_jepars")
 
     def test_builder_uses_trained_jepa_by_default_in_local_mode_when_available(self) -> None:
         class _FakeTrainedJEPAAdapter:
@@ -68,7 +68,7 @@ class FactoryBackends2026Tests(unittest.TestCase):
             agent = builder.build()
             description = builder.describe(agent)
 
-        self.assertEqual(description["right_hemisphere_backend"], "active_inference_trained_jepa_phase2")
+        self.assertEqual(description["right_hemisphere_backend"], "distance_trained_jepa_phase2")
 
     def test_builder_falls_back_to_heuristic_when_trained_jepa_backend_is_unavailable(self) -> None:
         class _UnavailableTrainedJEPAAdapter:
@@ -90,7 +90,7 @@ class FactoryBackends2026Tests(unittest.TestCase):
             agent = builder.build()
             description = builder.describe(agent)
 
-        self.assertEqual(description["right_hemisphere_backend"], "active_inference_heuristic_jepa_phase1_fallback")
+        self.assertEqual(description["right_hemisphere_backend"], "distance_heuristic_jepa_phase1_fallback")
 
 
 if __name__ == "__main__":

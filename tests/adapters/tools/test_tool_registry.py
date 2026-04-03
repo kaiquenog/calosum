@@ -128,7 +128,11 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             reasoning_summary=[],
         )
 
-        results = await runtime.arun(left_result)
+        with patch(
+            "calosum.adapters.execution.docker_sandbox.DockerToolSandbox.execute_command",
+            new=AsyncMock(return_value={"stdout": "14", "stderr": "", "exit_code": 0, "status": "success"}),
+        ):
+            results = await runtime.arun(left_result)
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].status, "executed")
@@ -150,7 +154,11 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             reasoning_summary=[],
         )
 
-        results = await runtime.arun(left_result)
+        with patch(
+            "calosum.adapters.execution.docker_sandbox.DockerToolSandbox.execute_command",
+            new=AsyncMock(return_value={"stdout": "Imports are not allowed", "stderr": "", "exit_code": 0, "status": "success"}),
+        ):
+            results = await runtime.arun(left_result)
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].status, "executed")

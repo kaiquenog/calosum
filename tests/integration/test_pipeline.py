@@ -5,10 +5,10 @@ import unittest
 from calosum import CalosumAgent, ActionPlannerResult, Modality, MultimodalSignal, PrimitiveAction, TypedLambdaProgram, UserTurn
 
 class MockLeftHemisphere:
-    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
         return ActionPlannerResult(
             response_text="Mocked plan",
-            lambda_program=TypedLambdaProgram("Context -> Plan", "lambda _: propose_plan()", "plan"),
+            lambda_program=TypedLambdaProgram("Context -> Plan", '{"plan": ["propose_plan"]}', "plan"),
             actions=[
                 PrimitiveAction(
                     action_type="propose_plan",

@@ -1,316 +1,87 @@
 from __future__ import annotations
 
-import asyncio
-import tempfile
 import unittest
+import tempfile
 from pathlib import Path
 
 from calosum import (
-    CalosumAgent,
     CognitiveTokenizer,
     CognitiveTokenizerConfig,
-    CognitiveVariantSpec,
-    GEAReflectionController,
-    ActionPlannerResult,
-    PrimitiveAction,
+    LinearReflectionController,
     ReflectionOutcome,
     ReflectionScore,
-    InputPerceptionState,
+    CognitiveCandidate,
+    CognitiveVariantSpec,
+    AgentTurnResult,
+    ActionPlannerResult,
     TypedLambdaProgram,
     UserTurn,
 )
+from calosum.shared.models.types import utc_now
 
 
 class ReflectionTests(unittest.TestCase):
-    def test_group_turn_selects_variant_and_updates_tokenizer(self) -> None:
-        agent = CalosumAgent()
-        turn = UserTurn(
-            session_id="reflection-session",
-            user_text="Estou ansioso e preciso de ajuda urgente para reorganizar o projeto.",
-        )
-        variants = [
-            CognitiveVariantSpec(
-                variant_id="empathetic_low_threshold",
-                tokenizer_overrides={"salience_threshold": 0.45},
+    def test_linear_reflection_always_selects_first_candidate(self) -> None:
+        controller = LinearReflectionController()
+        
+        turn = UserTurn(session_id="s", user_text="text")
+        variant = CognitiveVariantSpec(variant_id="winner")
+        result = AgentTurnResult(
+            user_turn=turn,
+            memory_context=None,  # type: ignore
+            right_state=None,     # type: ignore
+            bridge_packet=None,   # type: ignore
+            left_result=ActionPlannerResult(
+                response_text="ok",
+                lambda_program=TypedLambdaProgram("", "", ""),
+                actions=[],
+                reasoning_summary=[],
             ),
-            CognitiveVariantSpec(
-                variant_id="strict_high_threshold",
-                tokenizer_overrides={"salience_threshold": 0.9},
-            ),
-        ]
-
-        result = agent.process_group_turn(turn, variants)
-
-        selected_variant = next(
-            item for item in variants if item.variant_id == result.reflection.selected_variant_id
+            telemetry={},
         )
-        self.assertEqual(
-            agent.tokenizer.config.salience_threshold,
-            selected_variant.tokenizer_overrides["salience_threshold"],
-        )
-        self.assertEqual(result.reflection.cost_metrics["branch_count"], len(result.candidates))
-        self.assertGreaterEqual(result.reflection.cost_metrics["total_latency_ms"], 0.0)
-        self.assertIn(result.reflection.selected_by, {"learned_model", "rule_based", "legacy"})
-        dashboard = agent.cognitive_dashboard(turn.session_id)
-        self.assertEqual(len(dashboard["reflection"]), 1)
+        
+        candidates = [CognitiveCandidate(variant=variant, turn_result=result)]
+        
+        outcome = controller.evaluate(candidates, None)
+        
+        self.assertEqual(outcome.selected_variant_id, "winner")
+        self.assertEqual(outcome.selected_by, "linear_no_branch")
 
-    def test_neuroplasticity_persists_bridge_adjustments(self) -> None:
+    def test_neuroplasticity_interfaces_are_noop_but_safe(self) -> None:
+        controller = LinearReflectionController()
+        tokenizer = CognitiveTokenizer()
+        outcome = ReflectionOutcome(selected_variant_id="any")
+        
+        # Should not raise
+        controller.apply_config_adaptation(tokenizer, outcome)
+        controller.apply_neuroplasticity(tokenizer, outcome)
+
+    def test_bridge_store_persists_config_independently(self) -> None:
+        """
+        Garante que a persistencia do estado da Bridge funciona mesmo sem GEA.
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)
-
             from calosum.adapters.bridge.bridge_store import LocalBridgeStateStore
+            
             store = LocalBridgeStateStore(
-                weights_path=base / "bridge_weights.pt",
-                adaptation_path=base / "bridge_config.json",
-                reflection_history_path=base / "bridge_reflections.jsonl",
+                adaptation_path=base / "bridge_config.json"
             )
-
+            
             tokenizer = CognitiveTokenizer(
-                CognitiveTokenizerConfig(),
-                store=store,
+                CognitiveTokenizerConfig(salience_threshold=0.42),
+                store=store
             )
-            controller = GEAReflectionController()
-            outcome = ReflectionOutcome(
-                selected_variant_id="winner",
-                scoreboard=[ReflectionScore(variant_id="winner", score=1.0)],
-                bridge_adjustments={
-                    "salience_threshold": 0.42,
-                    "base_temperature": 0.19,
-                    "max_directives": 5,
-                    "bottleneck_tokens": 7,
-                    "salience_gain": 1.12,
-                    "salience_bias": 0.03,
-                    "temperature_bias": -0.02,
-                },
-                selected_metrics={"score": 1.0, "runtime_retry_count": 0},
-            )
-
-            controller.apply_neuroplasticity(tokenizer, outcome)
-
+            
+            # Persistencia manual (simulando fim de turno ou evolução)
+            tokenizer.persist_adaptation_state()
+            
             reloaded = CognitiveTokenizer(
                 CognitiveTokenizerConfig(),
-                store=store,
+                store=store
             )
-            history = (base / "bridge_reflections.jsonl").read_text(encoding="utf-8").splitlines()
-
+            
             self.assertEqual(reloaded.config.salience_threshold, 0.42)
-            self.assertEqual(reloaded.config.base_temperature, 0.19)
-            self.assertEqual(reloaded.config.max_directives, 5)
-            self.assertEqual(reloaded.config.bottleneck_tokens, 7)
-            self.assertEqual(reloaded.config.salience_gain, 1.12)
-            self.assertEqual(reloaded.config.salience_bias, 0.03)
-            self.assertEqual(reloaded.config.temperature_bias, -0.02)
-            self.assertEqual(len(history), 1)
-
-    def test_process_turn_uses_default_personas_when_surprise_triggers_branching(self) -> None:
-        class HighSurpriseRightHemisphere:
-            def perceive(self, user_turn, memory_context=None):
-                return InputPerceptionState(
-                    context_id=user_turn.turn_id,
-                    latent_vector=[0.1] * 16,
-                    salience=0.88,
-                    emotional_labels=["ansioso"],
-                    world_hypotheses={"interaction_complexity": 0.92, "urgency": 0.88},
-                    confidence=0.9,
-                    surprise_score=0.91,
-                    telemetry={},
-                )
-
-            async def aperceive(self, user_turn, memory_context=None):
-                return self.perceive(user_turn, memory_context)
-
-        class DirectiveEchoLeftHemisphere:
-            def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
-                variant = bridge_packet.bridge_metadata.get("variant_label", "none")
-                return ActionPlannerResult(
-                    response_text=f"variant={variant}",
-                    lambda_program=TypedLambdaProgram(
-                        "Context -> Response",
-                        "lambda _: respond_text()",
-                        "respond",
-                    ),
-                    actions=[
-                        PrimitiveAction(
-                            "respond_text",
-                            "ResponsePlan -> SafeTextMessage",
-                            {"text": f"variant={variant}"},
-                            [],
-                        )
-                    ],
-                    reasoning_summary=[variant],
-                    telemetry={"system_directives": bridge_packet.control.system_directives},
-                )
-
-            async def areason(self, *args, **kwargs):
-                return self.reason(*args[:3], runtime_feedback=kwargs.get("runtime_feedback"), attempt=kwargs.get("attempt", 0))
-
-            def repair(self, *args, **kwargs):
-                return self.reason(*args[:3])
-
-            async def arepair(self, *args, **kwargs):
-                return self.repair(*args, **kwargs)
-
-        agent = CalosumAgent(
-            right_hemisphere=HighSurpriseRightHemisphere(),
-            left_hemisphere=DirectiveEchoLeftHemisphere(),
-        )
-
-        result = agent.process_turn(
-            UserTurn(
-                session_id="persona-session",
-                user_text="Estou muito ansioso e preciso reorganizar o projeto.",
-            )
-        )
-
-        variant_ids = [candidate.variant.variant_id for candidate in result.candidates]
-        self.assertEqual(variant_ids, ["analitico", "empatico", "pragmatico"])
-
-        directives_by_variant = {
-            candidate.variant.variant_id: candidate.turn_result.left_result.telemetry["system_directives"]
-            for candidate in result.candidates
-        }
-        self.assertTrue(
-            any("consistencia logica" in directive for directive in directives_by_variant["analitico"])
-        )
-        self.assertTrue(
-            any("impacto emocional" in directive for directive in directives_by_variant["empatico"])
-        )
-        self.assertTrue(
-            any("fronteira de acoes" in directive for directive in directives_by_variant["pragmatico"])
-        )
-
-    def test_process_turn_ignores_surprise_when_uncertainty_is_high(self) -> None:
-        class HighUncertaintyRightHemisphere:
-            def perceive(self, user_turn, memory_context=None, workspace=None):
-                return InputPerceptionState(
-                    context_id=user_turn.turn_id,
-                    latent_vector=[0.1] * 16,
-                    salience=0.5,
-                    emotional_labels=["neutral"],
-                    world_hypotheses={"interaction_complexity": 0.2, "semantic_density": 0.1},
-                    confidence=0.4,
-                    surprise_score=0.92,
-                    telemetry={
-                        "surprise_source": "jepa_prediction_error",
-                        "jepa_uncertainty": 0.91,
-                        "ignore_surprise_for_branching": True,
-                    },
-                )
-
-            async def aperceive(self, user_turn, memory_context=None, workspace=None):
-                return self.perceive(user_turn, memory_context, workspace)
-
-        agent = CalosumAgent(right_hemisphere=HighUncertaintyRightHemisphere())
-        result = agent.process_turn(
-            UserTurn(
-                session_id="uncertain-session",
-                user_text="Pedido simples que nao deveria disparar branching por surpresa.",
-            )
-        )
-        self.assertFalse(hasattr(result, "candidates"))
-
-    def test_group_turn_executes_variants_in_parallel(self) -> None:
-        class StaticRightHemisphere:
-            def perceive(self, user_turn, memory_context=None, workspace=None):
-                return InputPerceptionState(
-                    context_id=user_turn.turn_id,
-                    latent_vector=[0.05] * 16,
-                    salience=0.7,
-                    emotional_labels=["ansioso"],
-                    world_hypotheses={"interaction_complexity": 0.9, "urgency": 0.7},
-                    confidence=0.8,
-                    surprise_score=0.95,
-                    telemetry={},
-                )
-
-            async def aperceive(self, user_turn, memory_context=None, workspace=None):
-                return self.perceive(user_turn, memory_context, workspace)
-
-        class SlowLeftHemisphere:
-            async def areason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
-                await asyncio.sleep(0.12)
-                return ActionPlannerResult(
-                    response_text="ok",
-                    lambda_program=TypedLambdaProgram(
-                        "Context -> Response",
-                        "lambda _: emit('respond_text')",
-                        "respond",
-                    ),
-                    actions=[
-                        PrimitiveAction(
-                            "respond_text",
-                            "ResponsePlan -> SafeTextMessage",
-                            {"text": "ok"},
-                            ["safe output only"],
-                        )
-                    ],
-                    reasoning_summary=["slow_reasoner"],
-                    telemetry={},
-                )
-
-            def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
-                return ActionPlannerResult(
-                    response_text="ok",
-                    lambda_program=TypedLambdaProgram(
-                        "Context -> Response",
-                        "lambda _: emit('respond_text')",
-                        "respond",
-                    ),
-                    actions=[
-                        PrimitiveAction(
-                            "respond_text",
-                            "ResponsePlan -> SafeTextMessage",
-                            {"text": "ok"},
-                            ["safe output only"],
-                        )
-                    ],
-                    reasoning_summary=["slow_reasoner"],
-                    telemetry={},
-                )
-
-            async def arepair(self, *args, **kwargs):
-                return await self.areason(*args[:3], runtime_feedback=kwargs.get("critique_feedback"))
-
-            def repair(self, *args, **kwargs):
-                return self.reason(*args[:3], runtime_feedback=kwargs.get("critique_feedback"))
-
-        agent = CalosumAgent(
-            right_hemisphere=StaticRightHemisphere(),
-            left_hemisphere=SlowLeftHemisphere(),
-        )
-        turn = UserTurn(session_id="parallel-session", user_text="Executar variantes em paralelo.")
-        variants = [
-            CognitiveVariantSpec(variant_id="a"),
-            CognitiveVariantSpec(variant_id="b"),
-            CognitiveVariantSpec(variant_id="c"),
-        ]
-
-        result = agent.process_group_turn(turn, variants)
-        total_candidate_latency = sum(candidate.turn_result.latency_ms for candidate in result.candidates)
-
-        self.assertGreater(total_candidate_latency, 0.0)
-        self.assertLess(result.selected_result.latency_ms, total_candidate_latency * 0.7)
-
-    def test_reflection_controller_updates_bandit_registry(self) -> None:
-        agent = CalosumAgent()
-        turn = UserTurn(
-            session_id="bandit-session",
-            user_text="Estou ansioso e preciso de um plano tecnico urgente.",
-        )
-        variants = [
-            CognitiveVariantSpec(variant_id="analitico_v1"),
-            CognitiveVariantSpec(variant_id="empatico_v1"),
-        ]
-
-        result = agent.process_group_turn(turn, variants)
-        snapshot = agent.reflection_controller.strategy_registry_snapshot()
-
-        self.assertIn("emotional", snapshot)
-        self.assertIn(result.reflection.selected_variant_id, snapshot["emotional"])
-        self.assertEqual(
-            snapshot["emotional"][result.reflection.selected_variant_id]["n_pulls"],
-            1.0,
-        )
 
 
 if __name__ == "__main__":

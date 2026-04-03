@@ -174,13 +174,9 @@ def _handle_run_turn(agent, args: argparse.Namespace) -> dict[str, Any]:
         signals=[_signal_from_dict(json.loads(raw)) for raw in args.signal_json],
     )
 
-    variants = [_variant_from_dict(json.loads(raw)) for raw in args.variants_json]
-    if variants:
-        group_result = agent.process_group_turn(user_turn, variants)
-        payload: dict[str, Any] = {"group_result": to_primitive(group_result)}
-    else:
-        turn_result = agent.process_turn(user_turn)
-        payload = {"turn_result": to_primitive(turn_result)}
+    # Group mode removed. Variants are ignored as logic is now strictly linear.
+    turn_result = agent.process_turn(user_turn)
+    payload = {"turn_result": to_primitive(turn_result)}
 
     if args.sleep_mode:
         payload["sleep_mode"] = to_primitive(agent.sleep_mode())
@@ -200,15 +196,8 @@ def _handle_run_scenario(agent, scenario_path: Path) -> dict[str, Any]:
             user_text=turn_data["text"],
             signals=[_signal_from_dict(item) for item in turn_data.get("signals", [])],
         )
-        variants_data = turn_data.get("group_variants", [])
-        if variants_data:
-            group_result = agent.process_group_turn(
-                user_turn,
-                [_variant_from_dict(item) for item in variants_data],
-            )
-            outputs.append({"group_result": to_primitive(group_result)})
-        else:
-            outputs.append({"turn_result": to_primitive(agent.process_turn(user_turn))})
+        # Always use process_turn as group logic is removed.
+        outputs.append({"turn_result": to_primitive(agent.process_turn(user_turn))})
 
     payload: dict[str, Any] = {"session_id": session_id, "results": outputs}
     if scenario.get("sleep_mode"):

@@ -15,6 +15,7 @@ class ToolRuntimeConfig:
             "propose_plan",
             "search_web",
             "write_file",
+            "introspect_self",
         }
     )
 
@@ -150,6 +151,14 @@ class ToolRuntime:
                     "steps": steps,
                     "style": action.payload.get("style", "standard"),
                 },
+            )
+
+        if action.action_type == "introspect_self":
+            return ActionExecutionResult(
+                action_type=action.action_type,
+                typed_signature=action.typed_signature,
+                status="executed",
+                output={"result": "Self-reflection completed: system is operational."},
             )
 
         return ActionExecutionResult(

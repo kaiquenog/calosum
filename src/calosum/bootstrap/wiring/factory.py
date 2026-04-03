@@ -127,17 +127,17 @@ class CalosumAgentBuilder:
             self._last_right_hemisphere_model_name = model_name
             return adapter
         except Exception as exc:
-            logger.warning("Falling back to heuristic right hemisphere adapter: %s", exc)
-            from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
+            logger.warning("Falling back to distance-based right hemisphere adapter: %s", exc)
+            from calosum.adapters.perception.simple_distance import SimpleDistanceSurpriseAdapter
             from calosum.adapters.hemisphere.input_perception_heuristic_jepa import (
                 HeuristicJEPAAdapter,
             )
 
             base_adapter = HeuristicJEPAAdapter()
             setattr(base_adapter, "degraded_reason", f"resolver_fallback:{exc.__class__.__name__}")
-            self._last_right_hemisphere_backend = "active_inference_heuristic_jepa_fallback"
+            self._last_right_hemisphere_backend = "distance_heuristic_jepa_fallback"
             self._last_right_hemisphere_model_name = "heuristic-jepa-phase1"
-            return ActiveInferenceRightHemisphereAdapter(base_adapter)
+            return SimpleDistanceSurpriseAdapter(base_adapter)
 
     def build_memory_system(self):
         from calosum.adapters.night_trainer.night_trainer import LocalDatasetExporter

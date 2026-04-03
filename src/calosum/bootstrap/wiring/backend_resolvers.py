@@ -3,15 +3,13 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
+from calosum.adapters.perception.simple_distance import SimpleDistanceSurpriseAdapter
 from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter
 from calosum.adapters.infrastructure.contract_wrappers import (
     ContractEnforcedLeftHemisphereAdapter,
     ContractEnforcedRightHemisphereAdapter,
 )
-from calosum.adapters.experience.gea_experience_graph import GeaExperienceGraphConfig, GraphGeaExperienceStore
-from calosum.adapters.experience.gea_reflection_experience import ExperienceAwareGEAReflectionController
-from calosum.adapters.experience.gea_reflection_experience import LearnedPreferenceGEAReflectionController
+from calosum.domain.metacognition.metacognition import LinearReflectionController
 from calosum.adapters.hemisphere.action_planner_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
 from calosum.adapters.hemisphere.input_perception_heuristic_jepa import HeuristicJEPAAdapter
 from calosum.adapters.hemisphere.input_perception_trained_jepa import TrainedJEPAAdapter
@@ -38,16 +36,7 @@ def resolve_bridge_fusion(settings: InfrastructureSettings):
 
 
 def resolve_reflection_controller(settings: InfrastructureSettings):
-    if not settings.gea_sharing_enabled:
-        return LearnedPreferenceGEAReflectionController()
-
-    if settings.gea_experience_store_path is None:
-        return LearnedPreferenceGEAReflectionController()
-
-    store = GraphGeaExperienceStore(
-        GeaExperienceGraphConfig(path=settings.gea_experience_store_path)
-    )
-    return ExperienceAwareGEAReflectionController(experience_store=store)
+    return LinearReflectionController()
 
 
 def resolve_left_hemisphere(
@@ -101,7 +90,7 @@ def resolve_right_hemisphere(
     settings: InfrastructureSettings,
     vision_adapter: Any | None = None,
     codec: Any | None = None,
-) -> tuple[ActiveInferenceRightHemisphereAdapter, str, str]:
+) -> tuple[SimpleDistanceSurpriseAdapter, str, str]:
     backend = (settings.right_hemisphere_backend or "").strip().lower()
     requested_model = (settings.perception_model or "").strip()
 
@@ -111,13 +100,13 @@ def resolve_right_hemisphere(
             if trained.is_available:
                 return (
                     _active_inference_right(trained),
-                    "active_inference_trained_jepa_phase2",
+                    "distance_trained_jepa_phase2",
                     trained.config.model_name,
                 )
         base = HeuristicJEPAAdapter()
         return (
             _active_inference_right(base),
-            "active_inference_heuristic_jepa_phase1",
+            "distance_heuristic_jepa_phase1",
             "heuristic-jepa-phase1",
         )
 
@@ -126,14 +115,14 @@ def resolve_right_hemisphere(
         if trained.is_available:
             return (
                 _active_inference_right(trained),
-                "active_inference_trained_jepa_phase2",
+                "distance_trained_jepa_phase2",
                 trained.config.model_name,
             )
         base = HeuristicJEPAAdapter()
         setattr(base, "degraded_reason", f"trained_jepa_unavailable:{trained.degraded_reason}")
         return (
             _active_inference_right(base),
-            "active_inference_heuristic_jepa_phase1_fallback",
+            "distance_heuristic_jepa_phase1_fallback",
             "heuristic-jepa-phase1",
         )
 
@@ -141,7 +130,7 @@ def resolve_right_hemisphere(
         base = HeuristicJEPAAdapter()
         return (
             _active_inference_right(base),
-            "active_inference_heuristic_jepa_phase1",
+            "distance_heuristic_jepa_phase1",
             "heuristic-jepa-phase1",
         )
 
@@ -155,7 +144,7 @@ def resolve_right_hemisphere(
             vision_adapter=vision_adapter,
             codec=codec,
         )
-        return _active_inference_right(base), "active_inference_vjepa21", "v-jepa-2.1-local"
+        return _active_inference_right(base), "distance_vjepa21", "v-jepa-2.1-local"
 
     if backend == "vljepa":
         base = VLJepaRightHemisphereAdapter(
@@ -166,7 +155,7 @@ def resolve_right_hemisphere(
             ),
             vision_adapter=vision_adapter,
         )
-        return _active_inference_right(base), "active_inference_vljepa", "vl-jepa-local"
+        return _active_inference_right(base), "distance_vljepa", "vl-jepa-local"
 
     if backend == "jepars":
         base = JepaRsRightHemisphereAdapter(
@@ -175,7 +164,7 @@ def resolve_right_hemisphere(
                 model_path=str(settings.right_model_path) if settings.right_model_path else None,
             )
         )
-        return _active_inference_right(base), "active_inference_jepars", "jepa-rs"
+        return _active_inference_right(base), "distance_jepars", "jepa-rs"
 
     if backend == "huggingface":
         from calosum.adapters.hemisphere.input_perception_hf import (
@@ -188,7 +177,7 @@ def resolve_right_hemisphere(
             HuggingFaceRightHemisphereConfig(embedding_model_name=model_name),
             codec=codec,
         )
-        return _active_inference_right(base), "active_inference_huggingface", model_name
+        return _active_inference_right(base), "distance_huggingface", model_name
 
     raise ValueError(f"unsupported right hemisphere backend: {backend}")
 
@@ -214,9 +203,9 @@ def _build_qwen(
     return QwenLeftHemisphereAdapter()
 
 
-def _active_inference_right(base_adapter: Any) -> ActiveInferenceRightHemisphereAdapter:
+def _active_inference_right(base_adapter: Any) -> SimpleDistanceSurpriseAdapter:
     wrapped = ContractEnforcedRightHemisphereAdapter(base_adapter)
-    return ActiveInferenceRightHemisphereAdapter(wrapped)
+    return SimpleDistanceSurpriseAdapter(wrapped)
 
 
 def _with_fusion_if_enabled(provider: Any, settings: InfrastructureSettings) -> Any:

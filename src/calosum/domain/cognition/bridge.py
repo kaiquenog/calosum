@@ -42,36 +42,6 @@ class ContextCompressor:
         self.store = store
         self.fusion = fusion
         self._load_adaptation_state()
-        self._init_neural_bridge()
-
-    def _init_neural_bridge(self) -> None:
-        """
-        Inicializa uma rede PyTorch leve (Information Bottleneck) para 
-        traduzir o vetor latente do Hemisfério Direito.
-        """
-        try:
-            import torch
-            import torch.nn as nn
-            
-            # Target dimension dinâmico via configuração
-            self.latent_dim = self.config.target_dim
-            # Saída: 1 neurônio para Saliência + N neurônios para Context Directives
-            self.output_dim = 1 + self.config.bottleneck_tokens
-            
-            self.projection = nn.Sequential(
-                nn.Linear(self.latent_dim, 64),
-                nn.ReLU(),
-                nn.Linear(64, self.output_dim),
-                nn.Sigmoid() # Normaliza as saídas entre 0 e 1
-            )
-            
-            # Carrega pesos se existirem (para o loop de evolução)
-            if self.store:
-                self.store.load_weights(self.projection)
-                
-            self.use_neural = True
-        except ImportError:
-            self.use_neural = False
 
     def _load_adaptation_state(self) -> None:
         if not self.store:
@@ -116,10 +86,8 @@ class ContextCompressor:
 
     def translate(self, right_state: InputPerceptionState, workspace: CognitiveWorkspace | None = None) -> PerceptionSummary:
         state = self._apply_fusion(right_state)
-        if self.use_neural and len(state.latent_vector) == self.latent_dim:
-            packet = self._neural_translate(state)
-        else:
-            packet = self._heuristic_translate(state)
+        # Neural bridge logic removed to ensure domain purity
+        packet = self._heuristic_translate(state)
             
         if workspace is not None:
             workspace.bridge_state.update({
@@ -156,31 +124,6 @@ class ContextCompressor:
             )
         except Exception:
             return right_state
-
-    def _neural_translate(self, right_state: InputPerceptionState) -> PerceptionSummary:
-        import torch
-        
-        with torch.no_grad():
-            tensor_in = torch.tensor(right_state.latent_vector, dtype=torch.float32)
-            tensor_out = self.projection(tensor_in).tolist()
-            
-        # O primeiro valor é a Saliência Aprendida
-        neural_salience = round(tensor_out[0], 3)
-        # O resto são os pesos das Context Directives
-        neural_weights = tensor_out[1:]
-        
-        tokens: list[SoftPromptToken] = []
-        for index, label in enumerate(right_state.emotional_labels[: self.config.bottleneck_tokens]):
-            weight = neural_weights[index] if index < len(neural_weights) else 0.0
-            tokens.append(
-                SoftPromptToken(
-                    token=f"<affect:{label}>",
-                    weight=round(weight, 3),
-                    provenance="neural_bridge"
-                )
-            )
-            
-        return self._build_packet(right_state, tokens, neural_salience)
 
     def _heuristic_translate(self, right_state: InputPerceptionState) -> PerceptionSummary:
         tokens: list[SoftPromptToken] = []
@@ -247,7 +190,7 @@ class ContextCompressor:
             annotations={
                 "salience_threshold": self.config.salience_threshold,
                 "bottleneck_tokens": self.config.bottleneck_tokens,
-                "neural_active": getattr(self, "use_neural", False),
+                "neural_active": False,
                 "raw_salience": salience,
                 "calibrated_salience": calibrated_salience,
                 "surprise_penalty": surprise_penalty,
@@ -275,33 +218,12 @@ class ContextCompressor:
         return self.translate(right_state, workspace)
 
     def train_step(self, latent_vector: list[float], target_salience: float, learning_rate: float = 0.01) -> dict[str, Any]:
-        """Train the neural bridge projection using reflection outcomes as signal.
-
-        The target_salience comes from the GEA reflection controller's evaluation
-        of which variant performed best — providing a supervised signal for the bridge.
-        """
-        if not self.use_neural or len(latent_vector) != self.latent_dim:
-            return {"trained": False, "reason": "neural bridge not active or dim mismatch"}
-        try:
-            import torch
-            optimizer = torch.optim.SGD(self.projection.parameters(), lr=learning_rate)
-            tensor_in = torch.tensor(latent_vector, dtype=torch.float32)
-            output = self.projection(tensor_in)
-            predicted_salience = output[0]
-            target = torch.tensor(target_salience, dtype=torch.float32)
-            loss = torch.nn.functional.mse_loss(predicted_salience, target)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            return {"trained": True, "loss": round(float(loss.item()), 6)}
-        except Exception as exc:
-            return {"trained": False, "reason": str(exc)}
+        """Neural bridge training disabled in domain."""
+        return {"trained": False, "reason": "neural bridge disabled in domain"}
 
     def get_bridge_parameters(self) -> list[Any]:
-        """Return trainable parameters from both the projection and the fusion adapter."""
+        """Return trainable parameters from the fusion adapter only."""
         params: list[Any] = []
-        if self.use_neural:
-            params.extend(self.projection.parameters())
         if self.fusion is not None and hasattr(self.fusion, "get_parameters"):
             params.extend(self.fusion.get_parameters())
         return params

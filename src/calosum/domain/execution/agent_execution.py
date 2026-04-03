@@ -83,7 +83,7 @@ class AgentExecutionEngine:
         # Bidirectional Cognitive Bridge: System 2 overrides System 1
         # Detect if the logical execution engine flagged a cognitive mismatch in its reasoning
         mismatch_detected = any(
-            "mismatch" in text.lower() or "override" in text.lower() or "false alarm" in text.lower()
+            text and ("mismatch" in text.lower() or "override" in text.lower() or "false alarm" in text.lower())
             for text in left_result.reasoning_summary
         )
         if workspace is not None:
@@ -350,6 +350,7 @@ class AgentExecutionEngine:
         executed_results: list[ActionExecutionResult],
         critique_verdict: CritiqueVerdict | None = None,
     ) -> list[str]:
+        print(f"DEBUG: _format_runtime_feedback: executed_results={executed_results}")
         feedback = [
             f"{result.action_type}:{'; '.join(result.violations)}" for result in rejected_results
         ]

@@ -1,6 +1,6 @@
 """Public package surface for the Calosum cognitive architecture."""
 
-from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
+from calosum.adapters.perception.simple_distance import SimpleDistanceSurpriseAdapter
 from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter, CrossAttentionBridgeConfig
 from calosum.adapters.hemisphere.action_planner_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
 from calosum.adapters.perception.multimodal_perception import LocalClipVisionAdapter, LocalClipVisionConfig
@@ -31,6 +31,7 @@ from calosum.domain.metacognition.metacognition import (
     CognitiveVariantSpec,
     CognitiveVariantSelector,
     GEAReflectionController,
+    LinearReflectionController,
     GroupTurnResult,
     ReflectionOutcome,
     ReflectionScore,
@@ -91,7 +92,7 @@ except Exception:  # pragma: no cover - optional dependency surface
 __all__ = [
     "ActionExecutionResult",
     "ToolRuntimePort",
-    "ActiveInferenceRightHemisphereAdapter",
+    "SimpleDistanceSurpriseAdapter",
     "AgentTurnResult",
     "AgentBaseline",
     "AgentBaselineConfig",
@@ -119,6 +120,7 @@ __all__ = [
     "ExperienceStorePort",
     "FailureType",
     "GEAReflectionController",
+    "LinearReflectionController",
     "GroupTurnResult",
     "HeuristicJEPAAdapter",
     "HeuristicJEPAConfig",

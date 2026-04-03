@@ -102,17 +102,19 @@ class InfrastructureSettings:
         args: object | None = None,
         environ: Mapping[str, str] | None = None,
     ) -> "InfrastructureSettings":
-        env = dict(environ or os.environ)
+        env = dict(environ if environ is not None else os.environ)
         
-        # Parseia o .env localmente caso estejamos num terminal sem python-dotenv
-        env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-        if env_path.exists():
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                doc = line.strip()
-                if doc and not doc.startswith("#") and "=" in doc:
-                    k, v = doc.split("=", 1)
-                    if k.strip() not in env:
-                        env[k.strip()] = v.strip().strip("'\"")
+        # Parseia o .env localmente apenas se não estiver em modo de ignorar (testes)
+        ignore_dotenv = _parse_bool(env.get("CALOSUM_IGNORE_DOTENV"), False)
+        if not ignore_dotenv:
+            env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+            if env_path.exists():
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    doc = line.strip()
+                    if doc and not doc.startswith("#") and "=" in doc:
+                        k, v = doc.split("=", 1)
+                        if k.strip() not in env:
+                            env[k.strip()] = v.strip().strip("'\"")
 
         def _arg(name: str):
             return getattr(args, name, None) if args is not None else None

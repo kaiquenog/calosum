@@ -11,7 +11,8 @@ def apply_controlled_right_hemisphere_params(
         "salience_smoothing_alpha": {"min": 0.1, "max": 0.9, "max_delta": 0.2},
         "salience_max_step": {"min": 0.05, "max": 0.35, "max_delta": 0.1},
         "salience_window_size": {"min": 2, "max": 12, "max_delta": 4},
-        "novelty_weight": {"min": 0.0, "max": 0.6, "max_delta": 0.2},
+        "ema_alpha": {"min": 0.05, "max": 0.5, "max_delta": 0.1},
+        "distance_threshold": {"min": 0.1, "max": 0.9, "max_delta": 0.2},
     }
     applied: dict[str, Any] = {}
     rejected: dict[str, str] = {}

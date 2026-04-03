@@ -20,6 +20,8 @@ class ApiIntegrationTests(unittest.TestCase):
 
         base = Path(self.temp_dir.name)
         env = {
+            "CALOSUM_IGNORE_DOTENV": "true",
+            "CALOSUM_VECTOR_QUANTIZATION": "none",
             "CALOSUM_INFRA_PROFILE": "persistent",
             "CALOSUM_MEMORY_DIR": str(base / "memory"),
             "CALOSUM_OTLP_JSONL": str(base / "telemetry" / "events.jsonl"),
@@ -34,6 +36,40 @@ class ApiIntegrationTests(unittest.TestCase):
         self.env_patcher = patch.dict(os.environ, env, clear=False)
         self.env_patcher.start()
         self.addCleanup(self.env_patcher.stop)
+
+        from unittest.mock import AsyncMock
+        from calosum import ActionPlannerResult, TypedLambdaProgram, PrimitiveAction
+        
+        self.mock_reason_result = ActionPlannerResult(
+            response_text="Mocked API response",
+            lambda_program=TypedLambdaProgram("C->R", '{"plan": ["introspect_self"]}', "R"),
+            actions=[
+                PrimitiveAction(
+                    action_type="introspect_self",
+                    typed_signature="T->S",
+                    payload={"query": "Who am I?"},
+                    safety_invariants=["safe_output"]
+                )
+            ],
+            reasoning_summary=["mocked"],
+        )
+
+        
+        # Patch resolve_left_hemisphere to return a mock
+        self.left_patcher = patch("calosum.bootstrap.wiring.backend_resolvers.resolve_left_hemisphere")
+        self.mock_resolve = self.left_patcher.start()
+        
+        mock_left = AsyncMock()
+        mock_left.areason.return_value = self.mock_reason_result
+        mock_left.reason.return_value = self.mock_reason_result
+        # For contract enforced wrapper
+        mock_left.provider = AsyncMock()
+        mock_left.provider.areason.return_value = self.mock_reason_result
+        
+        from calosum.adapters.infrastructure.contract_wrappers import ContractEnforcedLeftHemisphereAdapter
+        self.mock_resolve.return_value = (ContractEnforcedLeftHemisphereAdapter(mock_left), "mock_adapter")
+        
+        self.addCleanup(self.left_patcher.stop)
 
         self._clear_caches()
         self.addCleanup(self._clear_caches)
@@ -80,8 +116,6 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(data["capabilities"]["routing_policy"]["reason_model"], "test-reason-model")
 
     def test_system_state_returns_workspace_not_found_initially(self) -> None:
-        api_module.get_agent().last_workspace_by_session.clear()
-
         response = self.client.get("/v1/system/state", params={"session_id": "fresh-session"})
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -161,7 +195,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("right_mode", telemetry)
         self.assertIn("degraded_reason", telemetry)
         self.assertIn("runtime_feedback_bias", telemetry)
-        self.assertEqual(telemetry["right_mode"], "heuristic")
+        self.assertEqual(telemetry["right_mode"], "literal_embedding")
 
     def test_system_awareness_generates_extended_diagnostic(self) -> None:
         self.client.post("/v1/chat/completions", json={"text": "Quero uma resposta com ação externa e aprovação."})

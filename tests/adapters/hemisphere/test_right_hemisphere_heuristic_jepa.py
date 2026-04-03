@@ -22,7 +22,7 @@ class HeuristicJEPATests(unittest.TestCase):
         prediction = asyncio.run(adapter.predict_response_embedding(context))
 
         self.assertEqual(len(prediction.predicted_embedding), 384)
-        self.assertEqual(prediction.prediction_method, "jepa_heuristic")
+        self.assertEqual(prediction.prediction_method, "jepa_literal_embedding")
         self.assertGreaterEqual(prediction.uncertainty, 0.0)
         self.assertLessEqual(prediction.uncertainty, 1.0)
 
@@ -39,7 +39,7 @@ class HeuristicJEPATests(unittest.TestCase):
 
         self.assertLess(aligned.score, off_topic.score)
         self.assertEqual(aligned.source, "jepa_prediction_error")
-        self.assertEqual(aligned.prediction_method, "jepa_heuristic")
+        self.assertEqual(aligned.prediction_method, "jepa_literal_embedding")
 
     def test_high_uncertainty_sets_ignore_flag(self) -> None:
         adapter = HeuristicJEPAAdapter(
@@ -63,7 +63,7 @@ class HeuristicJEPATests(unittest.TestCase):
         self.assertIn("surprise_source", state.telemetry)
         self.assertIn("jepa_uncertainty", state.telemetry)
         self.assertIn("surprise_band", state.telemetry)
-        self.assertEqual(state.telemetry["prediction_method"], "jepa_heuristic")
+        self.assertEqual(state.telemetry["prediction_method"], "jepa_literal_embedding")
         self.assertEqual(state.telemetry["surprise_source"], "jepa_prediction_error")
 
 

@@ -19,12 +19,12 @@ from calosum import (
 
 
 class FaultyLeftHemisphere:
-    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
         return ActionPlannerResult(
             response_text="unsafe attempt",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> UnsafeDecision",
-                expression="lambda ctx: call_external_api()",
+                expression='{"plan": ["call_external_api"]}',
                 expected_effect="unsafe",
             ),
             actions=[
@@ -39,9 +39,9 @@ class FaultyLeftHemisphere:
         )
 
     async def areason(
-        self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0
+        self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None
     ):
-        return self.reason(user_turn, bridge_packet, memory_context, runtime_feedback, attempt)
+        return self.reason(user_turn, bridge_packet, memory_context, runtime_feedback, attempt, workspace)
 
     def repair(
         self,
@@ -52,12 +52,13 @@ class FaultyLeftHemisphere:
         rejected_results,
         attempt,
         critique_feedback=None,
+        workspace=None,
     ):
         return ActionPlannerResult(
             response_text="repaired response",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> SafeDecision",
-                expression="lambda ctx: respond_text()",
+                expression='{"plan": ["respond_text"]}',
                 expected_effect="safe",
             ),
             actions=[
@@ -84,6 +85,7 @@ class FaultyLeftHemisphere:
         rejected_results,
         attempt,
         critique_feedback=None,
+        workspace=None,
     ):
         return self.repair(
             user_turn,
@@ -93,20 +95,21 @@ class FaultyLeftHemisphere:
             rejected_results,
             attempt,
             critique_feedback,
+            workspace,
         )
 
 
 class MockLeftHemisphere:
-    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
         return ActionPlannerResult(
             response_text="Mocked response",
-            lambda_program=TypedLambdaProgram("Context -> Response", "()", "None"),
+            lambda_program=TypedLambdaProgram("Context -> Response", '{"plan": []}', "None"),
             actions=[],
             reasoning_summary=[],
         )
 
-    async def areason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
-        return self.reason(user_turn, bridge_packet, memory_context, runtime_feedback, attempt)
+    async def areason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
+        return self.reason(user_turn, bridge_packet, memory_context, runtime_feedback, attempt, workspace)
 
     def repair(self, *args, **kwargs):
         return self.reason(*args[:3])
@@ -116,12 +119,12 @@ class MockLeftHemisphere:
 
 
 class EmptyResponseLeftHemisphere:
-    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
+    def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
         return ActionPlannerResult(
             response_text="",
             lambda_program=TypedLambdaProgram(
                 "Context -> Plan",
-                "lambda _: propose_plan()",
+                '{"plan": ["propose_plan"]}',
                 "plan",
             ),
             actions=[

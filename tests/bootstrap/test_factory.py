@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from calosum import (
-    ActiveInferenceRightHemisphereAdapter,
+    SimpleDistanceSurpriseAdapter,
     CalosumAgentBuilder,
     HeuristicJEPAAdapter,
     InfrastructureProfile,
@@ -59,9 +59,9 @@ class InfrastructureBuilderTests(unittest.TestCase):
             agent = builder.build()
 
         description = builder.describe()
-        self.assertIsInstance(agent.right_hemisphere, ActiveInferenceRightHemisphereAdapter)
+        self.assertIsInstance(agent.right_hemisphere, SimpleDistanceSurpriseAdapter)
         self.assertIsInstance(agent.right_hemisphere.base_adapter, HeuristicJEPAAdapter)
-        self.assertEqual(description["right_hemisphere_backend"], "active_inference_heuristic_jepa_fallback")
+        self.assertEqual(description["right_hemisphere_backend"], "distance_heuristic_jepa_fallback")
         self.assertEqual(
             getattr(agent.right_hemisphere.base_adapter, "degraded_reason", None),
             "resolver_fallback:RuntimeError",
@@ -171,7 +171,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
         self.assertIsInstance(agent.right_hemisphere.base_adapter, ContractEnforcedRightHemisphereAdapter)
         self.assertIsInstance(agent.right_hemisphere.base_adapter.provider, HeuristicJEPAAdapter)
-        self.assertEqual(description["right_hemisphere_backend"], "active_inference_heuristic_jepa_phase1")
+        self.assertEqual(description["right_hemisphere_backend"], "distance_heuristic_jepa_phase1")
         self.assertEqual(description["routing_resolution"]["perception"]["active"], "jepa")
 
     def test_factory_turboquant_flag(self) -> None:

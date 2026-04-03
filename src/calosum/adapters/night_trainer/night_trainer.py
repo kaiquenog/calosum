@@ -60,7 +60,7 @@ class NightTrainer:
 
     def run_training_cycle(self) -> dict[str, Any]:
         if self.backend in {"lora", "qlora"}:
-            return self._run_lora_cycle(self.backend)
+            return {"status": "skipped", "reason": "LoRA training disabled for safety"}
 
         if not self.dataset_path.exists():
             return {"status": "skipped", "reason": "No dataset found"}
@@ -107,19 +107,6 @@ class NightTrainer:
         except Exception as e:
             logger.error("Night training failed: %s", e)
             return {"status": "error", "reason": str(e)}
-
-    def _run_lora_cycle(self, backend: str) -> dict[str, Any]:
-        from calosum.adapters.night_trainer.night_trainer_lora import LoraNightTrainer
-
-        trainer = LoraNightTrainer(
-            base_model_name=self.model_name,
-            dataset_path=self.lora_dataset_path,
-            output_dir=self.lora_output_dir,
-        )
-        result = trainer.run_training()
-        if result.get("status") == "success":
-            result["backend"] = backend
-        return result
 
     def _run_dspy_cycle(self) -> dict[str, Any] | None:
         from calosum.adapters.night_trainer.night_trainer_dspy import DSPyNightTrainer

@@ -10,11 +10,12 @@ from typing import Any, TypeVar, Generic
 from calosum.shared.models.types import (
     CognitiveWorkspace,
     KnowledgeTriple,
+    MemoryEpisode,
+    SemanticRule,
     SessionDiagnostic,
     UserTurn,
-    to_primitive,
 )
-from calosum.shared.utils.serialization import from_primitive
+from calosum.shared.utils.serialization import from_primitive, to_primitive
 
 T = TypeVar("T")
 
