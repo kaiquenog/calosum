@@ -3,13 +3,13 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from calosum.adapters.perception.simple_distance import SimpleDistanceSurpriseAdapter
+from calosum.adapters.perception.active_inference import ActiveInferenceSurpriseAdapter
 from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter
 from calosum.adapters.infrastructure.contract_wrappers import (
     ContractEnforcedLeftHemisphereAdapter,
     ContractEnforcedRightHemisphereAdapter,
 )
-from calosum.domain.metacognition.metacognition import LinearReflectionController
+from calosum.domain.metacognition.metacognition import GEAReflectionController
 from calosum.adapters.hemisphere.action_planner_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
 from calosum.adapters.hemisphere.input_perception_heuristic_jepa import HeuristicJEPAAdapter
 from calosum.adapters.hemisphere.input_perception_trained_jepa import TrainedJEPAAdapter
@@ -36,7 +36,7 @@ def resolve_bridge_fusion(settings: InfrastructureSettings):
 
 
 def resolve_reflection_controller(settings: InfrastructureSettings):
-    return LinearReflectionController()
+    return GEAReflectionController()
 
 
 def resolve_left_hemisphere(
@@ -44,7 +44,11 @@ def resolve_left_hemisphere(
     reason_model_name: str,
 ) -> tuple[Any, str]:
     backend = (settings.left_hemisphere_backend or "").strip().lower()
-    if backend == "rlm":
+    use_rlm_default = settings.mode == CalosumMode.LOCAL or settings.profile in {
+        InfrastructureProfile.PERSISTENT,
+        InfrastructureProfile.DOCKER,
+    }
+    if backend == "rlm" or (backend in {"", "auto"} and use_rlm_default):
         adapter = RlmLeftHemisphereAdapter(
             RlmAdapterConfig(
                 runtime_command=settings.left_rlm_runtime_command,
@@ -52,7 +56,8 @@ def resolve_left_hemisphere(
                 max_depth=settings.left_rlm_max_depth,
             )
         )
-        return ContractEnforcedLeftHemisphereAdapter(adapter), "rlm_recursive_adapter"
+        backend_name = "rlm_recursive_adapter" if backend == "rlm" else "rlm_recursive_adapter_default"
+        return ContractEnforcedLeftHemisphereAdapter(adapter), backend_name
 
     primary = _build_qwen(
         endpoint=settings.left_hemisphere_endpoint,
@@ -90,7 +95,7 @@ def resolve_right_hemisphere(
     settings: InfrastructureSettings,
     vision_adapter: Any | None = None,
     codec: Any | None = None,
-) -> tuple[SimpleDistanceSurpriseAdapter, str, str]:
+) -> tuple[ActiveInferenceSurpriseAdapter, str, str]:
     backend = (settings.right_hemisphere_backend or "").strip().lower()
     requested_model = (settings.perception_model or "").strip()
 
@@ -203,9 +208,9 @@ def _build_qwen(
     return QwenLeftHemisphereAdapter()
 
 
-def _active_inference_right(base_adapter: Any) -> SimpleDistanceSurpriseAdapter:
+def _active_inference_right(base_adapter: Any) -> ActiveInferenceSurpriseAdapter:
     wrapped = ContractEnforcedRightHemisphereAdapter(base_adapter)
-    return SimpleDistanceSurpriseAdapter(wrapped)
+    return ActiveInferenceSurpriseAdapter(wrapped)
 
 
 def _with_fusion_if_enabled(provider: Any, settings: InfrastructureSettings) -> Any:

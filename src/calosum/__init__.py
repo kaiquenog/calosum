@@ -31,7 +31,6 @@ from calosum.domain.metacognition.metacognition import (
     CognitiveVariantSpec,
     CognitiveVariantSelector,
     GEAReflectionController,
-    LinearReflectionController,
     GroupTurnResult,
     ReflectionOutcome,
     ReflectionScore,

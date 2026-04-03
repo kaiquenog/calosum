@@ -199,6 +199,8 @@ class InputPerceptionState:
     world_hypotheses: dict[str, float]
     confidence: float
     surprise_score: float = 0.0
+    latent_mu: list[float] | None = None
+    latent_logvar: list[float] | None = None
     telemetry: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):

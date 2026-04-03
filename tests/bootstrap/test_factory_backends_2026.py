@@ -35,7 +35,7 @@ class FactoryBackends2026Tests(unittest.TestCase):
                 agent.left_hemisphere.provider.__class__.__name__,
                 "RlmLeftHemisphereAdapter",
             )
-            self.assertEqual(agent.reflection_controller.__class__.__name__, "LinearReflectionController")
+            self.assertEqual(agent.reflection_controller.__class__.__name__, "GEAReflectionController")
 
     def test_builder_supports_jepars_backend_selection(self) -> None:
         settings = InfrastructureSettings(

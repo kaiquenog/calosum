@@ -18,7 +18,7 @@ class JepaRsConfig:
 
 
 class JepaRsRightHemisphereAdapter:
-    """Rust backend adapter for local JEPA inference via JSON IPC."""
+    """Rust backend adapter for local JEPA inference via Apache Arrow IPC."""
 
     def __init__(self, config: JepaRsConfig | None = None) -> None:
         self.config = config or JepaRsConfig()
@@ -38,7 +38,7 @@ class JepaRsRightHemisphereAdapter:
         result = self._invoke_backend(payload)
 
         latent = result.get("latent_vector")
-        if not isinstance(latent, list) or not latent:
+        if latent is None or (isinstance(latent, list) and not latent):
             raise RuntimeError("jepa-rs backend returned invalid latent_vector")
 
         surprise = float(result.get("surprise_score", 0.5))
@@ -49,29 +49,32 @@ class JepaRsRightHemisphereAdapter:
         state = InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=[float(v) for v in latent],
+            latent_mu=result.get("latent_mu"),
+            latent_logvar=result.get("latent_logvar"),
             salience=salience,
             emotional_labels=[str(x) for x in result.get("emotional_labels", ["neutral"])][:6],
             world_hypotheses={
                 "interaction_complexity": min(1.0, len(user_turn.user_text) / 240.0),
-                "semantic_density": min(1.0, abs(sum(float(v) for v in latent[:32])) / 16.0),
+                "semantic_density": min(1.0, abs(sum(float(v) for v in (latent[:32] if isinstance(latent, list) else latent))) / 16.0),
                 "predictive_alignment": max(0.0, 1.0 - surprise),
             },
             confidence=confidence,
             surprise_score=surprise,
             telemetry={
                 "model_name": "jepa-rs",
-                "right_backend": "jepa_rs",
+                "right_backend": "jepa_rs_arrow",
                 "right_model_name": "jepa-rs",
                 "right_mode": "predictive",
                 "degraded_reason": None,
                 "binary_path": self.config.binary_path,
+                "ipc_protocol": "arrow",
             },
         )
 
         if workspace is not None:
             workspace.right_notes.update(
                 {
-                    "backend": "jepa_rs",
+                    "backend": "jepa_rs_arrow",
                     "surprise_score": surprise,
                     "confidence": confidence,
                 }
@@ -87,32 +90,42 @@ class JepaRsRightHemisphereAdapter:
         return await asyncio.to_thread(self.perceive, user_turn, memory_context, workspace)
 
     def _invoke_backend(self, payload: dict[str, Any]) -> dict[str, Any]:
-        cmd = [self.config.binary_path, "infer", "--json"]
+        import pyarrow as pa
+        
+        cmd = [self.config.binary_path, "infer", "--arrow"]
         completed = subprocess.run(
             cmd,
-            input=json.dumps(payload),
-            text=True,
+            input=json.dumps(payload).encode("utf-8"),
             capture_output=True,
             timeout=self.config.timeout_seconds,
             check=False,
         )
         if completed.returncode != 0:
-            stderr = completed.stderr.strip()
-            raise RuntimeError(f"jepa-rs failed: rc={completed.returncode} stderr={stderr}")
+            stderr = completed.stderr.decode("utf-8").strip()
+            raise RuntimeError(f"jepa-rs (arrow) failed: rc={completed.returncode} stderr={stderr}")
 
-        out = completed.stdout.strip()
-        if not out:
-            raise RuntimeError("jepa-rs returned empty output")
+        if not completed.stdout:
+            raise RuntimeError("jepa-rs (arrow) returned empty output")
 
         try:
-            parsed = json.loads(out)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"jepa-rs returned non-json output: {out[:200]}") from exc
-
-        if not isinstance(parsed, dict):
-            raise RuntimeError("jepa-rs payload must be an object")
-        self._validate_schema(parsed)
-        return parsed
+            # Assume a single RecordBatch in the stream
+            with pa.ipc.open_stream(completed.stdout) as reader:
+                table = reader.read_all()
+                if table.num_rows == 0:
+                    raise RuntimeError("jepa-rs (arrow) returned 0 rows")
+                
+                # Convert first row to dictionary
+                row_dict = table.to_pylist()[0]
+                
+                # Normalize Arrow list types back to Python lists for InputPerceptionState
+                for key in ["latent_vector", "latent_mu", "latent_logvar"]:
+                    if key in row_dict and hasattr(row_dict[key], "tolist"):
+                        row_dict[key] = row_dict[key].tolist()
+                
+                return row_dict
+                
+        except Exception as exc:
+            raise RuntimeError(f"Failed to parse Arrow output from jepa-rs: {exc}") from exc
 
     def _validate_schema(self, payload: dict[str, Any]) -> None:
         """Validate jepa-rs response against required schema."""

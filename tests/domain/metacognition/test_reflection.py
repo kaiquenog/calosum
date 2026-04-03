@@ -5,32 +5,40 @@ import tempfile
 from pathlib import Path
 
 from calosum import (
+    ActionPlannerResult,
+    AgentTurnResult,
+    CognitiveCandidate,
     CognitiveTokenizer,
     CognitiveTokenizerConfig,
-    LinearReflectionController,
-    ReflectionOutcome,
-    ReflectionScore,
-    CognitiveCandidate,
     CognitiveVariantSpec,
-    AgentTurnResult,
-    ActionPlannerResult,
+    GEAReflectionController,
+    ReflectionOutcome,
     TypedLambdaProgram,
     UserTurn,
 )
-from calosum.shared.models.types import utc_now
+from calosum.shared.models.types import InputPerceptionState
 
 
 class ReflectionTests(unittest.TestCase):
-    def test_linear_reflection_always_selects_first_candidate(self) -> None:
-        controller = LinearReflectionController()
-        
+    def test_efe_reflection_selects_single_candidate(self) -> None:
+        controller = GEAReflectionController()
         turn = UserTurn(session_id="s", user_text="text")
         variant = CognitiveVariantSpec(variant_id="winner")
         result = AgentTurnResult(
             user_turn=turn,
-            memory_context=None,  # type: ignore
-            right_state=None,     # type: ignore
-            bridge_packet=None,   # type: ignore
+            memory_context=None,  # type: ignore[arg-type]
+            right_state=InputPerceptionState(
+                context_id=turn.turn_id,
+                latent_vector=[0.0, 0.0, 0.0],
+                latent_mu=[0.0, 0.0, 0.0],
+                latent_logvar=[-2.0, -2.0, -2.0],
+                salience=0.2,
+                emotional_labels=["neutral"],
+                world_hypotheses={},
+                confidence=0.9,
+                surprise_score=0.1,
+            ),
+            bridge_packet=None,   # type: ignore[arg-type]
             left_result=ActionPlannerResult(
                 response_text="ok",
                 lambda_program=TypedLambdaProgram("", "", ""),
@@ -39,20 +47,15 @@ class ReflectionTests(unittest.TestCase):
             ),
             telemetry={},
         )
-        
         candidates = [CognitiveCandidate(variant=variant, turn_result=result)]
-        
         outcome = controller.evaluate(candidates, None)
-        
         self.assertEqual(outcome.selected_variant_id, "winner")
-        self.assertEqual(outcome.selected_by, "linear_no_branch")
+        self.assertEqual(outcome.selected_by, "efe_minimization_loop")
 
     def test_neuroplasticity_interfaces_are_noop_but_safe(self) -> None:
-        controller = LinearReflectionController()
+        controller = GEAReflectionController()
         tokenizer = CognitiveTokenizer()
         outcome = ReflectionOutcome(selected_variant_id="any")
-        
-        # Should not raise
         controller.apply_config_adaptation(tokenizer, outcome)
         controller.apply_neuroplasticity(tokenizer, outcome)
 

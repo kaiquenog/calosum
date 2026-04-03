@@ -117,6 +117,8 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
     ) -> InputPerceptionState:
+        from calosum.shared.utils.math_cognitive import calculate_surprise
+
         visual_signals = [s for s in user_turn.signals if s.modality.value in ("image", "video")]
 
         if visual_signals and self._health == ComponentHealth.HEALTHY:
@@ -126,7 +128,17 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
             latent_vector = self._text_to_latent(user_turn.user_text)
             prediction_error = self._heuristic_prediction_error(latent_vector, memory_context)
 
-        surprise = min(1.0, prediction_error / 2.0)
+        # For V-JEPA, we treat the latent as the mean and assume a small fixed logvar if not modeled
+        latent_mu = latent_vector.tolist()
+        latent_logvar = (np.ones_like(latent_vector) * -3.0).tolist() # log(0.05) approx
+
+        # Use the math_cognitive utility for surprise
+        surprise = calculate_surprise(
+            latent_vector,
+            np.array(latent_mu), # Placeholder for actually predicted mu
+            np.array(latent_logvar) # Placeholder for actually predicted logvar
+        )
+        
         emotional_labels = self._decode_emotions(latent_vector)
 
         telemetry = {
@@ -134,17 +146,20 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
             "right_backend": "vjepa21_local",
             "right_mode": "predictive",
             "degraded_reason": "No weights" if self._health == ComponentHealth.DEGRADED else None,
-            "surprise_backend": "vjepa_error",
+            "surprise_backend": "math_cognitive",
         }
 
         world_hypotheses = {
             "prediction_error": float(prediction_error),
             "semantic_density": float(np.std(latent_vector) * 4.0),
+            "surprise": surprise,
         }
 
         state = InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=latent_vector.tolist(),
+            latent_mu=latent_mu,
+            latent_logvar=latent_logvar,
             salience=self._calibrate_salience(surprise, emotional_labels),
             emotional_labels=emotional_labels,
             world_hypotheses=world_hypotheses,

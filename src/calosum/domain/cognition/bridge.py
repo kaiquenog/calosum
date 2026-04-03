@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import json
-import os
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass, field, replace
 from typing import Any
 
-from calosum.shared.models.types import BridgeControlSignal, PerceptionSummary, InputPerceptionState, SoftPromptToken, CognitiveWorkspace
 from calosum.shared.models.ports import BridgeFusionPort, BridgeStateStorePort
+from calosum.shared.models.types import (
+    BridgeControlSignal,
+    CognitiveWorkspace,
+    InputPerceptionState,
+    PerceptionSummary,
+    SoftPromptToken,
+)
 
 
 @dataclass(slots=True)
@@ -20,16 +23,15 @@ class ContextCompressorConfig:
     salience_gain: float = 1.0
     salience_bias: float = 0.0
     temperature_bias: float = 0.0
+    top_p_floor: float = 0.35
+    top_p_ceiling: float = 0.98
+    logit_bias_gain: float = 1.8
+    surprise_guardrail: float = 0.6
 
 
 class ContextCompressor:
     """
-    Traduz o estado latente continuo do JEPA para uma interface discreta.
-
-    O resultado e um pacote com:
-    - context directives compactas;
-    - sinais de controle para o hemisferio esquerdo;
-    - metadados suficientes para observabilidade e auditoria.
+    Traduz o estado latente em sinais contínuos de controle para o hemisfério esquerdo.
     """
 
     def __init__(
@@ -60,6 +62,10 @@ class ContextCompressor:
             "salience_gain",
             "salience_bias",
             "temperature_bias",
+            "top_p_floor",
+            "top_p_ceiling",
+            "logit_bias_gain",
+            "surprise_guardrail",
         ):
             if key in data and hasattr(self.config, key):
                 setattr(self.config, key, data[key])
@@ -77,6 +83,10 @@ class ContextCompressor:
             "salience_gain": self.config.salience_gain,
             "salience_bias": self.config.salience_bias,
             "temperature_bias": self.config.temperature_bias,
+            "top_p_floor": self.config.top_p_floor,
+            "top_p_ceiling": self.config.top_p_ceiling,
+            "logit_bias_gain": self.config.logit_bias_gain,
+            "surprise_guardrail": self.config.surprise_guardrail,
         }
         self.store.persist_adaptation_state(payload)
 
@@ -86,14 +96,24 @@ class ContextCompressor:
 
     def translate(self, right_state: InputPerceptionState, workspace: CognitiveWorkspace | None = None) -> PerceptionSummary:
         state = self._apply_fusion(right_state)
-        # Neural bridge logic removed to ensure domain purity
-        packet = self._heuristic_translate(state)
+        
+        if workspace and workspace.runtime_feedback:
+            last_feedback = workspace.runtime_feedback[-1]
+            if last_feedback.get("rejected_count", 0) > 0:
+                state = replace(
+                    state,
+                    surprise_score=min(1.0, state.surprise_score + 0.2),
+                    salience=min(1.0, state.salience + 0.1),
+                    telemetry={**state.telemetry, "runtime_backpressure": True},
+                )
+        packet = self._latent_translate(state)
             
         if workspace is not None:
             workspace.bridge_state.update({
                 "target_temperature": packet.control.target_temperature,
                 "empathy_priority": packet.control.empathy_priority,
                 "directives": packet.control.system_directives,
+                "target_top_p": packet.control.annotations.get("target_top_p"),
                 "salience_calibrated": packet.salience,
             })
             
@@ -120,32 +140,24 @@ class ContextCompressor:
                 world_hypotheses=right_state.world_hypotheses,
                 confidence=right_state.confidence,
                 surprise_score=right_state.surprise_score,
+                latent_mu=right_state.latent_mu,
+                latent_logvar=right_state.latent_logvar,
                 telemetry=telemetry,
             )
         except Exception:
             return right_state
 
-    def _heuristic_translate(self, right_state: InputPerceptionState) -> PerceptionSummary:
-        tokens: list[SoftPromptToken] = []
-        for label in right_state.emotional_labels[: self.config.bottleneck_tokens]:
+    def _latent_translate(self, right_state: InputPerceptionState) -> PerceptionSummary:
+        tokens = self._top_latent_tokens(right_state.latent_vector)
+        for label in right_state.emotional_labels[: max(1, self.config.bottleneck_tokens // 3)]:
             tokens.append(
                 SoftPromptToken(
                     token=f"<affect:{label}>",
                     weight=round(right_state.salience, 3),
-                    provenance="jepa.emotional_labels",
+                    provenance="latent_projection_interpreter",
                 )
             )
-
-        remaining = self.config.bottleneck_tokens - len(tokens)
-        for index, value in enumerate(right_state.latent_vector[:remaining]):
-            tokens.append(
-                SoftPromptToken(
-                    token=f"<latent:{index}>",
-                    weight=round(abs(value), 3),
-                    provenance="jepa.latent_projection",
-                )
-            )
-        return self._build_packet(right_state, tokens, right_state.salience)
+        return self._build_packet(right_state, tokens[: self.config.bottleneck_tokens], right_state.salience)
 
     def _build_packet(self, right_state: InputPerceptionState, tokens: list[SoftPromptToken], salience: float) -> PerceptionSummary:
         calibrated_salience = round(
@@ -153,6 +165,26 @@ class ContextCompressor:
             3,
         )
         empathy_priority = calibrated_salience >= self.config.salience_threshold
+        uncertainty = float(right_state.telemetry.get("jepa_uncertainty", 1.0))
+        surprise_score = float(getattr(right_state, "surprise_score", 0.0))
+        novelty = float(right_state.world_hypotheses.get("context_novelty", 0.0))
+
+        control_temperature = self._target_temperature(
+            salience=calibrated_salience,
+            surprise=surprise_score,
+            uncertainty=uncertainty,
+        )
+        target_top_p = self._target_top_p(
+            salience=calibrated_salience,
+            surprise=surprise_score,
+            uncertainty=uncertainty,
+            novelty=novelty,
+        )
+        logit_bias = self._target_logit_bias(
+            salience=calibrated_salience,
+            surprise=surprise_score,
+            uncertainty=uncertainty,
+        )
         directives = [
             "preserve typed reasoning",
             "ground decisions in available memory",
@@ -160,44 +192,30 @@ class ContextCompressor:
         if empathy_priority:
             directives.insert(0, "lead with empathy before dense logic")
             directives.append("prefer safe clarification under emotional uncertainty")
-
-        # Active Inference: Epistemic Foraging
-        surprise_score = getattr(right_state, "surprise_score", 0.0)
-        ambiguity_score = getattr(right_state, "world_hypotheses", {}).get("interaction_complexity", 0.0)
-        if surprise_score >= 0.3 or ambiguity_score >= 0.5:
-            directives.insert(0, "HIGH SURPRISE DETECTED: you MUST prioritize epistemic foraging using tools (search_web, execute_bash, read_file, introspect_self) to gather context and reduce uncertainty BEFORE providing a final answer.")
-
-        # Modulação Dinâmica de Temperatura via Surpresa
-        # Entradas surpreendentes (alto surprise_score) baixam a temperatura para forçar foco e analítica
-        surprise_penalty = surprise_score * 0.25
+        ambiguity_score = float(right_state.world_hypotheses.get("interaction_complexity", 0.0))
+        if surprise_score >= self.config.surprise_guardrail or ambiguity_score >= 0.5:
+            directives.insert(
+                0,
+                "high uncertainty: prioritize epistemic foraging with tools before final response",
+            )
 
         control = BridgeControlSignal(
-            target_temperature=round(
-                min(
-                    1.0,
-                    max(
-                        0.05,
-                        self.config.base_temperature
-                        + (0.1 if empathy_priority else 0.0)
-                        - surprise_penalty
-                        + self.config.temperature_bias,
-                    ),
-                ),
-                2,
-            ),
+            target_temperature=control_temperature,
             empathy_priority=empathy_priority,
             system_directives=directives[: self.config.max_directives],
             annotations={
                 "salience_threshold": self.config.salience_threshold,
                 "bottleneck_tokens": self.config.bottleneck_tokens,
-                "neural_active": False,
+                "bridge_mode": "latent_projection_interpreter",
                 "raw_salience": salience,
                 "calibrated_salience": calibrated_salience,
-                "surprise_penalty": surprise_penalty,
+                "target_top_p": target_top_p,
+                "target_logit_bias": logit_bias,
                 "salience_gain": self.config.salience_gain,
                 "salience_bias": self.config.salience_bias,
                 "temperature_bias": self.config.temperature_bias,
-                "jepa_uncertainty": float(right_state.telemetry.get("jepa_uncertainty", 1.0)),
+                "jepa_uncertainty": uncertainty,
+                "context_novelty": novelty,
             },
         )
 
@@ -218,8 +236,7 @@ class ContextCompressor:
         return self.translate(right_state, workspace)
 
     def train_step(self, latent_vector: list[float], target_salience: float, learning_rate: float = 0.01) -> dict[str, Any]:
-        """Neural bridge training disabled in domain."""
-        return {"trained": False, "reason": "neural bridge disabled in domain"}
+        return {"trained": False, "reason": "bridge_control_is_analytic"}
 
     def get_bridge_parameters(self) -> list[Any]:
         """Return trainable parameters from the fusion adapter only."""
@@ -227,6 +244,36 @@ class ContextCompressor:
         if self.fusion is not None and hasattr(self.fusion, "get_parameters"):
             params.extend(self.fusion.get_parameters())
         return params
+
+    def _top_latent_tokens(self, latent_vector: list[float]) -> list[SoftPromptToken]:
+        weighted = [(idx, value, abs(value)) for idx, value in enumerate(latent_vector)]
+        weighted.sort(key=lambda item: item[2], reverse=True)
+        tokens: list[SoftPromptToken] = []
+        for idx, value, mag in weighted[: self.config.bottleneck_tokens]:
+            tokens.append(
+                SoftPromptToken(
+                    token=f"<latent_dim:{idx}>",
+                    weight=round(min(1.0, mag), 3),
+                    provenance=f"latent_projection_interpreter:v={round(value, 4)}",
+                )
+            )
+        return tokens
+
+    def _target_temperature(self, *, salience: float, surprise: float, uncertainty: float) -> float:
+        pressure = (0.50 * surprise) + (0.35 * uncertainty) + (0.15 * salience)
+        value = self.config.base_temperature + self.config.temperature_bias - (0.28 * pressure) + (0.06 * salience)
+        return round(min(1.0, max(0.05, value)), 2)
+
+    def _target_top_p(self, *, salience: float, surprise: float, uncertainty: float, novelty: float) -> float:
+        exploration = (0.35 * novelty) + (0.30 * salience) - (0.25 * uncertainty) - (0.10 * surprise)
+        base = self.config.top_p_floor + (self.config.top_p_ceiling - self.config.top_p_floor) * (1.0 / (1.0 + pow(2.71828, -4.0 * exploration)))
+        return round(min(self.config.top_p_ceiling, max(self.config.top_p_floor, base)), 3)
+
+    def _target_logit_bias(self, *, salience: float, surprise: float, uncertainty: float) -> dict[str, float]:
+        caution = min(1.0, max(0.0, (0.55 * uncertainty) + (0.45 * surprise)))
+        clarify_bias = round(self.config.logit_bias_gain * caution, 3)
+        concise_bias = round(max(0.0, 0.6 - salience) * 0.8, 3)
+        return {"clarify_first": clarify_bias, "concise_steps": concise_bias}
 
 
 CognitiveTokenizerConfig = ContextCompressorConfig

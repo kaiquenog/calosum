@@ -135,6 +135,7 @@ class QwenLeftHemisphereAdapter:
             
         prompt = augment_prompt_with_compiled_artifact(prompt, self.compiled_prompt_artifact)
         temperature = self._resolve_temperature(bridge_packet)
+        self._last_annotations = dict(bridge_packet.control.annotations or {})
         request = self._build_request(prompt, temperature=temperature)
 
         try:
@@ -244,6 +245,7 @@ class QwenLeftHemisphereAdapter:
     def _build_request(self, prompt: str, *, temperature: float | None = None) -> dict[str, Any]:
         api_mode = self._resolve_api_mode()
         resolved_model = self._resolve_model_name(api_mode)
+        top_p, logit_bias = self._resolve_sampling_controls()
 
         if api_mode == "openai_responses":
             return {
@@ -255,6 +257,8 @@ class QwenLeftHemisphereAdapter:
                     self.config.max_tokens,
                     self.config.reasoning_effort,
                     temperature,
+                    top_p,
+                    logit_bias,
                 ),
             }
 
@@ -267,6 +271,8 @@ class QwenLeftHemisphereAdapter:
                     resolved_model,
                     self.config.max_tokens,
                     temperature,
+                    top_p,
+                    logit_bias,
                 ),
             }
 
@@ -279,6 +285,8 @@ class QwenLeftHemisphereAdapter:
                     resolved_model,
                     self.config.max_tokens,
                     temperature,
+                    top_p,
+                    logit_bias,
                 ),
             }
 
@@ -286,16 +294,35 @@ class QwenLeftHemisphereAdapter:
             "api_mode": api_mode, "resolved_model": resolved_model,
             "url": self._chat_completions_url(),
             "payload": build_compatible_chat_payload(
-                prompt,
-                resolved_model,
-                self.config.max_tokens,
-                temperature,
-            ),
+                    prompt,
+                    resolved_model,
+                    self.config.max_tokens,
+                    temperature,
+                    top_p,
+                    logit_bias,
+                ),
         }
 
     def _resolve_temperature(self, bridge_packet: PerceptionSummary) -> float:
         candidate = float(bridge_packet.control.target_temperature)
         return round(min(1.5, max(0.0, candidate)), 3)
+
+    def _resolve_sampling_controls(self) -> tuple[float | None, dict[str, float] | None]:
+        annotations = getattr(self, "_last_annotations", None)
+        if annotations is None:
+            return None, None
+        raw_top_p = annotations.get("target_top_p")
+        top_p: float | None = None
+        if raw_top_p is not None:
+            try:
+                top_p = round(min(1.0, max(0.0, float(raw_top_p))), 3)
+            except (TypeError, ValueError):
+                top_p = None
+        raw_logit_bias = annotations.get("target_logit_bias")
+        if not isinstance(raw_logit_bias, dict):
+            return top_p, None
+        mapped = {str(key): float(value) for key, value in raw_logit_bias.items() if isinstance(value, (int, float))}
+        return top_p, mapped or None
 
     def _resolve_api_mode(self) -> str:
         provider = self.config.provider.strip().lower()

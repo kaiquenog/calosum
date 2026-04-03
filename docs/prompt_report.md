@@ -334,4 +334,4 @@ Combinando:
 
 # ▶️ INÍCIO
 
-Comece pelo **Resumo Executivo**.
+Comece pelo **Resumo Executivo**. gerado em docs/exec-plans

@@ -47,14 +47,27 @@ class RlmLeftHemisphereAdapter(ActionPlannerPort):
         workspace: CognitiveWorkspace | None = None,
     ) -> ActionPlannerResult:
         self._depth = 0
-        result = self._recursive_reason(user_turn.user_text, bridge_packet, memory_context)
+        
+        # Backtracking real: se houver falha, reduz o tamanho do chunk para focar em precisao
+        effective_chunk_size = self.CHUNK_SIZE
+        if attempt > 0:
+            effective_chunk_size = max(500, self.CHUNK_SIZE // (attempt + 1))
+            
+        result = self._recursive_reason(
+            user_turn.user_text, 
+            bridge_packet, 
+            memory_context, 
+            chunk_size=effective_chunk_size,
+            feedback=runtime_feedback
+        )
         
         if workspace is not None:
             workspace.left_notes.update(
                 {
                     "backend": result.telemetry.get("backend", "rlm"),
+                    "attempt": attempt,
+                    "effective_chunk_size": effective_chunk_size,
                     "reasoning_summary": result.reasoning_summary,
-                    "actions": [a.action_type for a in result.actions],
                 }
             )
         return result
@@ -65,29 +78,41 @@ class RlmLeftHemisphereAdapter(ActionPlannerPort):
         bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         depth: int = 0,
+        chunk_size: int | None = None,
+        feedback: list[str] | None = None,
     ) -> ActionPlannerResult:
+        actual_chunk_size = chunk_size or self.CHUNK_SIZE
+        
         if depth >= self.MAX_DEPTH:
-            return self._base_reason(text, bridge_packet, memory_context)
+            return self._base_reason(text, bridge_packet, memory_context, feedback)
 
-        if len(text) <= self.CHUNK_SIZE:
-            return self._base_reason(text, bridge_packet, memory_context)
+        if len(text) <= actual_chunk_size:
+            return self._base_reason(text, bridge_packet, memory_context, feedback)
 
-        chunks = self._decompose(text)
+        chunks = self._decompose(text, actual_chunk_size)
 
         partial_results = []
         for chunk in chunks:
-            result = self._recursive_reason(chunk, bridge_packet, memory_context, depth + 1)
+            result = self._recursive_reason(
+                chunk, 
+                bridge_packet, 
+                memory_context, 
+                depth + 1, 
+                chunk_size=actual_chunk_size,
+                feedback=feedback
+            )
             partial_results.append(result)
 
         return self._compose_results(partial_results, text)
 
-    def _decompose(self, text: str) -> list[str]:
+    def _decompose(self, text: str, chunk_size: int | None = None) -> list[str]:
+        actual_chunk_size = chunk_size or self.CHUNK_SIZE
         paragraphs = text.split("\n\n")
 
         chunks: list[str] = []
         current = ""
         for para in paragraphs:
-            if len(current) + len(para) > self.CHUNK_SIZE:
+            if len(current) + len(para) > actual_chunk_size:
                 if current:
                     chunks.append(current.strip())
                 current = para
@@ -104,12 +129,18 @@ class RlmLeftHemisphereAdapter(ActionPlannerPort):
         text: str,
         bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
+        feedback: list[str] | None = None,
     ) -> ActionPlannerResult:
         if self.config.runtime_command:
-            return self._call_rlm_binary(text, bridge_packet)
-        return self._fallback_reason(text, bridge_packet)
+            return self._call_rlm_binary(text, bridge_packet, feedback)
+        return self._fallback_reason(text, bridge_packet, feedback)
 
-    def _call_rlm_binary(self, text: str, bridge_packet: PerceptionSummary) -> ActionPlannerResult:
+    def _call_rlm_binary(
+        self, 
+        text: str, 
+        bridge_packet: PerceptionSummary,
+        feedback: list[str] | None = None,
+    ) -> ActionPlannerResult:
         assert self.config.runtime_command is not None
         cmd = self.config.runtime_command.split() + [
             "--model", self.config.model_path or "rlm-qwen3-8b",
@@ -117,7 +148,14 @@ class RlmLeftHemisphereAdapter(ActionPlannerPort):
             "--json",
         ]
         
-        payload = json.dumps({"text": text, "latent": bridge_packet.latent_vector})
+        payload_dict = {
+            "text": text, 
+            "latent": bridge_packet.latent_vector,
+            "feedback": feedback or []
+        }
+        payload = json.dumps(payload_dict)
+        result = subprocess.run(cmd, input=payload, capture_output=True, text=True, timeout=self.config.timeout_seconds)
+        # ... rest of method unchanged ...
         result = subprocess.run(cmd, input=payload, capture_output=True, text=True, timeout=self.config.timeout_seconds)
         data = json.loads(result.stdout)
         
@@ -147,8 +185,15 @@ class RlmLeftHemisphereAdapter(ActionPlannerPort):
             telemetry={"adapter": "RlmLeftHemisphereAdapter", "backend": "rlm_runtime"},
         )
 
-    def _fallback_reason(self, text: str, bridge_packet: PerceptionSummary) -> ActionPlannerResult:
+    def _fallback_reason(
+        self, 
+        text: str, 
+        bridge_packet: PerceptionSummary,
+        feedback: list[str] | None = None,
+    ) -> ActionPlannerResult:
         response_text = "Vou resolver de forma recursiva e segura. " + text[:100]
+        if feedback:
+            response_text += f"\nRevisando devido ao feedback: {feedback[0][:50]}..."
         return ActionPlannerResult(
             response_text=response_text,
             lambda_program=TypedLambdaProgram(

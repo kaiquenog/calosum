@@ -295,6 +295,8 @@ def build_openai_responses_payload(
     max_tokens: int,
     reasoning_effort: str | None = None,
     temperature: float | None = None,
+    top_p: float | None = None,
+    logit_bias: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": model,
@@ -313,6 +315,10 @@ def build_openai_responses_payload(
         payload["reasoning"] = {"effort": reasoning_effort}
     if temperature is not None:
         payload["temperature"] = temperature
+    if top_p is not None:
+        payload["top_p"] = top_p
+    if logit_bias:
+        payload["logit_bias"] = logit_bias
     return payload
 
 def build_openai_chat_payload(
@@ -320,6 +326,8 @@ def build_openai_chat_payload(
     model: str,
     max_tokens: int,
     temperature: float | None = None,
+    top_p: float | None = None,
+    logit_bias: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "model": model,
@@ -341,6 +349,10 @@ def build_openai_chat_payload(
         payload["temperature"] = temperature
     else:
         payload["temperature"] = 0.1
+    if top_p is not None:
+        payload["top_p"] = top_p
+    if logit_bias:
+        payload["logit_bias"] = logit_bias
     return payload
 
 def build_compatible_chat_payload(
@@ -348,6 +360,8 @@ def build_compatible_chat_payload(
     model: str,
     max_tokens: int,
     temperature: float | None = None,
+    top_p: float | None = None,
+    logit_bias: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "model": model,
@@ -360,4 +374,8 @@ def build_compatible_chat_payload(
     }
     if temperature is not None:
         payload["temperature"] = temperature
+    if top_p is not None:
+        payload["top_p"] = top_p
+    if logit_bias:
+        payload["logit_bias"] = logit_bias
     return payload

@@ -277,6 +277,9 @@ class ContractEnforcedRightHemisphereAdapter:
             latent = [0.0]
             adjustments.append("latent_defaulted")
 
+        latent_mu = _normalize_latent(result.latent_mu) if result.latent_mu is not None else None
+        latent_logvar = _normalize_latent(result.latent_logvar) if result.latent_logvar is not None else None
+
         salience = _clamp01(result.salience)
         confidence = _clamp01(result.confidence)
         surprise = _clamp01(result.surprise_score)
@@ -303,6 +306,8 @@ class ContractEnforcedRightHemisphereAdapter:
             return InputPerceptionState(
                 context_id=context_id,
                 latent_vector=latent,
+                latent_mu=latent_mu,
+                latent_logvar=latent_logvar,
                 salience=salience,
                 emotional_labels=labels,
                 world_hypotheses=world,
@@ -373,6 +378,8 @@ def _fallback_right_state(context_id: str, provider_name: str, error: str) -> In
     return InputPerceptionState(
         context_id=context_id,
         latent_vector=[0.0],
+        latent_mu=None,
+        latent_logvar=None,
         salience=0.2,
         emotional_labels=["neutral"],
         world_hypotheses={"interaction_complexity": 0.0},

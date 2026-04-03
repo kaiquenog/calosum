@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from calosum.shared.models.types import AgentTurnResult, InputPerceptionState, UserTurn
+from calosum.shared.utils.math_cognitive import calculate_efe, kl_divergence_gaussian
 
 
 @dataclass(slots=True)
@@ -65,10 +66,10 @@ def default_cognitive_personas(max_width: int = 1) -> list[CognitiveVariantSpec]
     ]
 
 
-class LinearReflectionController:
+class GEAReflectionController:
     """
-    Substituto simplificado para o GEAReflectionController.
-    Mantém a interface mas executa apenas uma passagem linear sem branching.
+    Group Evolution of Agents (GEA) reflection controller.
+    Uses Expected Free Energy (EFE) to select the best cognitive variant.
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -79,14 +80,43 @@ class LinearReflectionController:
         candidates: list[CognitiveCandidate],
         base_tokenizer: Any,
     ) -> ReflectionOutcome:
+        import numpy as np
+
         if not candidates:
             raise ValueError("Reflection requires at least one candidate")
-        
-        winner = candidates[0]
+        scoreboard = []
+        latent_dim = len(candidates[0].turn_result.right_state.latent_vector)
+        preferred_mu = np.zeros(latent_dim)
+        preferred_logvar = np.ones(latent_dim) * -5.0
+        for candidate in candidates:
+            res = candidate.turn_result
+            right = res.right_state
+            mu = np.array(right.latent_mu) if right.latent_mu else np.array(right.latent_vector)
+            logvar = np.array(right.latent_logvar) if right.latent_logvar else np.ones_like(mu) * -2.0
+            ambiguity = 1.0 - right.confidence
+            risk = kl_divergence_gaussian(mu, logvar, preferred_mu, preferred_logvar)
+            efe = calculate_efe(mu, logvar, preferred_mu, preferred_logvar, ambiguity)
+            score = 1.0 / (1.0 + efe)
+            scoreboard.append(
+                ReflectionScore(
+                    variant_id=candidate.variant.variant_id,
+                    score=float(score),
+                    reasons=[
+                        f"EFE={efe:.4f}",
+                        f"risk={risk:.4f}",
+                        f"ambiguity={ambiguity:.4f}",
+                        f"confidence={right.confidence:.2f}",
+                    ],
+                )
+            )
+
+        scoreboard.sort(key=lambda x: x.score, reverse=True)
+        winner_id = scoreboard[0].variant_id
         return ReflectionOutcome(
-            selected_variant_id=winner.variant.variant_id,
-            selected_by="linear_no_branch",
-            notes=["GEA disabled for performance"],
+            selected_variant_id=winner_id,
+            scoreboard=scoreboard,
+            selected_by="efe_minimization_loop",
+            notes=[f"evaluated={len(candidates)}"],
         )
 
     async def aevaluate(
@@ -103,5 +133,4 @@ class LinearReflectionController:
         pass
 
 
-GEAReflectionController = LinearReflectionController
-CognitiveVariantSelector = LinearReflectionController
+CognitiveVariantSelector = GEAReflectionController
