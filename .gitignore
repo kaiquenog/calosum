@@ -48,6 +48,7 @@ yarn-error.log*
 *.log
 test_*.txt
 pip_*.txt
+*.txt
 
 # Cache do matplotlib (gerado durante testes)
 .matplotlib/
