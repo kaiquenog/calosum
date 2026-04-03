@@ -16,17 +16,16 @@ def init_turn_workspace(agent: "CalosumAgent", user_turn: "UserTurn") -> Cogniti
 
     self_model_ref = asdict(agent.self_model) if hasattr(agent, "self_model") and agent.self_model else None
     capability_snapshot = agent.capability_snapshot
-    previous_workspace = agent.last_workspace_by_session.get(user_turn.session_id)
-    previous_runtime_feedback = previous_workspace.runtime_feedback[-3:] if previous_workspace else []
-    previous_verifier_feedback = previous_workspace.verifier_feedback[-2:] if previous_workspace else []
-
+    
+    # Em modo stateless, o orchestrator carrega o workspace anterior.
+    # Se chegamos aqui, é uma nova sessão ou um reset.
     return CognitiveWorkspace(
         task_frame={
             "session_id": user_turn.session_id,
             "turn_id": user_turn.turn_id,
             "user_text": user_turn.user_text,
-            "previous_runtime_feedback": previous_runtime_feedback,
-            "previous_verifier_feedback": previous_verifier_feedback,
+            "previous_runtime_feedback": [],
+            "previous_verifier_feedback": [],
         },
         self_model_ref=self_model_ref,
         capability_snapshot=capability_snapshot,

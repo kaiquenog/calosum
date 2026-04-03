@@ -271,6 +271,10 @@ class DualMemorySystem:
     semantic_store: SemanticMemoryStore = field(default_factory=InMemorySemanticStore)
     graph_store: SemanticGraphStore = field(default_factory=InMemorySemanticGraphStore)
     consolidator: SleepModeConsolidator = field(default_factory=SleepModeConsolidator)
+    
+    # Stateless Persistence
+    _workspaces: dict[str, CognitiveWorkspace] = field(default_factory=dict)
+    _diagnostics: dict[str, "SessionDiagnostic"] = field(default_factory=dict)
 
     def build_context(self, user_turn: UserTurn, episodic_limit: int = 5) -> MemoryContext:
         return MemoryContext(
@@ -305,3 +309,28 @@ class DualMemorySystem:
 
     async def asleep_mode(self) -> ConsolidationReport:
         return self.sleep_mode()
+
+    # Workspace & Awareness Persistence
+    def load_workspace(self, session_id: str) -> CognitiveWorkspace | None:
+        return self._workspaces.get(session_id)
+
+    async def aload_workspace(self, session_id: str) -> CognitiveWorkspace | None:
+        return self.load_workspace(session_id)
+
+    def save_workspace(self, session_id: str, workspace: CognitiveWorkspace) -> None:
+        self._workspaces[session_id] = workspace
+
+    async def asave_workspace(self, session_id: str, workspace: CognitiveWorkspace) -> None:
+        self.save_workspace(session_id, workspace)
+
+    def load_diagnostic(self, session_id: str) -> "SessionDiagnostic | None":
+        return self._diagnostics.get(session_id)
+
+    async def aload_diagnostic(self, session_id: str) -> "SessionDiagnostic | None":
+        return self.load_diagnostic(session_id)
+
+    def save_diagnostic(self, session_id: str, diagnostic: "SessionDiagnostic") -> None:
+        self._diagnostics[session_id] = diagnostic
+
+    async def asave_diagnostic(self, session_id: str, diagnostic: "SessionDiagnostic") -> None:
+        self.save_diagnostic(session_id, diagnostic)

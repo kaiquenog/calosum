@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-import hashlib
 import math
 from dataclasses import dataclass, field
 from typing import Any
 
 from calosum.shared.models.jepa import ContextEmbedding, ResponsePrediction, SurpriseScore
 from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
+from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 
 
 @dataclass(slots=True)
 class HeuristicJEPAConfig:
     embedding_dim: int = 384
-    prediction_method: str = "jepa_heuristic"
+    prediction_method: str = "jepa_literal_embedding"
     uncertainty_ignore_threshold: float = 0.7
+    embedding_backend: str = "lexical"  # OpenAI, HuggingFace or lexical
     salience_keywords: dict[str, float] = field(
         default_factory=lambda: {
             "urgente": 1.0,
@@ -35,13 +36,19 @@ class HeuristicJEPAAdapter:
     """
     JEPA textual fase 1: predicao de embedding de resposta por media ponderada.
 
-    - Encode de texto deterministico (384 dims) sem dependencias opcionais.
+    - Abandona o hash artesanal em favor de Literal Embeddings (via TextEmbeddingAdapter).
     - Predicao por media ponderada por recencia.
     - Surprise por erro preditivo real: distancia entre embedding previsto e observado.
     """
 
     def __init__(self, config: HeuristicJEPAConfig | None = None) -> None:
         self.config = config or HeuristicJEPAConfig()
+        self.embedder = TextEmbeddingAdapter(
+            TextEmbeddingAdapterConfig(
+                provider=self.config.embedding_backend,
+                vector_size=self.config.embedding_dim,
+            )
+        )
 
     def perceive(
         self,
@@ -52,6 +59,8 @@ class HeuristicJEPAAdapter:
         context_turns = self._history_turns(memory_context)
         if not context_turns:
             context_turns = [user_turn]
+        
+        # O encode de contexto agora é literal
         context = self._encode_context(context_turns)
         prediction = self._predict_response_embedding(context)
         surprise = self._compute_surprise(context, user_turn.user_text)
@@ -66,9 +75,9 @@ class HeuristicJEPAAdapter:
 
         telemetry = {
             "model_name": "heuristic-jepa-phase1",
-            "right_backend": "heuristic_jepa_phase1",
+            "right_backend": f"heuristic_jepa_literal_{self.embedder.backend_name()}",
             "right_model_name": "heuristic-jepa-phase1",
-            "right_mode": "heuristic",
+            "right_mode": "literal_embedding",
             "degraded_reason": None,
             "prediction_method": prediction.prediction_method,
             "jepa_uncertainty": prediction.uncertainty,
@@ -100,7 +109,7 @@ class HeuristicJEPAAdapter:
         if workspace is not None:
             workspace.right_notes.update(
                 {
-                    "backend": "heuristic_jepa_phase1",
+                    "backend": "heuristic_jepa_literal_embedding",
                     "surprise_score": state.surprise_score,
                     "surprise_band": surprise_band,
                     "prediction_method": prediction.prediction_method,
@@ -142,9 +151,12 @@ class HeuristicJEPAAdapter:
             overlap = 0.0
             if candidate_terms and context_terms:
                 overlap = len(candidate_terms.intersection(context_terms)) / len(candidate_terms)
+            
+            # Encode via embedder
+            candidate_vector = self.embedder.embed_texts([candidate])[0]
             cosine = self._cosine_similarity(
                 prediction.predicted_embedding,
-                self._encode_text(candidate),
+                candidate_vector,
             )
             cosine01 = (cosine + 1.0) / 2.0
             negation_penalty = 0.0
@@ -155,9 +167,11 @@ class HeuristicJEPAAdapter:
         return sorted(scored, key=lambda item: item[1], reverse=True)
 
     def _encode_context(self, turns: list[UserTurn]) -> ContextEmbedding:
-        vectors = [self._encode_text(turn.user_text) for turn in turns]
+        # Encode via embedder
+        vectors = self.embedder.embed_texts([t.user_text for t in turns])
         if not vectors:
-            vectors = [self._encode_text("")]
+            vectors = [self.embedder.embed_texts([""])[0]]
+            
         weights = self._softmax([float(index + 1) for index in range(len(vectors))])
         merged = [0.0] * self.config.embedding_dim
         for vector, weight in zip(vectors, weights, strict=False):
@@ -182,12 +196,12 @@ class HeuristicJEPAAdapter:
         return ResponsePrediction(
             predicted_embedding=self._l2_normalize(predicted),
             uncertainty=uncertainty,
-            prediction_method="jepa_heuristic",
+            prediction_method="jepa_literal_embedding",
         )
 
     def _compute_surprise(self, ctx: ContextEmbedding, actual_response: str) -> SurpriseScore:
         prediction = self._predict_response_embedding(ctx)
-        actual = self._encode_text(actual_response)
+        actual = self.embedder.embed_texts([actual_response])[0]
         cosine = self._cosine_similarity(prediction.predicted_embedding, actual)
         base_error = max(0.0, min(1.0, (1.0 - cosine) / 2.0))
         context_terms = set(ctx.context_terms)
@@ -201,7 +215,7 @@ class HeuristicJEPAAdapter:
             score=prediction_error,
             prediction_error=prediction_error,
             uncertainty=prediction.uncertainty,
-            prediction_method="jepa_heuristic",
+            prediction_method="jepa_literal_embedding",
             source="jepa_prediction_error",
             ignored_due_to_uncertainty=ignore,
         )
@@ -214,23 +228,6 @@ class HeuristicJEPAAdapter:
             if episode.user_turn:
                 turns.append(episode.user_turn)
         return turns
-
-    def _encode_text(self, text: str) -> list[float]:
-        tokens = self._tokenize(text)
-        if not tokens:
-            tokens = ["_empty_"]
-        vector = [0.0] * self.config.embedding_dim
-        for token in tokens:
-            token_hash = int(hashlib.sha256(token.encode("utf-8")).hexdigest(), 16)
-            idx = token_hash % self.config.embedding_dim
-            vector[idx] += 1.0
-
-        for left, right in zip(tokens, tokens[1:], strict=False):
-            bi_hash = int(hashlib.sha256(f"{left}|{right}".encode("utf-8")).hexdigest(), 16)
-            idx = bi_hash % self.config.embedding_dim
-            vector[idx] += 0.7
-
-        return self._l2_normalize(vector)
 
     def _tokenize(self, text: str) -> list[str]:
         return [

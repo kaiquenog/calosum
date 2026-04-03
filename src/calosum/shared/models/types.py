@@ -291,11 +291,12 @@ class CritiqueVerdict:
 @dataclass(slots=True)
 class TypedLambdaProgram:
     """
-    Representacao simbolica de uma solucao no estilo lambda-recursive.
+    Representacao estruturada de uma solucao (plano de execucao).
+    Substituiu a DSL simbólica LISP por Structured Outputs (JSON/Pydantic).
     """
 
     signature: str
-    expression: str
+    expression: str  # Agora contem JSON serializado do plano de acoes
     expected_effect: str
 
 

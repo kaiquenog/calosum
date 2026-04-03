@@ -19,8 +19,9 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
 2. **`domain/`** (subfolders: `agent/`, `cognition/`, `execution/`, `infrastructure/`, `memory/`, `metacognition/`)
    Modelos de negócios do agente neuro-simbólico. Pura lógica sem detalhes I/O diretos.
    - **`agent/`**: `orchestrator.py` (coordenação do loop cognitivo), `evolution.py` (evolução via GEA), `idle_foraging.py` (busca epistêmica passiva), `multiagent.py` (comunicação entre agentes), `agent_config.py`, `directive_guardrails.py`.
-   - **`cognition/`**: `left_hemisphere.py` (lógica simbólica/RLM), `right_hemisphere.py` (percepção neural), `bridge.py` (fusão de hemisférios), `differentiable_logic.py` (lógica fuzzy/LTN).
-   - **`execution/`**: `agent_execution.py` (retry/repair), `runtime.py` (instância de ferramentas), `workspace.py` (contexto operacional), `execution_utils.py`, `runtime_dsl.py`, `group_turn.py`.
+   - **`cognition/`**: `left_hemisphere.py` (lógica estruturada/RLM), `right_hemisphere.py` (percepção neural), `bridge.py` (fusão de hemisférios), `differentiable_logic.py` (lógica fuzzy/LTN).
+
+   - **`execution/`**: `agent_execution.py` (retry/repair), `runtime.py` (instância de ferramentas), `workspace.py` (contexto operacional), `execution_utils.py`, `group_turn.py`.
    - **`infrastructure/`**: `event_bus.py`, `telemetry.py`, `verifier.py`, `interceptors.py` (hooks observacionais).
    - **`memory/`**: `memory.py` (lógica de memória episódica), `persistent_memory.py`.
    - **`metacognition/`**: `metacognition.py` (reflexão central), `self_model.py` (auto-representação), `awareness.py`, `introspection.py` (diagnóstico interno), `introspection_capabilities.py` (snapshot de capacidades).

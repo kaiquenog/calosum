@@ -53,13 +53,22 @@ def build_parser() -> argparse.ArgumentParser:
     run_scenario.add_argument("--memory-dir")
     run_scenario.add_argument("--otlp-jsonl")
 
-    sleep_cmd = subparsers.add_parser("sleep", help="Run sleep mode consolidation and DSPy Night Trainer")
+    sleep_cmd = subparsers.add_parser("sleep", help="Run memory consolidation (Sleep Mode)")
     sleep_cmd.add_argument(
         "--infra-profile",
         choices=[profile.value for profile in InfrastructureProfile],
     )
     sleep_cmd.add_argument("--memory-dir")
     sleep_cmd.add_argument("--otlp-jsonl")
+
+    optimize_cmd = subparsers.add_parser("optimize-prompts", help="Run DSPy Night Trainer to optimize LLM prompts")
+    optimize_cmd.add_argument(
+        "--infra-profile",
+        choices=[profile.value for profile in InfrastructureProfile],
+    )
+    optimize_cmd.add_argument("--memory-dir")
+    optimize_cmd.add_argument("--otlp-jsonl")
+    optimize_cmd.add_argument("--backend", default="dspy", help="Optimization backend (dspy, lora, etc)")
 
     idle_cmd = subparsers.add_parser("idle", help="Run endogenous goal generation (Background Foraging)")
     idle_cmd.add_argument(
@@ -98,7 +107,10 @@ def main(argv: list[str] | None = None) -> int:
         return _handle_chat(agent, args)
 
     if args.command == "sleep":
-        return _handle_sleep(agent, args, builder)
+        return _handle_sleep(agent, args)
+
+    if args.command == "optimize-prompts":
+        return _handle_optimize(agent, args, builder)
 
     if args.command == "idle":
         return _handle_idle(agent, args)
@@ -130,18 +142,28 @@ def _handle_idle(agent, args: argparse.Namespace) -> int:
     print("Foraging cycle completed and memory updated.")
     return 0
 
-def _handle_sleep(agent, args: argparse.Namespace, builder: CalosumAgentBuilder) -> int:
+def _handle_sleep(agent, args: argparse.Namespace) -> int:
     import sys
     print("Running memory consolidation (Sleep Mode)...")
     report = agent.sleep_mode()
     print(f"Consolidated {report.episodes_considered} episodes.")
     print(f"Promoted {len(report.promoted_rules)} semantic rules.")
+    print(f"Graph updates: {len(report.graph_updates)}")
+    return 0
+
+def _handle_optimize(agent, args: argparse.Namespace, builder: CalosumAgentBuilder) -> int:
+    import sys
+    import os
+    print(f"Starting Night Trainer (Backend: {args.backend})...")
     
-    print("\nStarting Night Trainer (DSPy optimization)...")
+    # Sobrescreve o backend se necessário
+    if args.backend:
+        os.environ["CALOSUM_NIGHT_TRAINER_BACKEND"] = args.backend
+
     trainer = builder.build_night_trainer()
     result = trainer.run_training_cycle()
     
-    print(f"Night Trainer Result: {json.dumps(result, indent=2)}")
+    print(f"Optimization Result: {json.dumps(result, indent=2)}")
     
     return 0 if result.get("status") in ("success", "skipped") else 1
 

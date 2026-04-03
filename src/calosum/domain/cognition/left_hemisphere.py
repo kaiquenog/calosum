@@ -162,18 +162,19 @@ class LeftHemisphereLogicalSLM:
         return result
 
     def _build_lambda_expression(self, actions: list[PrimitiveAction]) -> str:
+        """
+        Gera o plano de execucao estruturado (JSON) em vez de DSL LISP.
+        O plano descreve a sequencia de acoes a serem executadas.
+        """
+        import json
         if not actions:
-            return "(lambda context memory (sequence))"
+            return json.dumps({"plan": []})
 
-        emitted_actions = " ".join(f"(emit {action.action_type})" for action in actions)
-        return (
-            "(lambda context memory "
-            "(sequence "
-            "(apply_soft_prompts context.bridge.soft_prompts) "
-            "(retrieve memory.semantic_rules) "
-            "(walk memory.knowledge_graph) "
-            f"{emitted_actions}))"
-        )
+        # Em um cenário de Function Calling real, o LLM geraria este JSON.
+        # Aqui, como estamos no domínio do orquestrador simulando o SLM,
+        # mantemos a ordem das ações criadas.
+        plan = [action.action_type for action in actions]
+        return json.dumps({"plan": plan, "version": "2.0-structured"})
 
     async def areason(
         self,

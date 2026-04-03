@@ -31,8 +31,11 @@ class IntrospectionTool:
         try:
             agent, builder = self.agent_accessor()
             info = builder.describe(agent)
-            workspace = agent.workspace_for_session(session_id)
-            awareness = agent.latest_awareness_for_session(session_id)
+            
+            # Workspace and awareness are now async in the stateless orchestrator
+            from calosum.shared.utils.async_utils import maybe_await
+            workspace = await maybe_await(agent.aload_workspace_for_session(session_id))
+            awareness = await maybe_await(agent.alatest_awareness_for_session(session_id))
             
             resolved_session_id = (
                 session_id
@@ -40,7 +43,7 @@ class IntrospectionTool:
                 or "introspect-session"
             )
             if awareness is None:
-                awareness = agent.analyze_session(resolved_session_id, persist=False)
+                awareness = await maybe_await(agent.aanalyze_session(resolved_session_id, persist=False))
 
             components = [f"{c.component_id}={c.health}" for c in agent.self_model.components]
             tools = [f"{t.name}" for t in agent.self_model.capabilities.tools]

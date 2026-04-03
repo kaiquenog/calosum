@@ -1,8 +1,6 @@
-from __future__ import annotations
-
+import json
 from dataclasses import dataclass, field
 
-from calosum.domain.execution.runtime_dsl import LambdaExecutionPlanner
 from calosum.shared.models.types import ActionExecutionResult, LeftHemisphereResult, PrimitiveAction
 
 
@@ -23,50 +21,85 @@ class StrictLambdaRuntimeConfig:
 
 class StrictLambdaRuntime:
     """
-    Runtime funcional estrito para a fronteira operacional do hemisferio esquerdo.
+    Runtime seguro que executa planos via Structured Outputs (JSON).
 
-    O interpretador concreto da DSL vive em `runtime_dsl.py`; este modulo fica
-    responsavel por validacao operacional e execucao das acoes tipificadas.
+    Abandona a DSL LISP artesanal em favor de validacao JSON nativa
+    e sequenciamento direto de acoes tipificadas.
     """
 
     def __init__(self, config: StrictLambdaRuntimeConfig | None = None) -> None:
         self.config = config or StrictLambdaRuntimeConfig()
-        self.planner = LambdaExecutionPlanner()
 
     def run(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]:
         try:
-            plan = self.planner.build_execution_plan(
-                left_result.lambda_program.expression,
-                left_result.actions,
-            )
-            alignment_violations = self.planner.validate_program_alignment(
-                plan,
-                left_result.actions,
-            )
-            if alignment_violations:
-                validation_violations = [
-                    violation
-                    for action in left_result.actions
-                    for violation in self._validate_action(action)
-                ]
+            # Novo parsing pragmático: JSON em vez de AST
+            expression = left_result.lambda_program.expression
+            plan_data = json.loads(expression)
+            
+            # Suporte a fallback para string simples ou lista direta, mas prefere {"plan": [...]}
+            if isinstance(plan_data, dict):
+                plan = plan_data.get("plan", [])
+            elif isinstance(plan_data, list):
+                plan = plan_data
+            else:
+                plan = [str(plan_data)]
+
+            # Validação pragmática de alinhamento
+            declared_actions = {a.action_type for a in left_result.actions}
+            plan_actions = [p for p in plan if isinstance(p, str)]
+            
+            # Filtra apenas ações que foram declaradas (alignment check simplificado)
+            planned_actions = []
+            buckets: dict[str, list[PrimitiveAction]] = {}
+            for action in left_result.actions:
+                buckets.setdefault(action.action_type, []).append(action)
+
+            for action_type in plan_actions:
+                if action_type in buckets and buckets[action_type]:
+                    planned_actions.append(buckets[action_type].pop(0))
+                else:
+                    # Se o plano pede algo não declarado, geramos erro de alinhamento
+                    return [
+                        ActionExecutionResult(
+                            action_type="structured_execution",
+                            typed_signature="validate_plan",
+                            status="rejected",
+                            output={"reason": f"action_not_declared: {action_type}"},
+                            violations=[f"plan references undeclared action: {action_type}"],
+                        )
+                    ]
+
+            # Se restarem ações declaradas não utilizadas, também é uma falha de alinhamento
+            unused_actions = [t for t, b in buckets.items() if b]
+            if unused_actions:
                 return [
                     ActionExecutionResult(
-                        action_type="lambda_evaluation",
-                        typed_signature="validate_program_alignment",
+                        action_type="structured_execution",
+                        typed_signature="validate_plan",
                         status="rejected",
-                        output={"reason": "lambda_action_mismatch"},
-                        violations=alignment_violations + validation_violations,
+                        output={"reason": "unused_declared_actions", "types": unused_actions},
+                        violations=[f"plan does not reference declared actions: {unused_actions}"],
                     )
                 ]
-            planned_actions = self.planner.actions_in_plan(plan, left_result.actions)
+
+        except (json.JSONDecodeError, TypeError) as exc:
+            return [
+                ActionExecutionResult(
+                    action_type="structured_execution",
+                    typed_signature="parse_json_plan",
+                    status="rejected",
+                    output={"error": str(exc)},
+                    violations=[f"structured plan is not valid JSON: {exc}"],
+                )
+            ]
         except Exception as exc:
             return [
                 ActionExecutionResult(
-                    action_type="lambda_evaluation",
-                    typed_signature="evaluate_lambda",
+                    action_type="structured_execution",
+                    typed_signature="evaluate_plan",
                     status="rejected",
                     output={"error": str(exc)},
-                    violations=[f"lambda runtime failed: {exc}"],
+                    violations=[f"structured runtime failed: {exc}"],
                 )
             ]
 
