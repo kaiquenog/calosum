@@ -6,20 +6,20 @@ from typing import Any
 
 from calosum.shared.utils.async_utils import maybe_await
 from calosum.shared.models.ports import (
-    ActionRuntimePort,
+    ToolRuntimePort,
     CognitiveTokenizerPort,
-    LeftHemispherePort,
+    ActionPlannerPort,
     VerifierPort,
 )
 from calosum.shared.models.types import (
     ActionExecutionResult,
     AgentTurnResult,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     CognitiveTelemetrySnapshot,
     CritiqueVerdict,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     MemoryContext,
-    RightHemisphereState,
+    InputPerceptionState,
     UserTurn,
     CognitiveWorkspace,
 )
@@ -29,7 +29,7 @@ from calosum.domain.execution.execution_utils import build_execution_telemetry, 
 class AgentExecutionEngine:
     def __init__(
         self,
-        action_runtime: ActionRuntimePort,
+        action_runtime: ToolRuntimePort,
         max_runtime_retries: int,
         verifier: VerifierPort | None = None,
     ) -> None:
@@ -42,9 +42,9 @@ class AgentExecutionEngine:
         *,
         user_turn: UserTurn,
         memory_context: MemoryContext,
-        right_state: RightHemisphereState,
+        right_state: InputPerceptionState,
         tokenizer: CognitiveTokenizerPort,
-        left_hemisphere: LeftHemispherePort,
+        left_hemisphere: ActionPlannerPort,
         variant_label: str | None = None,
         bridge_directives: list[str] | None = None,
         capabilities: dict[str, Any] | None = None,
@@ -120,11 +120,11 @@ class AgentExecutionEngine:
 
     def _apply_variant_bridge_overrides(
         self,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         *,
         variant_label: str | None,
         bridge_directives: list[str] | None,
-    ) -> CognitiveBridgePacket:
+    ) -> PerceptionSummary:
         merged_directives = list(dict.fromkeys((bridge_directives or []) + bridge_packet.control.system_directives))
         updated_control = replace(
             bridge_packet.control,
@@ -147,12 +147,12 @@ class AgentExecutionEngine:
         self,
         *,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        left_hemisphere: LeftHemispherePort,
-        left_result: LeftHemisphereResult,
+        left_hemisphere: ActionPlannerPort,
+        left_result: ActionPlannerResult,
         workspace: CognitiveWorkspace | None = None,
-    ) -> tuple[LeftHemisphereResult, list[ActionExecutionResult], int, int, CritiqueVerdict | None]:
+    ) -> tuple[ActionPlannerResult, list[ActionExecutionResult], int, int, CritiqueVerdict | None]:
         retry_count = 0
         foraging_steps = 0
         critique_revision_count = 0
@@ -239,17 +239,17 @@ class AgentExecutionEngine:
     async def _repair_left_result(
         self,
         *,
-        left_hemisphere: LeftHemispherePort,
+        left_hemisphere: ActionPlannerPort,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_verdict: CritiqueVerdict | None = None,
         workspace: CognitiveWorkspace | None = None,
         cumulative_feedback: list[str] | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         feedback = cumulative_feedback if cumulative_feedback is not None else self._format_runtime_feedback(rejected_results, [], critique_verdict)
         
         if hasattr(left_hemisphere, "arepair") or hasattr(left_hemisphere, "repair"):

@@ -3,13 +3,13 @@ from __future__ import annotations
 import unittest
 import json
 
-from calosum import LeftHemisphereResult, PrimitiveAction, StrictLambdaRuntime, TypedLambdaProgram
+from calosum import ActionPlannerResult, PrimitiveAction, ToolRuntime, TypedLambdaProgram
 
 
 class StructuredRuntimeTests(unittest.TestCase):
     def test_runtime_executes_json_plan(self) -> None:
-        runtime = StrictLambdaRuntime()
-        result = LeftHemisphereResult(
+        runtime = ToolRuntime()
+        result = ActionPlannerResult(
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> Decision",
@@ -34,8 +34,8 @@ class StructuredRuntimeTests(unittest.TestCase):
         self.assertEqual(execution[0].status, "executed")
 
     def test_runtime_rejects_malformed_json(self) -> None:
-        runtime = StrictLambdaRuntime()
-        result = LeftHemisphereResult(
+        runtime = ToolRuntime()
+        result = ActionPlannerResult(
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> Decision",
@@ -61,8 +61,8 @@ class StructuredRuntimeTests(unittest.TestCase):
         self.assertTrue(any("not valid JSON" in item for item in execution[0].violations))
 
     def test_runtime_rejects_plan_with_undeclared_action(self) -> None:
-        runtime = StrictLambdaRuntime()
-        result = LeftHemisphereResult(
+        runtime = ToolRuntime()
+        result = ActionPlannerResult(
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> Decision",
@@ -87,8 +87,8 @@ class StructuredRuntimeTests(unittest.TestCase):
         self.assertIn("action_not_declared", execution[0].output.get("reason", ""))
 
     def test_runtime_rejects_unused_declared_actions(self) -> None:
-        runtime = StrictLambdaRuntime()
-        result = LeftHemisphereResult(
+        runtime = ToolRuntime()
+        result = ActionPlannerResult(
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> Decision",

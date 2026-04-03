@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-from calosum.shared.models.types import MemoryContext, Modality, RightHemisphereState, UserTurn, CognitiveWorkspace
+from calosum.shared.models.types import MemoryContext, Modality, InputPerceptionState, UserTurn, CognitiveWorkspace
 
 if TYPE_CHECKING:
     from calosum.shared.models.ports import VectorCodecPort
@@ -98,7 +98,7 @@ class HuggingFaceRightHemisphereAdapter:
             self.status = "degraded"
             raise RuntimeError(f"failed to load model: {e}") from e
 
-    def perceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
+    def perceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> InputPerceptionState:
         text = user_turn.user_text
         if not text.strip():
             text = "silence"
@@ -140,7 +140,7 @@ class HuggingFaceRightHemisphereAdapter:
         confidence = self._estimate_confidence(user_turn, emotional_labels, emotion_meta)
         modalities_seen = [signal.modality.value for signal in user_turn.signals] if user_turn.signals else ["text"]
 
-        state = RightHemisphereState(
+        state = InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=latent_vector,
             salience=salience,
@@ -178,7 +178,7 @@ class HuggingFaceRightHemisphereAdapter:
             
         return state
 
-    async def aperceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
+    async def aperceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> InputPerceptionState:
         # A inferência real usando sentence-transformers bloqueia a CPU, 
         # em um cenário produtivo intenso isso deveria rodar em um ThreadPoolExecutor.
         # Por hora, mantemos simples para a Sprint 1.

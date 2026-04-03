@@ -95,10 +95,10 @@ def build_self_model(agent: "CalosumAgent") -> CognitiveArchitectureMap:
     connections = [
         ComponentConnection("user_input", "right_hemisphere", "UserTurn"),
         ComponentConnection("user_input", "memory_system", "UserTurn -> MemoryContext"),
-        ComponentConnection("right_hemisphere", "tokenizer", "RightHemisphereState"),
-        ComponentConnection("tokenizer", "left_hemisphere", "CognitiveBridgePacket"),
+        ComponentConnection("right_hemisphere", "tokenizer", "InputPerceptionState"),
+        ComponentConnection("tokenizer", "left_hemisphere", "PerceptionSummary"),
         ComponentConnection("memory_system", "left_hemisphere", "MemoryContext"),
-        ComponentConnection("left_hemisphere", "action_runtime", "LeftHemisphereResult"),
+        ComponentConnection("left_hemisphere", "action_runtime", "ActionPlannerResult"),
         ComponentConnection("action_runtime", "verifier", "ActionExecutionResult"),
         ComponentConnection("verifier", "left_hemisphere", "CritiqueVerdict"),
         ComponentConnection("left_hemisphere", "reflection_controller", "GroupTurnResult -> Reflection"),

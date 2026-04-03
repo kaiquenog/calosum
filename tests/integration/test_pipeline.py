@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from calosum import CalosumAgent, LeftHemisphereResult, Modality, MultimodalSignal, PrimitiveAction, TypedLambdaProgram, UserTurn
+from calosum import CalosumAgent, ActionPlannerResult, Modality, MultimodalSignal, PrimitiveAction, TypedLambdaProgram, UserTurn
 
 class MockLeftHemisphere:
     def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text="Mocked plan",
             lambda_program=TypedLambdaProgram("Context -> Plan", "lambda _: propose_plan()", "plan"),
             actions=[

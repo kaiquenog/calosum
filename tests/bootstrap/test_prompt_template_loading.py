@@ -8,7 +8,7 @@ from pathlib import Path
 from calosum.adapters.llm.llm_payloads import build_left_hemisphere_prompt, load_left_prompt_template
 from calosum.shared.models.types import (
     BridgeControlSignal,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     MemoryContext,
     UserTurn,
 )
@@ -39,7 +39,7 @@ class PromptTemplateLoadingTests(unittest.TestCase):
             try:
                 prompt = build_left_hemisphere_prompt(
                     UserTurn(session_id="s", user_text="teste"),
-                    CognitiveBridgePacket(
+                    PerceptionSummary(
                         context_id="ctx",
                         soft_prompts=[],
                         control=BridgeControlSignal(

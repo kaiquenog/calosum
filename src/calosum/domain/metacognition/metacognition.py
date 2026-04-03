@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from calosum.domain.cognition.bridge import ContextCompressor
-from calosum.shared.models.types import AgentTurnResult, RightHemisphereState, UserTurn
+from calosum.shared.models.types import AgentTurnResult, InputPerceptionState, UserTurn
 
 
 @dataclass(slots=True)
@@ -69,7 +69,7 @@ class ReflectionOutcome:
 @dataclass(slots=True)
 class GroupTurnResult:
     user_turn: UserTurn
-    right_state: RightHemisphereState
+    right_state: InputPerceptionState
     candidates: list[CognitiveCandidate]
     selected_result: AgentTurnResult
     reflection: ReflectionOutcome

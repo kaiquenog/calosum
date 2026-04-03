@@ -88,12 +88,13 @@ exec(compile(source, "<code_execution>", "exec"), namespace, namespace)
 
 @dataclass(slots=True)
 class CodeExecutionTool:
-    default_timeout_seconds: float = 2.0
+    default_timeout_seconds: float = 10.0
     max_output_chars: int = 4000
+    sandbox: DockerToolSandbox = field(default_factory=DockerToolSandbox)
     schema: ToolSchema = field(
         default_factory=lambda: ToolSchema(
             name="code_execution",
-            description="Execute constrained Python code in a temporary isolated subprocess",
+            description="Execute Python code in a sandboxed Docker container",
             parameters={"code": "string"},
             required_permissions=["process_exec"],
             needs_approval=True,
@@ -105,6 +106,7 @@ class CodeExecutionTool:
         if not code.strip():
             return "Code execution rejected: empty code payload."
 
+        # Even in Docker, we might want to validate some basic policies
         policy_violations = _validate_code_policy(code)
         if policy_violations:
             return "Code execution rejected: " + "; ".join(policy_violations)
@@ -113,12 +115,27 @@ class CodeExecutionTool:
             payload.get("timeout_seconds"),
             default=self.default_timeout_seconds,
         )
-        return await _run_in_subprocess(
-            code,
-            timeout_seconds=timeout_seconds,
-            max_output_chars=self.max_output_chars,
-            session_id=session_id,
+        
+        # Prepare the command to run in Docker
+        # We escape the code to be passed as a string to python -c
+        escaped_code = code.replace("'", "'\\''")
+        command = f"python3 -c '{escaped_code}'"
+        
+        response = await self.sandbox.execute_command(
+            command, 
+            session_id=session_id or "global",
+            timeout=timeout_seconds
         )
+        
+        output = response.get("stdout") or response.get("stderr") or "(no output)"
+        payload_text = _truncate_text(output, self.max_output_chars)
+
+        if response.get("status") == "success":
+            return payload_text
+
+        return f"Code exited with status {response.get('exit_code')}. stderr={response.get('stderr')}"
+
+from calosum.adapters.execution.docker_sandbox import DockerToolSandbox
 
 
 def _validate_code_policy(source: str) -> list[str]:

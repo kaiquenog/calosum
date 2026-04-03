@@ -11,11 +11,11 @@ from calosum import (
     CognitiveTokenizerConfig,
     CognitiveVariantSpec,
     GEAReflectionController,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     PrimitiveAction,
     ReflectionOutcome,
     ReflectionScore,
-    RightHemisphereState,
+    InputPerceptionState,
     TypedLambdaProgram,
     UserTurn,
 )
@@ -105,7 +105,7 @@ class ReflectionTests(unittest.TestCase):
     def test_process_turn_uses_default_personas_when_surprise_triggers_branching(self) -> None:
         class HighSurpriseRightHemisphere:
             def perceive(self, user_turn, memory_context=None):
-                return RightHemisphereState(
+                return InputPerceptionState(
                     context_id=user_turn.turn_id,
                     latent_vector=[0.1] * 16,
                     salience=0.88,
@@ -122,7 +122,7 @@ class ReflectionTests(unittest.TestCase):
         class DirectiveEchoLeftHemisphere:
             def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
                 variant = bridge_packet.bridge_metadata.get("variant_label", "none")
-                return LeftHemisphereResult(
+                return ActionPlannerResult(
                     response_text=f"variant={variant}",
                     lambda_program=TypedLambdaProgram(
                         "Context -> Response",
@@ -182,7 +182,7 @@ class ReflectionTests(unittest.TestCase):
     def test_process_turn_ignores_surprise_when_uncertainty_is_high(self) -> None:
         class HighUncertaintyRightHemisphere:
             def perceive(self, user_turn, memory_context=None, workspace=None):
-                return RightHemisphereState(
+                return InputPerceptionState(
                     context_id=user_turn.turn_id,
                     latent_vector=[0.1] * 16,
                     salience=0.5,
@@ -212,7 +212,7 @@ class ReflectionTests(unittest.TestCase):
     def test_group_turn_executes_variants_in_parallel(self) -> None:
         class StaticRightHemisphere:
             def perceive(self, user_turn, memory_context=None, workspace=None):
-                return RightHemisphereState(
+                return InputPerceptionState(
                     context_id=user_turn.turn_id,
                     latent_vector=[0.05] * 16,
                     salience=0.7,
@@ -229,7 +229,7 @@ class ReflectionTests(unittest.TestCase):
         class SlowLeftHemisphere:
             async def areason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
                 await asyncio.sleep(0.12)
-                return LeftHemisphereResult(
+                return ActionPlannerResult(
                     response_text="ok",
                     lambda_program=TypedLambdaProgram(
                         "Context -> Response",
@@ -249,7 +249,7 @@ class ReflectionTests(unittest.TestCase):
                 )
 
             def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
-                return LeftHemisphereResult(
+                return ActionPlannerResult(
                     response_text="ok",
                     lambda_program=TypedLambdaProgram(
                         "Context -> Response",

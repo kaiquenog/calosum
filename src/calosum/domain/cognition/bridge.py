@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from calosum.shared.models.types import BridgeControlSignal, CognitiveBridgePacket, RightHemisphereState, SoftPromptToken, CognitiveWorkspace
+from calosum.shared.models.types import BridgeControlSignal, PerceptionSummary, InputPerceptionState, SoftPromptToken, CognitiveWorkspace
 from calosum.shared.models.ports import BridgeFusionPort, BridgeStateStorePort
 
 
@@ -114,7 +114,7 @@ class ContextCompressor:
         if self.store:
             self.store.record_reflection_event(payload)
 
-    def translate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket:
+    def translate(self, right_state: InputPerceptionState, workspace: CognitiveWorkspace | None = None) -> PerceptionSummary:
         state = self._apply_fusion(right_state)
         if self.use_neural and len(state.latent_vector) == self.latent_dim:
             packet = self._neural_translate(state)
@@ -131,7 +131,7 @@ class ContextCompressor:
             
         return packet
 
-    def _apply_fusion(self, right_state: RightHemisphereState) -> RightHemisphereState:
+    def _apply_fusion(self, right_state: InputPerceptionState) -> InputPerceptionState:
         if self.fusion is None:
             return right_state
         try:
@@ -144,7 +144,7 @@ class ContextCompressor:
             )
             telemetry = dict(right_state.telemetry)
             telemetry.update(meta)
-            return RightHemisphereState(
+            return InputPerceptionState(
                 context_id=right_state.context_id,
                 latent_vector=fused_latent,
                 salience=right_state.salience,
@@ -157,7 +157,7 @@ class ContextCompressor:
         except Exception:
             return right_state
 
-    def _neural_translate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket:
+    def _neural_translate(self, right_state: InputPerceptionState) -> PerceptionSummary:
         import torch
         
         with torch.no_grad():
@@ -182,7 +182,7 @@ class ContextCompressor:
             
         return self._build_packet(right_state, tokens, neural_salience)
 
-    def _heuristic_translate(self, right_state: RightHemisphereState) -> CognitiveBridgePacket:
+    def _heuristic_translate(self, right_state: InputPerceptionState) -> PerceptionSummary:
         tokens: list[SoftPromptToken] = []
         for label in right_state.emotional_labels[: self.config.bottleneck_tokens]:
             tokens.append(
@@ -204,7 +204,7 @@ class ContextCompressor:
             )
         return self._build_packet(right_state, tokens, right_state.salience)
 
-    def _build_packet(self, right_state: RightHemisphereState, tokens: list[SoftPromptToken], salience: float) -> CognitiveBridgePacket:
+    def _build_packet(self, right_state: InputPerceptionState, tokens: list[SoftPromptToken], salience: float) -> PerceptionSummary:
         calibrated_salience = round(
             min(1.0, max(0.0, salience * self.config.salience_gain + self.config.salience_bias)),
             3,
@@ -258,7 +258,7 @@ class ContextCompressor:
             },
         )
 
-        return CognitiveBridgePacket(
+        return PerceptionSummary(
             context_id=right_state.context_id,
             latent_vector=right_state.latent_vector,
             soft_prompts=tokens,
@@ -271,7 +271,7 @@ class ContextCompressor:
             },
         )
 
-    async def atranslate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket:
+    async def atranslate(self, right_state: InputPerceptionState, workspace: CognitiveWorkspace | None = None) -> PerceptionSummary:
         return self.translate(right_state, workspace)
 
     def train_step(self, latent_vector: list[float], target_salience: float, learning_rate: float = 0.01) -> dict[str, Any]:

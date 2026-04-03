@@ -4,19 +4,19 @@ import json
 import unittest
 from unittest.mock import patch
 
-from calosum.adapters.execution.action_runtime import ConcreteActionRuntime
+from calosum.adapters.execution.tool_runtime import ConcreteActionRuntime
 from calosum.adapters.tools.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
 from calosum.domain.infrastructure.interceptors import AuditLogInterceptor, InterceptorManager
 from calosum.shared.models.types import (
     CognitiveWorkspace,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     PrimitiveAction,
     TypedLambdaProgram,
 )
 
 
-def _left_result(actions: list[PrimitiveAction]) -> LeftHemisphereResult:
-    return LeftHemisphereResult(
+def _left_result(actions: list[PrimitiveAction]) -> ActionPlannerResult:
+    return ActionPlannerResult(
         response_text="",
         lambda_program=TypedLambdaProgram("", "", ""),
         actions=actions,

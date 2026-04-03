@@ -80,11 +80,11 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.cognition.bridge": {"shared.models.types", "shared.models.ports"},
     "domain.infrastructure.event_bus": set(),
     "domain.cognition.differentiable_logic": {"shared.models.types"},
-    "domain.cognition.right_hemisphere": {"shared.models.types"},
-    "domain.cognition.left_hemisphere": {"shared.models.types", "domain.cognition.differentiable_logic"},
-    "domain.execution.runtime": {"shared.models.types"},
+    "domain.cognition.input_perception": {"shared.models.types"},
+    "domain.cognition.action_planner": {"shared.models.types", "domain.cognition.differentiable_logic"},
+    "domain.execution.tool_runtime": {"shared.models.types"},
     "domain.memory.memory": {"shared.models.types", "shared.models.ports"},
-    "domain.memory.persistent_memory": {"domain.memory.memory", "shared.utils.serialization", "shared.models.types"},
+    "adapters.memory.persistent_sql_memory": {"domain.memory.memory", "shared.utils.serialization", "shared.models.types", "adapters.memory.sql_memory"},
     "domain.infrastructure.telemetry": {"shared.models.types", "shared.utils.serialization"},
 
     "domain.execution.workspace": {"domain.agent.orchestrator", "shared.models.types"},
@@ -117,12 +117,12 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.execution.group_turn",
         "domain.agent.idle_foraging",
         "domain.metacognition.introspection",
-        "domain.cognition.left_hemisphere",
+        "domain.cognition.action_planner",
         "domain.memory.memory",
         "domain.metacognition.metacognition",
         "shared.models.ports",
-        "domain.cognition.right_hemisphere",
-        "domain.execution.runtime",
+        "domain.cognition.input_perception",
+        "domain.execution.tool_runtime",
         "domain.metacognition.self_model",
         "domain.infrastructure.telemetry",
         "domain.infrastructure.verifier",
@@ -144,25 +144,26 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.experience.gea_experience_graph",
         "adapters.experience.gea_experience_store",
         "adapters.experience.gea_reflection_experience",
-        "adapters.hemisphere.left_hemisphere_rlm",
+        "adapters.hemisphere.action_planner_rlm",
         "adapters.llm.llm_failover",
         "adapters.llm.llm_fusion",
         "adapters.llm.llm_qwen",
         "adapters.perception.multimodal_perception",
-        "adapters.hemisphere.right_hemisphere_hf",
-        "adapters.hemisphere.right_hemisphere_heuristic_jepa",
-        "adapters.hemisphere.right_hemisphere_trained_jepa",
-        "adapters.hemisphere.right_hemisphere_jepars",
-        "adapters.hemisphere.right_hemisphere_vjepa21",
-        "adapters.hemisphere.right_hemisphere_vljepa",
+        "adapters.hemisphere.input_perception_hf",
+        "adapters.hemisphere.input_perception_heuristic_jepa",
+        "adapters.hemisphere.input_perception_trained_jepa",
+        "adapters.hemisphere.input_perception_jepars",
+        "adapters.hemisphere.input_perception_vjepa21",
+        "adapters.hemisphere.input_perception_vljepa",
         "bootstrap.infrastructure.settings",
         "domain.metacognition.metacognition",
-        "domain.cognition.right_hemisphere",
+        "domain.cognition.input_perception",
     },
     "bootstrap.wiring.factory": {
         "adapters.perception.active_inference",
-        "adapters.execution.action_runtime",
+        "adapters.execution.tool_runtime",
         "adapters.bridge.bridge_store",
+        "adapters.memory.sql_memory",
         "bootstrap.wiring.agent_baseline",
         "bootstrap.wiring.backend_resolvers",
         "adapters.knowledge.knowledge_graph_nanorag",
@@ -174,8 +175,8 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.perception.quantized_embeddings",
         "adapters.communication.telemetry_otlp",
         "adapters.memory.text_embeddings",
-        "adapters.hemisphere.right_hemisphere_heuristic_jepa",
-        "adapters.hemisphere.right_hemisphere_trained_jepa",
+        "adapters.hemisphere.input_perception_heuristic_jepa",
+        "adapters.hemisphere.input_perception_trained_jepa",
         "domain.cognition.bridge",
         "domain.infrastructure.event_bus",
         "domain.agent.evolution",
@@ -183,15 +184,15 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.infrastructure.interceptors",
         "domain.memory.memory",
         "domain.agent.orchestrator",
-        "domain.memory.persistent_memory",
-        "domain.cognition.right_hemisphere",
+        "adapters.memory.persistent_sql_memory",
+        "domain.cognition.input_perception",
         "bootstrap.infrastructure.settings",
         "domain.infrastructure.telemetry",
         "shared.models.ports",
         "shared.models.types"
     },
     "bootstrap.wiring.agent_baseline": {
-        "adapters.execution.action_runtime",
+        "adapters.execution.tool_runtime",
         "adapters.llm.llm_qwen",
         "adapters.memory.text_embeddings",
         "bootstrap.infrastructure.settings",
@@ -218,7 +219,8 @@ MODULE_RULES: dict[str, set[str]] = {
     "bootstrap.entry.__main__": {"bootstrap.entry.cli"},
 
     # ADAPTERS
-    "adapters.execution.action_runtime": {
+    "adapters.execution.docker_sandbox": set(),
+    "adapters.execution.tool_runtime": {
         "adapters.tools.http_request", "adapters.tools.code_execution", "adapters.tools.introspection",
         "adapters.tools.mcp_tool", "adapters.tools.persistent_shell", "adapters.tools.subordinate_agent",
         "shared.utils.async_utils", "shared.utils.tools", "shared.models.types",
@@ -238,22 +240,24 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.metacognition.metacognition",
     },
     "adapters.experience.variant_preference": set(),
-    "adapters.hemisphere.left_hemisphere_rlm": {"shared.models.types", "shared.models.ports"},
-    "adapters.hemisphere.right_hemisphere_heuristic_jepa": {"shared.models.jepa", "shared.models.types", "adapters.memory.text_embeddings"},
-    "adapters.hemisphere.right_hemisphere_trained_jepa": {"shared.models.jepa", "shared.models.types"},
-    "adapters.hemisphere.right_hemisphere_hf": {"shared.models.types", "domain.cognition.right_hemisphere", "shared.models.ports"},
-    "adapters.hemisphere.right_hemisphere_jepars": {"shared.models.types"},
-    "adapters.hemisphere.right_hemisphere_vjepa21": {"shared.models.types", "shared.models.ports"},
-    "adapters.hemisphere.right_hemisphere_vljepa": {"adapters.hemisphere.right_hemisphere_vjepa21", "shared.models.types"},
+    "adapters.hemisphere.action_planner_rlm": {"shared.models.types", "shared.models.ports"},
+    "adapters.hemisphere.input_perception_heuristic_jepa": {"shared.models.jepa", "shared.models.types", "adapters.memory.text_embeddings"},
+    "adapters.hemisphere.input_perception_trained_jepa": {"shared.models.jepa", "shared.models.types"},
+    "adapters.hemisphere.input_perception_hf": {"shared.models.types", "domain.cognition.input_perception", "shared.models.ports"},
+    "adapters.hemisphere.input_perception_jepars": {"shared.models.types"},
+    "adapters.hemisphere.input_perception_vjepa21": {"shared.models.types", "shared.models.ports"},
+    "adapters.hemisphere.input_perception_vljepa": {"adapters.hemisphere.input_perception_vjepa21", "shared.models.types"},
     "adapters.knowledge.knowledge_graph_nanorag": {"shared.models.types"},
     "adapters.llm.llm_failover": {"shared.utils.async_utils", "shared.models.ports", "shared.models.types"},
     "adapters.llm.llm_fusion": {"shared.utils.async_utils", "shared.models.types"},
     "adapters.llm.llm_payload_parser": {"shared.models.types"},
     "adapters.llm.llm_payloads": {"shared.models.types"},
     "adapters.llm.llm_qwen": {"adapters.llm.llm_payloads", "adapters.llm.llm_payload_parser", "shared.utils.async_utils", "shared.models.types"},
+    "adapters.memory.sql_memory": {"shared.models.types", "shared.utils.serialization"},
     "adapters.memory.memory_qdrant": {
         "adapters.memory.text_embeddings",
         "adapters.memory.memory_qdrant_serializers",
+        "adapters.memory.sql_memory",
         "shared.utils.async_utils",
         "shared.models.types",
         "domain.memory.memory",
@@ -267,15 +271,15 @@ MODULE_RULES: dict[str, set[str]] = {
     },
     "adapters.night_trainer.night_trainer_dspy": set(),
     "adapters.night_trainer.night_trainer_lora": set(),
-    "adapters.perception.active_inference": {"shared.models.types", "domain.cognition.right_hemisphere"},
+    "adapters.perception.active_inference": {"shared.models.types", "domain.cognition.input_perception"},
     "adapters.perception.multimodal_perception": {"shared.models.ports"},
     "adapters.perception.quantized_embeddings": {"shared.models.ports"},
     "adapters.tools.introspection": {"shared.models.types", "shared.utils.async_utils"},
-    "adapters.tools.code_execution": {"shared.utils.tools"},
+    "adapters.tools.code_execution": {"shared.utils.tools", "adapters.execution.docker_sandbox"},
     "adapters.tools.http_request": {"shared.utils.tools"},
     "adapters.tools.mcp_client": set(),
     "adapters.tools.mcp_tool": {"shared.utils.tools"},
-    "adapters.tools.persistent_shell": {"shared.utils.tools"},
+    "adapters.tools.persistent_shell": {"shared.utils.tools", "adapters.execution.docker_sandbox"},
     "adapters.tools.subordinate_agent": {"domain.infrastructure.event_bus", "domain.agent.multiagent", "shared.utils.tools"},
 
     # ROOT
@@ -285,26 +289,26 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.knowledge.knowledge_graph_nanorag",
         "adapters.perception.active_inference",
         "adapters.bridge.bridge_cross_attention",
-        "adapters.hemisphere.left_hemisphere_rlm",
+        "adapters.hemisphere.action_planner_rlm",
         "adapters.perception.multimodal_perception",
-        "adapters.hemisphere.right_hemisphere_heuristic_jepa",
-        "adapters.hemisphere.right_hemisphere_trained_jepa",
-        "adapters.hemisphere.right_hemisphere_jepars",
-        "adapters.hemisphere.right_hemisphere_vjepa21",
-        "adapters.hemisphere.right_hemisphere_vljepa",
+        "adapters.hemisphere.input_perception_heuristic_jepa",
+        "adapters.hemisphere.input_perception_trained_jepa",
+        "adapters.hemisphere.input_perception_jepars",
+        "adapters.hemisphere.input_perception_vjepa21",
+        "adapters.hemisphere.input_perception_vljepa",
         "bootstrap.wiring.factory",
         "bootstrap.wiring.agent_baseline",
         "domain.cognition.bridge",
-        "domain.cognition.left_hemisphere",
+        "domain.cognition.action_planner",
         "domain.memory.memory",
         "domain.metacognition.metacognition",
         "domain.agent.multiagent",
         "domain.agent.orchestrator",
-        "domain.memory.persistent_memory",
+        "adapters.memory.persistent_sql_memory",
         "shared.models.ports",
         "shared.models.jepa",
-        "domain.cognition.right_hemisphere",
-        "domain.execution.runtime",
+        "domain.cognition.input_perception",
+        "domain.execution.tool_runtime",
         "domain.metacognition.self_model",
         "domain.execution.workspace",
         "domain.metacognition.introspection",
@@ -344,7 +348,44 @@ def run_harness_checks(repo_root: Path | None = None) -> HarnessReport:
     issues.extend(_check_import_boundaries(root))
     issues.extend(_check_package_docstrings(root))
     issues.extend(_check_shared_domain_runtime_imports(root))
+    issues.extend(_check_adapter_isolation(root))
     return HarnessReport(passed=not issues, issues=issues)
+
+
+def _check_adapter_isolation(root: Path) -> list[HarnessIssue]:
+    """Proibir que adapters de execução importem os ou subprocess diretamente."""
+    issues = []
+    # Somente o docker_sandbox e a base de runtime podem tocar nisso por necessidade de infra
+    EXEMPT = {
+        "docker_sandbox.py", "tool_runtime.py", "telemetry_otlp.py",
+        "action_planner_rlm.py", "input_perception_jepars.py", "input_perception_vjepa21.py",
+        "llm_payloads.py", "night_trainer.py", "night_trainer_dspy.py", "night_trainer_lora.py"
+    }
+    
+    for p in sorted((root / "src" / "calosum" / "adapters").rglob("*.py")):
+        if p.name in EXEMPT: continue
+        try:
+            source = p.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                mod = ""
+                if isinstance(node, ast.Import):
+                    for a in node.names:
+                        if a.name in {"os", "subprocess"}:
+                            mod = a.name
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    if node.module in {"os", "subprocess"}:
+                        mod = node.module
+                
+                if mod:
+                    issues.append(HarnessIssue(
+                        "forbidden_adapter_import",
+                        f"Adapter cannot import {mod} directly. Use a sandbox provider instead.",
+                        str(p.relative_to(root))
+                    ))
+        except Exception:
+            continue
+    return issues
 
 
 def main() -> int:

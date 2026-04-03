@@ -9,7 +9,7 @@ from calosum.domain.agent.evolution import JsonlEvolutionArchive
 from calosum.domain.metacognition.introspection import IntrospectionEngine
 from calosum.domain.agent.orchestrator import CalosumAgent
 from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
-from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA
+from calosum.domain.cognition.input_perception import InputPerceptionJEPA
 from calosum.shared.models.types import DirectiveType, EvolutionDirective
 
 
@@ -168,7 +168,7 @@ class AwarenessTests(unittest.TestCase):
 
     def test_right_hemisphere_parameter_directive_is_clamped_and_audited(self) -> None:
         agent = CalosumAgent(
-            right_hemisphere=ActiveInferenceRightHemisphereAdapter(RightHemisphereJEPA()),
+            right_hemisphere=ActiveInferenceRightHemisphereAdapter(InputPerceptionJEPA()),
         )
         wrapper_config = getattr(agent.right_hemisphere, "config")
         base_config = getattr(getattr(agent.right_hemisphere, "base_adapter"), "config")

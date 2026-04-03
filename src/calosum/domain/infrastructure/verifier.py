@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from calosum.shared.models.schemas import collect_left_result_schema_issues
-from calosum.shared.models.types import ActionExecutionResult, CritiqueVerdict, FailureType, LeftHemisphereResult, UserTurn, CognitiveWorkspace
+from calosum.shared.models.types import ActionExecutionResult, CritiqueVerdict, FailureType, ActionPlannerResult, UserTurn, CognitiveWorkspace
 from calosum.shared.models.types import FailureType
 
 
@@ -14,7 +14,7 @@ class HeuristicVerifier:
     def verify(
         self,
         user_turn: UserTurn,
-        left_result: LeftHemisphereResult,
+        left_result: ActionPlannerResult,
         execution_results: list[ActionExecutionResult],
         workspace: CognitiveWorkspace | None = None,
     ) -> CritiqueVerdict:
@@ -61,7 +61,7 @@ class HeuristicVerifier:
     async def averify(
         self,
         user_turn: UserTurn,
-        left_result: LeftHemisphereResult,
+        left_result: ActionPlannerResult,
         execution_results: list[ActionExecutionResult],
         workspace: CognitiveWorkspace | None = None,
     ) -> CritiqueVerdict:
@@ -69,7 +69,7 @@ class HeuristicVerifier:
 
     def _check_response_safety(
         self,
-        left_result: LeftHemisphereResult,
+        left_result: ActionPlannerResult,
         issues: list[str],
         fixes: list[str],
         failure_types: list[FailureType],
@@ -82,14 +82,14 @@ class HeuristicVerifier:
 
     def _check_result_schema(
         self,
-        left_result: LeftHemisphereResult,
+        left_result: ActionPlannerResult,
         issues: list[str],
         fixes: list[str],
         failure_types: list[FailureType],
     ) -> None:
         for schema_issue in collect_left_result_schema_issues(left_result):
             issues.append(f"Schema violation: {schema_issue}")
-            fixes.append("Return a LeftHemisphereResult that matches the typed contract exactly.")
+            fixes.append("Return a ActionPlannerResult that matches the typed contract exactly.")
             failure_types.append(FailureType.SCHEMA_VIOLATION)
 
         for action in left_result.actions:
@@ -109,7 +109,7 @@ class HeuristicVerifier:
 
     def _check_result_completeness(
         self,
-        left_result: LeftHemisphereResult,
+        left_result: ActionPlannerResult,
         issues: list[str],
         fixes: list[str],
         failure_types: list[FailureType],

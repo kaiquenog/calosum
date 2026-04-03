@@ -10,7 +10,7 @@ import httpx
 from calosum.adapters.llm.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.shared.models.types import (
     BridgeControlSignal,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     MemoryContext,
     UserTurn,
 )
@@ -39,8 +39,8 @@ def _memory_context() -> MemoryContext:
     return MemoryContext(recent_episodes=[], semantic_rules=[], knowledge_triples=[])
 
 
-def _bridge_packet() -> CognitiveBridgePacket:
-    return CognitiveBridgePacket(
+def _bridge_packet() -> PerceptionSummary:
+    return PerceptionSummary(
         context_id="ctx-1",
         soft_prompts=[],
         control=BridgeControlSignal(

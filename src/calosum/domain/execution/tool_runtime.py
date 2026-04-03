@@ -1,11 +1,11 @@
 import json
 from dataclasses import dataclass, field
 
-from calosum.shared.models.types import ActionExecutionResult, LeftHemisphereResult, PrimitiveAction
+from calosum.shared.models.types import ActionExecutionResult, ActionPlannerResult, PrimitiveAction
 
 
 @dataclass(slots=True)
-class StrictLambdaRuntimeConfig:
+class ToolRuntimeConfig:
     allow_external_side_effects: bool = False
     reject_unknown_actions: bool = True
     executable_actions: set[str] = field(
@@ -19,7 +19,7 @@ class StrictLambdaRuntimeConfig:
     )
 
 
-class StrictLambdaRuntime:
+class ToolRuntime:
     """
     Runtime seguro que executa planos via Structured Outputs (JSON).
 
@@ -27,10 +27,10 @@ class StrictLambdaRuntime:
     e sequenciamento direto de acoes tipificadas.
     """
 
-    def __init__(self, config: StrictLambdaRuntimeConfig | None = None) -> None:
-        self.config = config or StrictLambdaRuntimeConfig()
+    def __init__(self, config: ToolRuntimeConfig | None = None) -> None:
+        self.config = config or ToolRuntimeConfig()
 
-    def run(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]:
+    def run(self, left_result: ActionPlannerResult) -> list[ActionExecutionResult]:
         try:
             # Novo parsing pragmático: JSON em vez de AST
             expression = left_result.lambda_program.expression
@@ -105,7 +105,7 @@ class StrictLambdaRuntime:
 
         return [self._execute_action(action) for action in planned_actions]
 
-    async def arun(self, left_result: LeftHemisphereResult) -> list[ActionExecutionResult]:
+    async def arun(self, left_result: ActionPlannerResult) -> list[ActionExecutionResult]:
         return self.run(left_result)
 
     def _execute_action(self, action: PrimitiveAction) -> ActionExecutionResult:

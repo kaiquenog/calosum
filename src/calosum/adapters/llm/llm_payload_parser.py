@@ -1,5 +1,5 @@
 from typing import Any
-from calosum.shared.models.types import LeftHemisphereResult, TypedLambdaProgram, PrimitiveAction
+from calosum.shared.models.types import ActionPlannerResult, TypedLambdaProgram, PrimitiveAction
 
 def parse_to_result(
     parsed: dict[str, Any],
@@ -9,7 +9,7 @@ def parse_to_result(
     compiled_few_shot_count: int = 0,
     compiled_prompt_selected: bool = False,
     system_directives: list[str] | None = None,
-) -> LeftHemisphereResult:
+) -> ActionPlannerResult:
     lambda_prog = parsed.get("lambda_program", {})
     response_text = str(parsed.get("response_text", "") or "")
     reasoning_summary = [str(item) for item in parsed.get("reasoning_summary", []) if str(item).strip()]
@@ -46,7 +46,7 @@ def parse_to_result(
     if not response_text.strip() and not actions:
         raise ValueError("incomplete_structured_output: empty response_text and no actions")
 
-    return LeftHemisphereResult(
+    return ActionPlannerResult(
         response_text=response_text,
         lambda_program=program,
         actions=actions,
@@ -66,8 +66,8 @@ def fallback_result(
     api_mode: str,
     resolved_model: str,
     system_directives: list[str] | None = None,
-) -> LeftHemisphereResult:
-    return LeftHemisphereResult(
+) -> ActionPlannerResult:
+    return ActionPlannerResult(
         response_text="Desculpe, meu subsistema de raciocínio falhou temporariamente.",
         lambda_program=TypedLambdaProgram("Fallback", "()", "None"),
         actions=[],

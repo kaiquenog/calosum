@@ -5,19 +5,19 @@ from typing import Any
 
 from calosum.shared.models.types import (
     ActionExecutionResult,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     CognitiveWorkspace,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     MemoryContext,
     PrimitiveAction,
-    RightHemisphereState,
+    InputPerceptionState,
     TypedLambdaProgram,
     UserTurn,
 )
 
 
 class ContractEnforcedLeftHemisphereAdapter:
-    """Enforce minimal LeftHemisphereResult contract regardless of provider backend."""
+    """Enforce minimal ActionPlannerResult contract regardless of provider backend."""
 
     def __init__(self, provider: Any) -> None:
         self.provider = provider
@@ -28,12 +28,12 @@ class ContractEnforcedLeftHemisphereAdapter:
     def reason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         try:
             result = self.provider.reason(
                 user_turn,
@@ -56,12 +56,12 @@ class ContractEnforcedLeftHemisphereAdapter:
     async def areason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         result = await self.provider.areason(
             user_turn,
             bridge_packet,
@@ -75,14 +75,14 @@ class ContractEnforcedLeftHemisphereAdapter:
     def repair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         result = self.provider.repair(
             user_turn,
             bridge_packet,
@@ -98,14 +98,14 @@ class ContractEnforcedLeftHemisphereAdapter:
     async def arepair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         result = await self.provider.arepair(
             user_turn,
             bridge_packet,
@@ -118,8 +118,8 @@ class ContractEnforcedLeftHemisphereAdapter:
         )
         return self._normalize(result)
 
-    def _normalize(self, result: Any) -> LeftHemisphereResult:
-        if not isinstance(result, LeftHemisphereResult):
+    def _normalize(self, result: Any) -> ActionPlannerResult:
+        if not isinstance(result, ActionPlannerResult):
             return self._fallback_result("invalid_result_type")
 
         adjustments: list[str] = []
@@ -153,7 +153,7 @@ class ContractEnforcedLeftHemisphereAdapter:
         if adjustments:
             telemetry["contract_adjustments"] = adjustments
 
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text=response_text,
             lambda_program=lambda_program,
             actions=actions,
@@ -211,9 +211,9 @@ class ContractEnforcedLeftHemisphereAdapter:
             )
         return out
 
-    def _fallback_result(self, error: str) -> LeftHemisphereResult:
+    def _fallback_result(self, error: str) -> ActionPlannerResult:
         response = "Desculpe, tive uma falha de contrato no raciocínio. Vou tentar novamente."
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text=response,
             lambda_program=TypedLambdaProgram(
                 signature="Context -> Response",
@@ -231,7 +231,7 @@ class ContractEnforcedLeftHemisphereAdapter:
 
 
 class ContractEnforcedRightHemisphereAdapter:
-    """Normalize RightHemisphereState output from multiple perception adapters."""
+    """Normalize InputPerceptionState output from multiple perception adapters."""
 
     def __init__(self, provider: Any) -> None:
         self.provider = provider
@@ -244,7 +244,7 @@ class ContractEnforcedRightHemisphereAdapter:
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         try:
             result = self.provider.perceive(user_turn, memory_context, workspace)
         except TypeError:
@@ -256,7 +256,7 @@ class ContractEnforcedRightHemisphereAdapter:
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         if hasattr(self.provider, "aperceive"):
             try:
                 result = await self.provider.aperceive(user_turn, memory_context, workspace)
@@ -266,8 +266,8 @@ class ContractEnforcedRightHemisphereAdapter:
             result = self.provider.perceive(user_turn, memory_context, workspace)
         return self._normalize(result, fallback_context_id=user_turn.turn_id)
 
-    def _normalize(self, result: Any, *, fallback_context_id: str) -> RightHemisphereState:
-        if not isinstance(result, RightHemisphereState):
+    def _normalize(self, result: Any, *, fallback_context_id: str) -> InputPerceptionState:
+        if not isinstance(result, InputPerceptionState):
             return _fallback_right_state(fallback_context_id, self.provider.__class__.__name__, "invalid_result_type")
 
         adjustments: list[str] = []
@@ -300,7 +300,7 @@ class ContractEnforcedRightHemisphereAdapter:
             telemetry["contract_adjustments"] = adjustments
 
         try:
-            return RightHemisphereState(
+            return InputPerceptionState(
                 context_id=context_id,
                 latent_vector=latent,
                 salience=salience,
@@ -369,8 +369,8 @@ def _clamp01(value: Any) -> float:
     return max(0.0, min(1.0, number))
 
 
-def _fallback_right_state(context_id: str, provider_name: str, error: str) -> RightHemisphereState:
-    return RightHemisphereState(
+def _fallback_right_state(context_id: str, provider_name: str, error: str) -> InputPerceptionState:
+    return InputPerceptionState(
         context_id=context_id,
         latent_vector=[0.0],
         salience=0.2,

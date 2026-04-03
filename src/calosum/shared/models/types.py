@@ -184,7 +184,7 @@ class UserTurn:
 
 
 @dataclass(slots=True)
-class RightHemisphereState:
+class InputPerceptionState:
     """
     Saida primaria do hemisferio direito.
 
@@ -240,7 +240,7 @@ class BridgeControlSignal:
 
 
 @dataclass(slots=True)
-class CognitiveBridgePacket:
+class PerceptionSummary:
     """
     Interface de comunicacao entre intuicao continua e raciocinio discreto.
     """
@@ -326,7 +326,7 @@ class MemoryContext:
 
 
 @dataclass(slots=True)
-class LeftHemisphereResult:
+class ActionPlannerResult:
     """
     Resultado do hemisferio esquerdo.
 
@@ -346,9 +346,9 @@ class MemoryEpisode:
     episode_id: str
     recorded_at: datetime
     user_turn: UserTurn
-    right_state: RightHemisphereState
-    bridge_packet: CognitiveBridgePacket
-    left_result: LeftHemisphereResult
+    right_state: InputPerceptionState
+    bridge_packet: PerceptionSummary
+    left_result: ActionPlannerResult
     execution_results: list[ActionExecutionResult] = field(default_factory=list)
     runtime_retry_count: int = 0
     critique_revision_count: int = 0
@@ -385,11 +385,12 @@ class CognitiveTelemetrySnapshot:
 class AgentTurnResult:
     user_turn: UserTurn
     memory_context: MemoryContext
-    right_state: RightHemisphereState
-    bridge_packet: CognitiveBridgePacket
-    left_result: LeftHemisphereResult
+    right_state: InputPerceptionState
+    bridge_packet: PerceptionSummary
+    left_result: ActionPlannerResult
     telemetry: CognitiveTelemetrySnapshot
     execution_results: list[ActionExecutionResult] = field(default_factory=list)
     runtime_retry_count: int = 0
     critique_revision_count: int = 0
     latency_ms: float = 0.0
+0.0

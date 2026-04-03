@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import numpy as np
 
 from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
-from calosum.shared.models.types import MemoryContext, MemoryEpisode, RightHemisphereState, UserTurn
+from calosum.shared.models.types import MemoryContext, MemoryEpisode, InputPerceptionState, UserTurn
 
 
 class _StaticRightHemisphere:
@@ -16,8 +16,8 @@ class _StaticRightHemisphere:
         self._latent_vector = latent_vector
         self._surprise_score = surprise_score
 
-    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None) -> RightHemisphereState:
-        return RightHemisphereState(
+    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None) -> InputPerceptionState:
+        return InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=list(self._latent_vector),
             salience=0.4,
@@ -34,13 +34,13 @@ class _WorkspaceAwareRightHemisphere(_StaticRightHemisphere):
         super().__init__(latent_vector, surprise_score)
         self.last_workspace = None
 
-    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace=None) -> RightHemisphereState:
+    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace=None) -> InputPerceptionState:
         self.last_workspace = workspace
         return super().perceive(user_turn, memory_context)
 
 
 class _JepaPredictiveRight(_StaticRightHemisphere):
-    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None) -> RightHemisphereState:
+    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None) -> InputPerceptionState:
         state = super().perceive(user_turn, memory_context)
         state.telemetry["surprise_source"] = "jepa_prediction_error"
         state.telemetry["prediction_method"] = "jepa_heuristic"
@@ -50,7 +50,7 @@ class _JepaPredictiveRight(_StaticRightHemisphere):
 
 def _episode(text: str, latent_vector: list[float]) -> MemoryEpisode:
     turn = UserTurn(session_id="memory", user_text=text, observed_at=datetime.now(timezone.utc))
-    right_state = RightHemisphereState(
+    right_state = InputPerceptionState(
         context_id=turn.turn_id,
         latent_vector=list(latent_vector),
         salience=0.2,

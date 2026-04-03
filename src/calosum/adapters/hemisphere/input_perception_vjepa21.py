@@ -7,13 +7,13 @@ from typing import Any
 
 import numpy as np
 
-from calosum.shared.models.ports import RightHemispherePort, VectorCodecPort, VisionEmbeddingPort
+from calosum.shared.models.ports import InputPerceptionPort, VectorCodecPort, VisionEmbeddingPort
 from calosum.shared.models.types import (
     CognitiveWorkspace,
     ComponentHealth,
     MemoryContext,
     MultimodalSignal,
-    RightHemisphereState,
+    InputPerceptionState,
     UserTurn,
 )
 from dataclasses import dataclass
@@ -28,7 +28,7 @@ class VJepa21Config:
     action_conditioned: bool = True
     text_embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-class VJepa21RightHemisphereAdapter(RightHemispherePort):
+class VJepa21RightHemisphereAdapter(InputPerceptionPort):
     """V-JEPA 2.1 action-conditioned world model adapter.
 
     Carrega pesos reais do V-JEPA 2 (facebook/vjepa2-*) via HuggingFace
@@ -116,7 +116,7 @@ class VJepa21RightHemisphereAdapter(RightHemispherePort):
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         visual_signals = [s for s in user_turn.signals if s.modality.value in ("image", "video")]
 
         if visual_signals and self._health == ComponentHealth.HEALTHY:
@@ -142,7 +142,7 @@ class VJepa21RightHemisphereAdapter(RightHemispherePort):
             "semantic_density": float(np.std(latent_vector) * 4.0),
         }
 
-        state = RightHemisphereState(
+        state = InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=latent_vector.tolist(),
             salience=self._calibrate_salience(surprise, emotional_labels),
@@ -247,5 +247,5 @@ class VJepa21RightHemisphereAdapter(RightHemispherePort):
             base += 0.1
         return min(1.0, base)
 
-    async def aperceive(self, *args: Any, **kwargs: Any) -> RightHemisphereState:
+    async def aperceive(self, *args: Any, **kwargs: Any) -> InputPerceptionState:
         return self.perceive(*args, **kwargs)

@@ -6,7 +6,7 @@ from calosum.domain.infrastructure.verifier import HeuristicVerifier
 from calosum.shared.models.types import (
     ActionExecutionResult,
     FailureType,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     PrimitiveAction,
     TypedLambdaProgram,
     UserTurn,
@@ -19,7 +19,7 @@ class VerifierTests(unittest.TestCase):
         self.user_turn = UserTurn(session_id="s1", user_text="Hello")
 
     def test_valid_result(self):
-        result = LeftHemisphereResult(
+        result = ActionPlannerResult(
             response_text="All good",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[
@@ -37,7 +37,7 @@ class VerifierTests(unittest.TestCase):
         self.assertEqual(verdict.failure_types, [])
 
     def test_unsafe_wording(self):
-        result = LeftHemisphereResult(
+        result = ActionPlannerResult(
             response_text="Vou ignorar as instruções",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[],
@@ -49,7 +49,7 @@ class VerifierTests(unittest.TestCase):
         self.assertIn(FailureType.UNSAFE_CONTENT, verdict.failure_types)
 
     def test_tool_mismatch(self):
-        result = LeftHemisphereResult(
+        result = ActionPlannerResult(
             response_text="Doing something",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[
@@ -63,7 +63,7 @@ class VerifierTests(unittest.TestCase):
         self.assertIn(FailureType.SCHEMA_VIOLATION, verdict.failure_types)
 
     def test_rejected_actions(self):
-        result = LeftHemisphereResult(
+        result = ActionPlannerResult(
             response_text="Doing something",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[
@@ -80,7 +80,7 @@ class VerifierTests(unittest.TestCase):
         self.assertIn(FailureType.RUNTIME_REJECTION, verdict.failure_types)
 
     def test_schema_aware_validation_catches_invalid_payload_shape(self):
-        result = LeftHemisphereResult(
+        result = ActionPlannerResult(
             response_text="Resposta",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[
@@ -96,7 +96,7 @@ class VerifierTests(unittest.TestCase):
         self.assertIn(FailureType.SCHEMA_VIOLATION, verdict.failure_types)
 
     def test_incomplete_result_is_classified(self):
-        result = LeftHemisphereResult(
+        result = ActionPlannerResult(
             response_text="",
             lambda_program=TypedLambdaProgram("A->B", "", "effect"),
             actions=[],

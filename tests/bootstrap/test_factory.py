@@ -37,7 +37,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
             builder = CalosumAgentBuilder(settings)
             with patch(
-                "calosum.adapters.hemisphere.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
+                "calosum.adapters.hemisphere.input_perception_hf.HuggingFaceRightHemisphereAdapter",
                 return_value=_FakeRightHemisphere(),
             ):
                 agent = builder.build()
@@ -150,7 +150,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
         builder = CalosumAgentBuilder(settings)
 
         with patch(
-            "calosum.adapters.hemisphere.right_hemisphere_hf.HuggingFaceRightHemisphereAdapter",
+            "calosum.adapters.hemisphere.input_perception_hf.HuggingFaceRightHemisphereAdapter",
             return_value=_FakeRightHemisphere(),
         ):
             agent = builder.build()

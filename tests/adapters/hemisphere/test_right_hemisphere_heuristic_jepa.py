@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import (
+from calosum.adapters.hemisphere.input_perception_heuristic_jepa import (
     HeuristicJEPAAdapter,
     HeuristicJEPAConfig,
 )

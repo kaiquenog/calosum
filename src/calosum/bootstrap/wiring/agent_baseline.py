@@ -6,13 +6,13 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from calosum.adapters.execution.action_runtime import ConcreteActionRuntime
+from calosum.adapters.execution.tool_runtime import ConcreteActionRuntime
 from calosum.adapters.llm.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 from calosum.bootstrap.infrastructure.settings import InfrastructureSettings
 from calosum.shared.models.types import (
     BridgeControlSignal,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     MemoryContext,
     SemanticRule,
     UserTurn,
@@ -78,7 +78,7 @@ class AgentBaseline:
         context = self._build_context()
         embedding = self.embedder.embed_texts([user_turn.user_text])[0]
 
-        bridge_packet = CognitiveBridgePacket(
+        bridge_packet = PerceptionSummary(
             context_id=user_turn.turn_id,
             soft_prompts=[],
             control=BridgeControlSignal(

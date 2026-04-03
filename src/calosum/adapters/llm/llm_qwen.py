@@ -25,8 +25,8 @@ from calosum.adapters.llm.llm_payload_parser import parse_to_result, fallback_re
 from calosum.shared.utils.async_utils import run_sync
 from calosum.shared.models.types import (
     ActionExecutionResult,
-    CognitiveBridgePacket,
-    LeftHemisphereResult,
+    PerceptionSummary,
+    ActionPlannerResult,
     MemoryContext,
     PrimitiveAction,
     TypedLambdaProgram,
@@ -75,12 +75,12 @@ class QwenLeftHemisphereAdapter:
     def reason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return run_sync(
             self.areason(
                 user_turn=user_turn,
@@ -106,12 +106,12 @@ class QwenLeftHemisphereAdapter:
     async def areason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         # Detectar intenção introspectiva baseada no workspace/input
         introspective_intent = False
         text_lower = user_turn.user_text.lower()
@@ -171,7 +171,7 @@ class QwenLeftHemisphereAdapter:
                 })
             return result
         except json.JSONDecodeError as exc:
-            result = LeftHemisphereResult(
+            result = ActionPlannerResult(
                 response_text="",
                 lambda_program=TypedLambdaProgram("Any", "()", "None"),
                 actions=[],
@@ -199,14 +199,14 @@ class QwenLeftHemisphereAdapter:
     def repair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return run_sync(
             self.arepair(
                 user_turn=user_turn,
@@ -223,14 +223,14 @@ class QwenLeftHemisphereAdapter:
     async def arepair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         feedback = []
         if critique_feedback:
             feedback.extend(critique_feedback)
@@ -293,7 +293,7 @@ class QwenLeftHemisphereAdapter:
             ),
         }
 
-    def _resolve_temperature(self, bridge_packet: CognitiveBridgePacket) -> float:
+    def _resolve_temperature(self, bridge_packet: PerceptionSummary) -> float:
         candidate = float(bridge_packet.control.target_temperature)
         return round(min(1.5, max(0.0, candidate)), 3)
 

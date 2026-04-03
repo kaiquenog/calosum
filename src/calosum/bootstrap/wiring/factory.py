@@ -6,7 +6,7 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
-from calosum.adapters.execution.action_runtime import ConcreteActionRuntime
+from calosum.adapters.execution.tool_runtime import ConcreteActionRuntime
 from calosum.adapters.tools.mcp_client import HttpMcpClientAdapter, McpServerEndpoint
 from calosum.adapters.communication.telemetry_otlp import OTLPHTTPTraceSink
 from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
@@ -16,11 +16,7 @@ from calosum.domain.infrastructure.interceptors import AuditLogInterceptor, Inte
 from calosum.domain.memory.memory import DualMemorySystem, InMemorySemanticGraphStore
 from calosum.domain.agent.orchestrator import CalosumAgent, CalosumAgentConfig
 from calosum.domain.metacognition.introspection_capabilities import CalosumSystemIntrospector
-from calosum.domain.memory.persistent_memory import (
-    JsonlEpisodicStore,
-    JsonlSemanticStore,
-    PersistentDualMemorySystem,
-)
+from calosum.adapters.memory.persistent_sql_memory import PersistentDualMemorySystem
 from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureProfile, InfrastructureSettings
 from calosum.bootstrap.wiring.backend_resolvers import (
     resolve_bridge_fusion,
@@ -133,7 +129,7 @@ class CalosumAgentBuilder:
         except Exception as exc:
             logger.warning("Falling back to heuristic right hemisphere adapter: %s", exc)
             from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
-            from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import (
+            from calosum.adapters.hemisphere.input_perception_heuristic_jepa import (
                 HeuristicJEPAAdapter,
             )
 
@@ -147,20 +143,21 @@ class CalosumAgentBuilder:
         from calosum.adapters.night_trainer.night_trainer import LocalDatasetExporter
         from calosum.domain.memory.memory import SleepModeConsolidator
         exporter = LocalDatasetExporter(self._runtime_root() / "nightly_data")
-        graph_store = self.build_graph_store()
+        
         if self.settings.vector_db_url:
             try:
                 from calosum.adapters.memory.memory_qdrant import QdrantAdapterConfig, QdrantDualMemoryAdapter
                 embedder = self.build_text_embedder()
                 codec = _build_codec(self.settings)
+                db_path = self._runtime_root() / "calosum.db"
                 return QdrantDualMemoryAdapter(
                     QdrantAdapterConfig(
                         url=self.settings.vector_db_url,
                         scalar_quantization=self.settings.qdrant_scalar_quantization,
+                        db_path=str(db_path),
                     ),
                     embedder=embedder,
                     exporter=exporter,
-                    graph_store=graph_store,
                     codec=codec,
                 )
             except Exception as exc:
@@ -168,40 +165,34 @@ class CalosumAgentBuilder:
                     "Falling back from Qdrant memory adapter because the optional stack is unavailable: %s",
                     exc,
                 )
+        
         if self.settings.profile in {
             InfrastructureProfile.PERSISTENT,
             InfrastructureProfile.DOCKER,
         }:
             if self.settings.memory_dir is None:
                 raise ValueError("persistent profiles require a resolved memory_dir")
-            return PersistentDualMemorySystem(
-                episodic_store=JsonlEpisodicStore(self.settings.memory_dir / "episodic.jsonl"),
-                semantic_store=JsonlSemanticStore(self.settings.memory_dir / "semantic_rules.jsonl"),
-                graph_store=graph_store,
+            return PersistentDualMemorySystem.from_directory(
+                self.settings.memory_dir,
                 consolidator=SleepModeConsolidator(exporter=exporter)
             )
+            
         return DualMemorySystem(
-            graph_store=graph_store,
             consolidator=SleepModeConsolidator(exporter=exporter),
         )
 
     def build_graph_store(self):
-        storage_path: Path | None = None
-        if self.settings.memory_dir is not None:
-            storage_path = self.settings.memory_dir / "knowledge_graph.jsonl"
-        elif self.settings.duckdb_path is not None:
-            storage_path = self.settings.duckdb_path.parent / "knowledge_graph.jsonl"
+        # This is now handled by PersistentDualMemorySystem.from_directory or QdrantDualMemoryAdapter
+        # but kept for backward compatibility or direct use
+        storage_path: Path = self._runtime_root() / "calosum.db"
         try:
-            from calosum.adapters.knowledge.knowledge_graph_nanorag import NanoGraphRAGKnowledgeGraphStore
-            store = NanoGraphRAGKnowledgeGraphStore(storage_path=storage_path)
-            self._last_knowledge_graph_backend = store.backend_name
-            return store
+            from calosum.adapters.memory.sql_memory import SQLiteSemanticGraphStore
+            return SQLiteSemanticGraphStore(storage_path)
         except Exception as exc:
             logger.warning(
-                "Falling back to in-memory knowledge graph store because the optional stack is unavailable: %s",
+                "Falling back to in-memory knowledge graph store: %s",
                 exc,
             )
-            self._last_knowledge_graph_backend = "in_memory_graph_fallback"
             return InMemorySemanticGraphStore()
 
     def build_telemetry_bus(self) -> CognitiveTelemetryBus:

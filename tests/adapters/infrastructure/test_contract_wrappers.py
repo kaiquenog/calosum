@@ -8,11 +8,11 @@ from calosum.adapters.infrastructure.contract_wrappers import (
 )
 from calosum.shared.models.types import (
     BridgeControlSignal,
-    CognitiveBridgePacket,
-    LeftHemisphereResult,
+    PerceptionSummary,
+    ActionPlannerResult,
     MemoryContext,
     PrimitiveAction,
-    RightHemisphereState,
+    InputPerceptionState,
     TypedLambdaProgram,
     UserTurn,
 )
@@ -22,8 +22,8 @@ def _user_turn() -> UserTurn:
     return UserTurn(session_id="wrapper-test", user_text="teste")
 
 
-def _bridge() -> CognitiveBridgePacket:
-    return CognitiveBridgePacket(
+def _bridge() -> PerceptionSummary:
+    return PerceptionSummary(
         context_id="ctx",
         soft_prompts=[],
         control=BridgeControlSignal(
@@ -37,8 +37,8 @@ def _bridge() -> CognitiveBridgePacket:
 
 
 class _LeftProviderInvalid:
-    def reason(self, *_args, **_kwargs) -> LeftHemisphereResult:
-        return LeftHemisphereResult(
+    def reason(self, *_args, **_kwargs) -> ActionPlannerResult:
+        return ActionPlannerResult(
             response_text="",
             lambda_program=TypedLambdaProgram(signature="", expression="", expected_effect=""),
             actions=[],
@@ -46,19 +46,19 @@ class _LeftProviderInvalid:
             telemetry={},
         )
 
-    async def areason(self, *_args, **_kwargs) -> LeftHemisphereResult:
+    async def areason(self, *_args, **_kwargs) -> ActionPlannerResult:
         return self.reason()
 
-    def repair(self, *_args, **_kwargs) -> LeftHemisphereResult:
+    def repair(self, *_args, **_kwargs) -> ActionPlannerResult:
         return self.reason()
 
-    async def arepair(self, *_args, **_kwargs) -> LeftHemisphereResult:
+    async def arepair(self, *_args, **_kwargs) -> ActionPlannerResult:
         return self.reason()
 
 
 class _LeftProviderPayloadResponse:
-    def reason(self, *_args, **_kwargs) -> LeftHemisphereResult:
-        return LeftHemisphereResult(
+    def reason(self, *_args, **_kwargs) -> ActionPlannerResult:
+        return ActionPlannerResult(
             response_text="",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> Response",
@@ -77,19 +77,19 @@ class _LeftProviderPayloadResponse:
             telemetry={},
         )
 
-    async def areason(self, *_args, **_kwargs) -> LeftHemisphereResult:
+    async def areason(self, *_args, **_kwargs) -> ActionPlannerResult:
         return self.reason()
 
-    def repair(self, *_args, **_kwargs) -> LeftHemisphereResult:
+    def repair(self, *_args, **_kwargs) -> ActionPlannerResult:
         return self.reason()
 
-    async def arepair(self, *_args, **_kwargs) -> LeftHemisphereResult:
+    async def arepair(self, *_args, **_kwargs) -> ActionPlannerResult:
         return self.reason()
 
 
 class _RightProviderSparse:
-    def perceive(self, *_args, **_kwargs) -> RightHemisphereState:
-        return RightHemisphereState(
+    def perceive(self, *_args, **_kwargs) -> InputPerceptionState:
+        return InputPerceptionState(
             context_id="ctx-r",
             latent_vector=[],
             salience=0.3,
@@ -100,7 +100,7 @@ class _RightProviderSparse:
             telemetry={},
         )
 
-    async def aperceive(self, *_args, **_kwargs) -> RightHemisphereState:
+    async def aperceive(self, *_args, **_kwargs) -> InputPerceptionState:
         return self.perceive()
 
 

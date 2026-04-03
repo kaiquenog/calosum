@@ -184,7 +184,7 @@ class DSPyNightTrainer:
             if isinstance(candidate, str) and candidate.strip():
                 return candidate.strip()
         return (
-            "Return valid JSON for LeftHemisphereResult. Keep typed actions explicit. "
+            "Return valid JSON for ActionPlannerResult. Keep typed actions explicit. "
             "Minimize repair loops and preserve semantic grounding."
         )
 

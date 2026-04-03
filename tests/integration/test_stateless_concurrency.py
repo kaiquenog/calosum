@@ -6,7 +6,7 @@ import json
 from calosum import (
     CalosumAgent,
     UserTurn,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     PrimitiveAction,
     TypedLambdaProgram,
 )
@@ -26,7 +26,7 @@ class SlowLeftHemisphere:
             count = workspace.left_notes.get("concurrency_counter", 0)
             workspace.left_notes["concurrency_counter"] = count + 1
             
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text=f"Response {self.call_count}",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> Response",

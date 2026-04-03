@@ -7,12 +7,12 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-from calosum.shared.models.ports import LeftHemispherePort
+from calosum.shared.models.ports import ActionPlannerPort
 from calosum.shared.models.types import (
     ActionExecutionResult,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     CognitiveWorkspace,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     MemoryContext,
     PrimitiveAction,
     TypedLambdaProgram,
@@ -28,7 +28,7 @@ class RlmAdapterConfig:
     endpoint: str | None = None
     model: str | None = None
 
-class RlmLeftHemisphereAdapter(LeftHemispherePort):
+class RlmLeftHemisphereAdapter(ActionPlannerPort):
     """Recursive Language Model adapter seguindo o paradigma RLM."""
 
     def __init__(self, config: RlmAdapterConfig | None = None) -> None:
@@ -40,12 +40,12 @@ class RlmLeftHemisphereAdapter(LeftHemispherePort):
     def reason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         self._depth = 0
         result = self._recursive_reason(user_turn.user_text, bridge_packet, memory_context)
         
@@ -62,10 +62,10 @@ class RlmLeftHemisphereAdapter(LeftHemispherePort):
     def _recursive_reason(
         self,
         text: str,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         depth: int = 0,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         if depth >= self.MAX_DEPTH:
             return self._base_reason(text, bridge_packet, memory_context)
 
@@ -102,14 +102,14 @@ class RlmLeftHemisphereAdapter(LeftHemispherePort):
     def _base_reason(
         self,
         text: str,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         if self.config.runtime_command:
             return self._call_rlm_binary(text, bridge_packet)
         return self._fallback_reason(text, bridge_packet)
 
-    def _call_rlm_binary(self, text: str, bridge_packet: CognitiveBridgePacket) -> LeftHemisphereResult:
+    def _call_rlm_binary(self, text: str, bridge_packet: PerceptionSummary) -> ActionPlannerResult:
         assert self.config.runtime_command is not None
         cmd = self.config.runtime_command.split() + [
             "--model", self.config.model_path or "rlm-qwen3-8b",
@@ -130,7 +130,7 @@ class RlmLeftHemisphereAdapter(LeftHemispherePort):
                 safety_invariants=raw.get("safety_invariants", []),
             ))
             
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text=data.get("response_text", data.get("response", "")),
             lambda_program=TypedLambdaProgram(
                 signature="Context -> Response",
@@ -147,9 +147,9 @@ class RlmLeftHemisphereAdapter(LeftHemispherePort):
             telemetry={"adapter": "RlmLeftHemisphereAdapter", "backend": "rlm_runtime"},
         )
 
-    def _fallback_reason(self, text: str, bridge_packet: CognitiveBridgePacket) -> LeftHemisphereResult:
+    def _fallback_reason(self, text: str, bridge_packet: PerceptionSummary) -> ActionPlannerResult:
         response_text = "Vou resolver de forma recursiva e segura. " + text[:100]
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text=response_text,
             lambda_program=TypedLambdaProgram(
                 signature="Context -> Memory -> Decision",
@@ -168,7 +168,7 @@ class RlmLeftHemisphereAdapter(LeftHemispherePort):
             telemetry={"adapter": "RlmLeftHemisphereAdapter", "backend": "rlm_local_recursive"},
         )
 
-    def _compose_results(self, results: list[LeftHemisphereResult], original_text: str) -> LeftHemisphereResult:
+    def _compose_results(self, results: list[ActionPlannerResult], original_text: str) -> ActionPlannerResult:
         combined_text = "\n\n".join(r.response_text for r in results)
         combined_actions = []
         for r in results:
@@ -177,7 +177,7 @@ class RlmLeftHemisphereAdapter(LeftHemispherePort):
         for r in results:
             combined_summary.extend(r.reasoning_summary)
 
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text=combined_text,
             lambda_program=TypedLambdaProgram(
                 signature="Context -> ComposedResponse",
@@ -189,20 +189,20 @@ class RlmLeftHemisphereAdapter(LeftHemispherePort):
             telemetry={"adapter": "RlmLeftHemisphereAdapter", "backend": "composed_rlm"},
         )
 
-    async def areason(self, *args: Any, **kwargs: Any) -> LeftHemisphereResult:
+    async def areason(self, *args: Any, **kwargs: Any) -> ActionPlannerResult:
         return await asyncio.to_thread(self.reason, *args, **kwargs)
 
     def repair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return self.reason(
             user_turn=user_turn,
             bridge_packet=bridge_packet,
@@ -215,14 +215,14 @@ class RlmLeftHemisphereAdapter(LeftHemispherePort):
     async def arepair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return await asyncio.to_thread(
             self.repair,
             user_turn,

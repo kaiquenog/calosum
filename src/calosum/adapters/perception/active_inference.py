@@ -11,7 +11,7 @@ try:
 except ImportError:
     np = None  # type: ignore
 
-from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
+from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, InputPerceptionState, UserTurn
 
 
 @dataclass(slots=True)
@@ -119,7 +119,7 @@ class ActiveInferenceRightHemisphereAdapter:
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         base_state = self._invoke_sync_perception(user_turn, memory_context, workspace)
         return self._attach_active_inference(base_state, memory_context)
 
@@ -128,7 +128,7 @@ class ActiveInferenceRightHemisphereAdapter:
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         if hasattr(self.base_adapter, "aperceive"):
             try:
                 base_state = await self.base_adapter.aperceive(user_turn, memory_context, workspace)
@@ -143,7 +143,7 @@ class ActiveInferenceRightHemisphereAdapter:
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         try:
             return self.base_adapter.perceive(user_turn, memory_context, workspace)
         except TypeError:
@@ -151,16 +151,16 @@ class ActiveInferenceRightHemisphereAdapter:
 
     def _attach_active_inference(
         self,
-        base_state: RightHemisphereState,
+        base_state: InputPerceptionState,
         memory_context: MemoryContext | None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         source = str(base_state.telemetry.get("surprise_source", ""))
         if source == "jepa_prediction_error":
             merged_telemetry = dict(base_state.telemetry)
             merged_telemetry.update(self._describe_base_adapter(base_state))
             merged_telemetry.setdefault("surprise_backend", "jepa_prediction_error")
             merged_telemetry.setdefault("surprise_engine", "predictive_embedding_error")
-            return RightHemisphereState(
+            return InputPerceptionState(
                 context_id=base_state.context_id,
                 latent_vector=list(base_state.latent_vector),
                 salience=base_state.salience,
@@ -180,7 +180,7 @@ class ActiveInferenceRightHemisphereAdapter:
         merged_telemetry.update(telemetry)
         merged_telemetry.update(self._describe_base_adapter(base_state))
 
-        return RightHemisphereState(
+        return InputPerceptionState(
             context_id=base_state.context_id,
             latent_vector=list(base_state.latent_vector),
             salience=base_state.salience,
@@ -191,7 +191,7 @@ class ActiveInferenceRightHemisphereAdapter:
             telemetry=merged_telemetry,
         )
 
-    def _describe_base_adapter(self, base_state: RightHemisphereState) -> dict[str, Any]:
+    def _describe_base_adapter(self, base_state: InputPerceptionState) -> dict[str, Any]:
         model_name = str(
             base_state.telemetry.get("model_name")
             or getattr(getattr(self.base_adapter, "config", None), "model_name", "")

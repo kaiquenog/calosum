@@ -4,7 +4,7 @@ import unittest
 
 from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter
 from calosum.domain.cognition.bridge import CognitiveTokenizer
-from calosum.shared.models.types import RightHemisphereState
+from calosum.shared.models.types import InputPerceptionState
 
 
 class CrossAttentionBridgeTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class CrossAttentionBridgeTests(unittest.TestCase):
 
     def test_tokenizer_applies_fusion_when_configured(self) -> None:
         tokenizer = CognitiveTokenizer(fusion=CrossAttentionBridgeAdapter())
-        state = RightHemisphereState(
+        state = InputPerceptionState(
             context_id="c1",
             latent_vector=[0.01 * i for i in range(384)],
             salience=0.6,

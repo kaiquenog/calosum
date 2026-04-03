@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from calosum.adapters.hemisphere.right_hemisphere_trained_jepa import (
+from calosum.adapters.hemisphere.input_perception_trained_jepa import (
     TrainedJEPAAdapter,
     TrainedJEPAConfig,
 )

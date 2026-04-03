@@ -10,16 +10,16 @@ from calosum.adapters.llm.llm_fusion import (
 )
 from calosum.shared.models.types import (
     BridgeControlSignal,
-    CognitiveBridgePacket,
-    LeftHemisphereResult,
+    PerceptionSummary,
+    ActionPlannerResult,
     MemoryContext,
     TypedLambdaProgram,
     UserTurn,
 )
 
 
-def _result(text: str) -> LeftHemisphereResult:
-    return LeftHemisphereResult(
+def _result(text: str) -> ActionPlannerResult:
+    return ActionPlannerResult(
         response_text=text,
         lambda_program=TypedLambdaProgram(
             "Context -> Response",
@@ -32,8 +32,8 @@ def _result(text: str) -> LeftHemisphereResult:
     )
 
 
-def _packet(uncertainty: float, temperature: float = 0.3) -> CognitiveBridgePacket:
-    return CognitiveBridgePacket(
+def _packet(uncertainty: float, temperature: float = 0.3) -> PerceptionSummary:
+    return PerceptionSummary(
         context_id="ctx-1",
         soft_prompts=[],
         control=BridgeControlSignal(

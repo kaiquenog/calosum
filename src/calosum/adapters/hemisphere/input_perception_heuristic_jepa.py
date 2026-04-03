@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from calosum.shared.models.jepa import ContextEmbedding, ResponsePrediction, SurpriseScore
-from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
+from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, InputPerceptionState, UserTurn
 from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
 
 
@@ -55,7 +55,7 @@ class HeuristicJEPAAdapter:
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         context_turns = self._history_turns(memory_context)
         if not context_turns:
             context_turns = [user_turn]
@@ -96,7 +96,7 @@ class HeuristicJEPAAdapter:
             "prediction_uncertainty": prediction.uncertainty,
             "operational_risk": runtime_feedback_bias,
         }
-        state = RightHemisphereState(
+        state = InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=prediction.predicted_embedding,
             salience=salience,
@@ -126,7 +126,7 @@ class HeuristicJEPAAdapter:
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         return self.perceive(user_turn, memory_context, workspace)
 
     async def encode_context(self, turns: list[UserTurn]) -> ContextEmbedding:

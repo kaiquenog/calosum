@@ -9,7 +9,7 @@ from calosum import (
     CalosumAgent,
     CalosumAgentConfig,
     CognitiveTelemetryBus,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     OTLPJsonlTelemetrySink,
     PersistentDualMemorySystem,
     PrimitiveAction,
@@ -20,7 +20,7 @@ from calosum import (
 
 class FaultyLeftHemisphere:
     def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text="unsafe attempt",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> UnsafeDecision",
@@ -53,7 +53,7 @@ class FaultyLeftHemisphere:
         attempt,
         critique_feedback=None,
     ):
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text="repaired response",
             lambda_program=TypedLambdaProgram(
                 signature="Context -> SafeDecision",
@@ -98,7 +98,7 @@ class FaultyLeftHemisphere:
 
 class MockLeftHemisphere:
     def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text="Mocked response",
             lambda_program=TypedLambdaProgram("Context -> Response", "()", "None"),
             actions=[],
@@ -117,7 +117,7 @@ class MockLeftHemisphere:
 
 class EmptyResponseLeftHemisphere:
     def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0):
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text="",
             lambda_program=TypedLambdaProgram(
                 "Context -> Plan",

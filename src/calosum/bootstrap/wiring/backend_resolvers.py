@@ -12,16 +12,16 @@ from calosum.adapters.infrastructure.contract_wrappers import (
 from calosum.adapters.experience.gea_experience_graph import GeaExperienceGraphConfig, GraphGeaExperienceStore
 from calosum.adapters.experience.gea_reflection_experience import ExperienceAwareGEAReflectionController
 from calosum.adapters.experience.gea_reflection_experience import LearnedPreferenceGEAReflectionController
-from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
-from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import HeuristicJEPAAdapter
-from calosum.adapters.hemisphere.right_hemisphere_trained_jepa import TrainedJEPAAdapter
+from calosum.adapters.hemisphere.action_planner_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.hemisphere.input_perception_heuristic_jepa import HeuristicJEPAAdapter
+from calosum.adapters.hemisphere.input_perception_trained_jepa import TrainedJEPAAdapter
 from calosum.adapters.llm.llm_failover import ResilientLeftHemisphereAdapter
 from calosum.adapters.llm.llm_fusion import MultiSampleFusionConfig, MultiSampleFusionLeftHemisphereAdapter
 from calosum.adapters.llm.llm_qwen import QwenAdapterConfig, QwenLeftHemisphereAdapter
 from calosum.adapters.perception.multimodal_perception import LocalClipVisionAdapter
-from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
-from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
-from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
+from calosum.adapters.hemisphere.input_perception_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
+from calosum.adapters.hemisphere.input_perception_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
+from calosum.adapters.hemisphere.input_perception_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureProfile, InfrastructureSettings
 
 def resolve_vision_adapter() -> LocalClipVisionAdapter:
@@ -178,7 +178,7 @@ def resolve_right_hemisphere(
         return _active_inference_right(base), "active_inference_jepars", "jepa-rs"
 
     if backend == "huggingface":
-        from calosum.adapters.hemisphere.right_hemisphere_hf import (
+        from calosum.adapters.hemisphere.input_perception_hf import (
             HuggingFaceRightHemisphereAdapter,
             HuggingFaceRightHemisphereConfig,
         )

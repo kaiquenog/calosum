@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
+from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, InputPerceptionState, UserTurn
 
 
 @dataclass(slots=True)
@@ -28,7 +28,7 @@ class JepaRsRightHemisphereAdapter:
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         payload = {
             "text": user_turn.user_text,
             "signals_count": len(user_turn.signals),
@@ -46,7 +46,7 @@ class JepaRsRightHemisphereAdapter:
         salience = max(0.0, min(1.0, float(result.get("salience", 0.45))))
         confidence = max(0.0, min(1.0, float(result.get("confidence", 0.7))))
 
-        state = RightHemisphereState(
+        state = InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=[float(v) for v in latent],
             salience=salience,
@@ -83,7 +83,7 @@ class JepaRsRightHemisphereAdapter:
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         return await asyncio.to_thread(self.perceive, user_turn, memory_context, workspace)
 
     def _invoke_backend(self, payload: dict[str, Any]) -> dict[str, Any]:

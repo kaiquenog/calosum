@@ -1,13 +1,13 @@
 import json
 import unittest
 
-from calosum import LeftHemisphereResult, PrimitiveAction, StrictLambdaRuntime, TypedLambdaProgram
+from calosum import ActionPlannerResult, PrimitiveAction, ToolRuntime, TypedLambdaProgram
 
 
 class StrictRuntimeTests(unittest.TestCase):
     def test_runtime_rejects_unknown_side_effecting_actions(self) -> None:
-        runtime = StrictLambdaRuntime()
-        result = LeftHemisphereResult(
+        runtime = ToolRuntime()
+        result = ActionPlannerResult(
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Unit -> Unit",
@@ -34,8 +34,8 @@ class StrictRuntimeTests(unittest.TestCase):
                         execution[0].status == "rejected")
 
     def test_runtime_executes_typed_plan_actions(self) -> None:
-        runtime = StrictLambdaRuntime()
-        result = LeftHemisphereResult(
+        runtime = ToolRuntime()
+        result = ActionPlannerResult(
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Unit -> Plan",
@@ -60,8 +60,8 @@ class StrictRuntimeTests(unittest.TestCase):
         self.assertEqual(execution[0].output["style"], "short")
 
     def test_runtime_rejects_actions_not_declared_by_plan(self) -> None:
-        runtime = StrictLambdaRuntime()
-        result = LeftHemisphereResult(
+        runtime = ToolRuntime()
+        result = ActionPlannerResult(
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Unit -> Response",
@@ -85,8 +85,8 @@ class StrictRuntimeTests(unittest.TestCase):
         self.assertIn("action_not_declared", execution[0].output.get("reason", ""))
 
     def test_runtime_respects_plan_sequence_order(self) -> None:
-        runtime = StrictLambdaRuntime()
-        result = LeftHemisphereResult(
+        runtime = ToolRuntime()
+        result = ActionPlannerResult(
             response_text="test",
             lambda_program=TypedLambdaProgram(
                 signature="Unit -> Actions",

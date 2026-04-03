@@ -22,7 +22,7 @@ class TypedLambdaProgramSchema(BaseModel):
     expected_effect: str = Field(min_length=1)
 
 
-class LeftHemisphereResultSchema(BaseModel):
+class ActionPlannerResultSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     response_text: str
@@ -33,7 +33,7 @@ class LeftHemisphereResultSchema(BaseModel):
 
 def collect_left_result_schema_issues(result: object) -> list[str]:
     try:
-        LeftHemisphereResultSchema.model_validate(result, from_attributes=True)
+        ActionPlannerResultSchema.model_validate(result, from_attributes=True)
         return []
     except ValidationError as exc:
         return _format_validation_errors(exc)

@@ -2,23 +2,23 @@
 
 from calosum.adapters.perception.active_inference import ActiveInferenceRightHemisphereAdapter
 from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter, CrossAttentionBridgeConfig
-from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.hemisphere.action_planner_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
 from calosum.adapters.perception.multimodal_perception import LocalClipVisionAdapter, LocalClipVisionConfig
-from calosum.adapters.hemisphere.right_hemisphere_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
-from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import (
+from calosum.adapters.hemisphere.input_perception_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
+from calosum.adapters.hemisphere.input_perception_heuristic_jepa import (
     HeuristicJEPAAdapter,
     HeuristicJEPAConfig,
 )
-from calosum.adapters.hemisphere.right_hemisphere_trained_jepa import (
+from calosum.adapters.hemisphere.input_perception_trained_jepa import (
     TrainedJEPAAdapter,
     TrainedJEPAConfig,
 )
-from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
-from calosum.adapters.hemisphere.right_hemisphere_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
+from calosum.adapters.hemisphere.input_perception_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
+from calosum.adapters.hemisphere.input_perception_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.wiring.factory import CalosumAgentBuilder
 from calosum.bootstrap.wiring.agent_baseline import AgentBaseline, AgentBaselineConfig
 from calosum.domain.cognition.bridge import ContextCompressor, ContextCompressorConfig, CognitiveTokenizer, CognitiveTokenizerConfig
-from calosum.domain.cognition.left_hemisphere import LeftHemisphereLogicalSLM, LeftHemisphereLogicalSLMConfig
+from calosum.domain.cognition.action_planner import ActionPlannerLogicalSLM, ActionPlannerLogicalSLMConfig
 from calosum.domain.memory.memory import (
     DualMemorySystem,
     InMemoryEpisodicStore,
@@ -37,28 +37,23 @@ from calosum.domain.metacognition.metacognition import (
 )
 from calosum.domain.agent.multiagent import ExecutorRole, PlannerRole, VerifierRole
 from calosum.domain.agent.orchestrator import CalosumAgent, CalosumAgentConfig
-from calosum.domain.memory.persistent_memory import (
-    JsonlEpisodicStore,
-    JsonlSemanticGraphStore,
-    JsonlSemanticStore,
-    PersistentDualMemorySystem,
-)
+from calosum.adapters.memory.persistent_sql_memory import PersistentDualMemorySystem
 from calosum.shared.models.ports import (
-    ActionRuntimePort,
+    ToolRuntimePort,
     BridgeFusionPort,
     ContextCompressorPort,
     CognitiveTokenizerPort,
     ExperienceStorePort,
-    JEPARightHemispherePort,
-    LeftHemispherePort,
+    JEPAInputPerceptionPort,
+    ActionPlannerPort,
     MemorySystemPort,
     ReflectionControllerPort,
-    RightHemispherePort,
+    InputPerceptionPort,
     TelemetryBusPort,
 )
 from calosum.shared.models.jepa import ContextEmbedding, ResponsePrediction, SurpriseScore
-from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA, RightHemisphereJEPAConfig
-from calosum.domain.execution.runtime import StrictLambdaRuntime, StrictLambdaRuntimeConfig
+from calosum.domain.cognition.input_perception import InputPerceptionJEPA, InputPerceptionJEPAConfig
+from calosum.domain.execution.tool_runtime import ToolRuntime, ToolRuntimeConfig
 from calosum.shared.utils.serialization import dump_json, to_json, to_primitive
 from calosum.bootstrap.infrastructure.settings import InfrastructureProfile, InfrastructureSettings
 from calosum.domain.infrastructure.telemetry import (
@@ -71,17 +66,17 @@ from calosum.shared.models.types import (
     ActionExecutionResult,
     AgentTurnResult,
     ContextDirective,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     ConsolidationReport,
     FailureType,
     KnowledgeTriple,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     MemoryContext,
     MemoryEpisode,
     Modality,
     MultimodalSignal,
     PrimitiveAction,
-    RightHemisphereState,
+    InputPerceptionState,
     SemanticRule,
     SoftPromptToken,
     TypedLambdaProgram,
@@ -95,7 +90,7 @@ except Exception:  # pragma: no cover - optional dependency surface
 
 __all__ = [
     "ActionExecutionResult",
-    "ActionRuntimePort",
+    "ToolRuntimePort",
     "ActiveInferenceRightHemisphereAdapter",
     "AgentTurnResult",
     "AgentBaseline",
@@ -105,7 +100,7 @@ __all__ = [
     "CalosumAgentBuilder",
     "CalosumAgentConfig",
     "CognitiveCandidate",
-    "CognitiveBridgePacket",
+    "PerceptionSummary",
     "ContextDirective",
     "CognitiveTelemetryBus",
     "ContextCompressor",
@@ -137,18 +132,15 @@ __all__ = [
     "InfrastructureSettings",
     "JepaRsConfig",
     "JepaRsRightHemisphereAdapter",
-    "JEPARightHemispherePort",
-    "JsonlEpisodicStore",
-    "JsonlSemanticGraphStore",
-    "JsonlSemanticStore",
+    "JEPAInputPerceptionPort",
     "KnowledgeTriple",
     "NanoGraphRAGKnowledgeGraphStore",
-    "LeftHemispherePort",
+    "ActionPlannerPort",
     "LocalClipVisionAdapter",
     "LocalClipVisionConfig",
-    "LeftHemisphereLogicalSLM",
-    "LeftHemisphereLogicalSLMConfig",
-    "LeftHemisphereResult",
+    "ActionPlannerLogicalSLM",
+    "ActionPlannerLogicalSLMConfig",
+    "ActionPlannerResult",
     "MemorySystemPort",
     "MemoryContext",
     "MemoryEpisode",
@@ -159,10 +151,10 @@ __all__ = [
     "PrimitiveAction",
     "ResponsePrediction",
     "ReflectionControllerPort",
-    "RightHemisphereJEPA",
-    "RightHemispherePort",
-    "RightHemisphereJEPAConfig",
-    "RightHemisphereState",
+    "InputPerceptionJEPA",
+    "InputPerceptionPort",
+    "InputPerceptionJEPAConfig",
+    "InputPerceptionState",
     "RlmAdapterConfig",
     "RlmLeftHemisphereAdapter",
     "ReflectionOutcome",
@@ -170,8 +162,8 @@ __all__ = [
     "SemanticRule",
     "SleepModeConsolidator",
     "SoftPromptToken",
-    "StrictLambdaRuntime",
-    "StrictLambdaRuntimeConfig",
+    "ToolRuntime",
+    "ToolRuntimeConfig",
     "TelemetryBusPort",
     "TelemetryEvent",
     "SurpriseScore",

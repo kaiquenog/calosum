@@ -9,8 +9,8 @@ from typing import Any, Literal
 
 from calosum.shared.models.types import (
     ActionExecutionResult,
-    CognitiveBridgePacket,
-    LeftHemisphereResult,
+    PerceptionSummary,
+    ActionPlannerResult,
     MemoryContext,
     UserTurn,
     CognitiveWorkspace,
@@ -22,7 +22,7 @@ FusionSelectionMode = Literal["guided", "random"]
 
 @dataclass(slots=True)
 class FusionResult:
-    result: LeftHemisphereResult
+    result: ActionPlannerResult
     selected_index: int
     method: str
     score: float | None = None
@@ -36,7 +36,7 @@ class SemanticFusionSelector:
 
     def select(
         self,
-        candidates: list[LeftHemisphereResult],
+        candidates: list[ActionPlannerResult],
         jepa_pred: list[float],
         uncertainty: float,
     ) -> FusionResult:
@@ -59,7 +59,7 @@ class SemanticFusionSelector:
             scores=[round(item, 6) for item in scores],
         )
 
-    def _encode_result(self, result: LeftHemisphereResult) -> list[float]:
+    def _encode_result(self, result: ActionPlannerResult) -> list[float]:
         text = result.response_text.strip()
         if not text and result.actions:
             action_texts = [
@@ -140,12 +140,12 @@ class MultiSampleFusionLeftHemisphereAdapter:
     def reason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return run_sync(
             self.areason(
                 user_turn=user_turn,
@@ -160,12 +160,12 @@ class MultiSampleFusionLeftHemisphereAdapter:
     async def areason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         uncertainty = self._extract_uncertainty(bridge_packet)
         if not self._should_fuse(uncertainty=uncertainty):
             result = await self._call_reason(
@@ -218,14 +218,14 @@ class MultiSampleFusionLeftHemisphereAdapter:
     def repair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return run_sync(
             self.arepair(
                 user_turn=user_turn,
@@ -242,14 +242,14 @@ class MultiSampleFusionLeftHemisphereAdapter:
     async def arepair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         try:
             repaired = await maybe_await(
                 self.provider.arepair(
@@ -287,12 +287,12 @@ class MultiSampleFusionLeftHemisphereAdapter:
         self,
         *,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None,
         attempt: int,
         workspace: CognitiveWorkspace | None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         try:
             return await maybe_await(
                 self.provider.areason(
@@ -319,7 +319,7 @@ class MultiSampleFusionLeftHemisphereAdapter:
         self,
         *,
         user_turn: UserTurn,
-        candidates: list[LeftHemisphereResult],
+        candidates: list[ActionPlannerResult],
         jepa_prediction: list[float],
         uncertainty: float,
     ) -> FusionResult:
@@ -335,7 +335,7 @@ class MultiSampleFusionLeftHemisphereAdapter:
 
     def _annotate(
         self,
-        result: LeftHemisphereResult,
+        result: ActionPlannerResult,
         *,
         method: str,
         uncertainty: float,
@@ -343,7 +343,7 @@ class MultiSampleFusionLeftHemisphereAdapter:
         selected_index: int,
         score: float | None = None,
         scores: list[float] | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         result.telemetry["fusion_enabled"] = self.config.enabled
         result.telemetry["fusion_selection_mode"] = self.config.selection_mode
         result.telemetry["fusion_method"] = method
@@ -358,7 +358,7 @@ class MultiSampleFusionLeftHemisphereAdapter:
             result.telemetry["fusion_scores"] = scores
         return result
 
-    def _packet_with_temperature(self, packet: CognitiveBridgePacket, temperature: float) -> CognitiveBridgePacket:
+    def _packet_with_temperature(self, packet: PerceptionSummary, temperature: float) -> PerceptionSummary:
         control = replace(packet.control, target_temperature=round(temperature, 3))
         return replace(packet, control=control)
 
@@ -368,7 +368,7 @@ class MultiSampleFusionLeftHemisphereAdapter:
         out = [round(max(0.0, min(1.5, base + offsets[idx % len(offsets)])), 3) for idx in range(count)]
         return out
 
-    def _extract_uncertainty(self, bridge_packet: CognitiveBridgePacket) -> float:
+    def _extract_uncertainty(self, bridge_packet: PerceptionSummary) -> float:
         annotations = bridge_packet.control.annotations or {}
         value = annotations.get("jepa_uncertainty")
         if value is None:

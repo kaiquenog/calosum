@@ -5,8 +5,8 @@ import unittest
 from calosum.adapters.llm.llm_failover import ResilientLeftHemisphereAdapter
 from calosum.shared.models.types import (
     BridgeControlSignal,
-    CognitiveBridgePacket,
-    LeftHemisphereResult,
+    PerceptionSummary,
+    ActionPlannerResult,
     MemoryContext,
     PrimitiveAction,
     TypedLambdaProgram,
@@ -14,8 +14,8 @@ from calosum.shared.models.types import (
 )
 
 
-def _bridge_packet() -> CognitiveBridgePacket:
-    return CognitiveBridgePacket(
+def _bridge_packet() -> PerceptionSummary:
+    return PerceptionSummary(
         context_id="ctx-1",
         soft_prompts=[],
         control=BridgeControlSignal(
@@ -30,8 +30,8 @@ def _bridge_packet() -> CognitiveBridgePacket:
 
 
 class UnusableProvider:
-    async def areason(self, *args, **kwargs) -> LeftHemisphereResult:
-        return LeftHemisphereResult(
+    async def areason(self, *args, **kwargs) -> ActionPlannerResult:
+        return ActionPlannerResult(
             response_text="",
             lambda_program=TypedLambdaProgram("Fallback", "()", "None"),
             actions=[],
@@ -39,13 +39,13 @@ class UnusableProvider:
             telemetry={"error": "timeout"},
         )
 
-    async def arepair(self, *args, **kwargs) -> LeftHemisphereResult:
+    async def arepair(self, *args, **kwargs) -> ActionPlannerResult:
         return await self.areason(*args, **kwargs)
 
 
 class HealthyProvider:
-    async def areason(self, *args, **kwargs) -> LeftHemisphereResult:
-        return LeftHemisphereResult(
+    async def areason(self, *args, **kwargs) -> ActionPlannerResult:
+        return ActionPlannerResult(
             response_text="Resposta final",
             lambda_program=TypedLambdaProgram("Context -> Response", "lambda _: respond_text()", "respond"),
             actions=[
@@ -60,7 +60,7 @@ class HealthyProvider:
             telemetry={},
         )
 
-    async def arepair(self, *args, **kwargs) -> LeftHemisphereResult:
+    async def arepair(self, *args, **kwargs) -> ActionPlannerResult:
         return await self.areason(*args, **kwargs)
 
 

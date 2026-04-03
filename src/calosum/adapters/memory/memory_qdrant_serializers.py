@@ -14,11 +14,11 @@ if TYPE_CHECKING:
 
 from calosum.shared.models.types import (
     BridgeControlSignal,
-    CognitiveBridgePacket,
-    LeftHemisphereResult,
+    PerceptionSummary,
+    ActionPlannerResult,
     MemoryEpisode,
     PrimitiveAction,
-    RightHemisphereState,
+    InputPerceptionState,
     SemanticRule,
     TypedLambdaProgram,
     UserTurn,
@@ -156,8 +156,8 @@ def _placeholder_right_state(
     confidence: float = 0.0,
     surprise_score: float = 0.0,
     world_hypotheses: dict | None = None,
-) -> RightHemisphereState:
-    return RightHemisphereState(
+) -> InputPerceptionState:
+    return InputPerceptionState(
         context_id=user_turn.turn_id,
         latent_vector=latent_vector or [],
         salience=salience,
@@ -169,8 +169,8 @@ def _placeholder_right_state(
     )
 
 
-def _placeholder_bridge_packet(right_state: RightHemisphereState) -> CognitiveBridgePacket:
-    return CognitiveBridgePacket(
+def _placeholder_bridge_packet(right_state: InputPerceptionState) -> PerceptionSummary:
+    return PerceptionSummary(
         context_id=right_state.context_id,
         soft_prompts=[],
         control=BridgeControlSignal(
@@ -189,7 +189,7 @@ def _placeholder_left_result(
     response_text: str = "",
     action_types: list[str] | None = None,
     reasoning_summary: list[str] | None = None,
-) -> LeftHemisphereResult:
+) -> ActionPlannerResult:
     actions = []
     for action_type in action_types or []:
         actions.append(
@@ -200,7 +200,7 @@ def _placeholder_left_result(
                 safety_invariants=["placeholder reconstructed from qdrant payload"],
             )
         )
-    return LeftHemisphereResult(
+    return ActionPlannerResult(
         response_text=response_text,
         lambda_program=TypedLambdaProgram(
             signature="Placeholder",

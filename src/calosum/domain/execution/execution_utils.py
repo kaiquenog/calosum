@@ -2,17 +2,17 @@ from typing import Any
 from calosum.shared.models.types import (
     ActionExecutionResult,
     AgentTurnResult,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     CognitiveTelemetrySnapshot,
     CritiqueVerdict,
-    LeftHemisphereResult,
-    RightHemisphereState,
+    ActionPlannerResult,
+    InputPerceptionState,
 )
 
 def build_execution_telemetry(
-    right_state: RightHemisphereState,
-    bridge_packet: CognitiveBridgePacket,
-    left_result: LeftHemisphereResult,
+    right_state: InputPerceptionState,
+    bridge_packet: PerceptionSummary,
+    left_result: ActionPlannerResult,
     execution_results: list[ActionExecutionResult],
     retry_count: int,
     critique_revision_count: int,
@@ -73,7 +73,7 @@ def build_execution_telemetry(
     )
 
 def ensure_response_text(
-    left_result: LeftHemisphereResult,
+    left_result: ActionPlannerResult,
     execution_results: list[ActionExecutionResult],
 ) -> str:
     if left_result.response_text.strip():

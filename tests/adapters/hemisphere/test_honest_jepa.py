@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 import math
 from calosum import UserTurn
-from calosum.adapters.hemisphere.right_hemisphere_heuristic_jepa import HeuristicJEPAAdapter
+from calosum.adapters.hemisphere.input_perception_heuristic_jepa import HeuristicJEPAAdapter
 
 class HonestJEPATests(unittest.TestCase):
     def test_identical_phrases_have_zero_distance(self) -> None:

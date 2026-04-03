@@ -12,10 +12,10 @@ from calosum.adapters.memory.memory_qdrant_serializers import (
 )
 from calosum.shared.models.types import (
     BridgeControlSignal,
-    CognitiveBridgePacket,
-    LeftHemisphereResult,
+    PerceptionSummary,
+    ActionPlannerResult,
     MemoryEpisode,
-    RightHemisphereState,
+    InputPerceptionState,
     TypedLambdaProgram,
     UserTurn,
     utc_now,
@@ -85,7 +85,7 @@ class FakeEmbedder:
 
 def _episode(session_id: str, text: str, labels: list[str]) -> MemoryEpisode:
     turn = UserTurn(session_id=session_id, user_text=text)
-    right_state = RightHemisphereState(
+    right_state = InputPerceptionState(
         context_id=turn.turn_id,
         latent_vector=[
             1.0 if "projeto" in text.lower() else 0.0,
@@ -103,7 +103,7 @@ def _episode(session_id: str, text: str, labels: list[str]) -> MemoryEpisode:
         recorded_at=utc_now(),
         user_turn=turn,
         right_state=right_state,
-        bridge_packet=CognitiveBridgePacket(
+        bridge_packet=PerceptionSummary(
             context_id=turn.turn_id,
             soft_prompts=[],
             control=BridgeControlSignal(
@@ -113,7 +113,7 @@ def _episode(session_id: str, text: str, labels: list[str]) -> MemoryEpisode:
             ),
             salience=right_state.salience,
         ),
-        left_result=LeftHemisphereResult(
+        left_result=ActionPlannerResult(
             response_text="ok",
             lambda_program=TypedLambdaProgram("Context -> Response", "lambda ctx: respond_text()", "safe"),
             actions=[],

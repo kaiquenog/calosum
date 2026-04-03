@@ -1,8 +1,8 @@
 import asyncio
 import json
 import unittest
-from calosum.adapters.execution.action_runtime import ConcreteActionRuntime
-from calosum.shared.models.types import LeftHemisphereResult, PrimitiveAction, TypedLambdaProgram, CognitiveWorkspace
+from calosum.adapters.execution.tool_runtime import ConcreteActionRuntime
+from calosum.shared.models.types import ActionPlannerResult, PrimitiveAction, TypedLambdaProgram, CognitiveWorkspace
 
 class TestPersistentRuntime(unittest.IsolatedAsyncioTestCase):
     async def test_bash_persistence(self):
@@ -16,7 +16,7 @@ class TestPersistentRuntime(unittest.IsolatedAsyncioTestCase):
             payload={"command": "export CALOSUM_VAR=success", "approved": True}
         )
         await runtime.arun(
-            LeftHemisphereResult(
+            ActionPlannerResult(
                 response_text="",
                 lambda_program=TypedLambdaProgram("", "", ""),
                 actions=[action1],
@@ -32,7 +32,7 @@ class TestPersistentRuntime(unittest.IsolatedAsyncioTestCase):
             payload={"command": "echo $CALOSUM_VAR", "approved": True}
         )
         result2 = await runtime.arun(
-            LeftHemisphereResult(
+            ActionPlannerResult(
                 response_text="",
                 lambda_program=TypedLambdaProgram("", "", ""),
                 actions=[action2],
@@ -57,7 +57,7 @@ class TestPersistentRuntime(unittest.IsolatedAsyncioTestCase):
             payload={"path": "cross_tool.txt", "content": "shared_content", "approved": True}
         )
         await runtime.arun(
-            LeftHemisphereResult(
+            ActionPlannerResult(
                 response_text="",
                 lambda_program=TypedLambdaProgram("", "", ""),
                 actions=[action1],
@@ -73,7 +73,7 @@ class TestPersistentRuntime(unittest.IsolatedAsyncioTestCase):
             payload={"command": "cat cross_tool.txt", "approved": True}
         )
         result2 = await runtime.arun(
-            LeftHemisphereResult(
+            ActionPlannerResult(
                 response_text="",
                 lambda_program=TypedLambdaProgram("", "", ""),
                 actions=[action2],
@@ -96,7 +96,7 @@ class TestPersistentRuntime(unittest.IsolatedAsyncioTestCase):
             payload={"code": "print(21 + 21)", "approved": True}
         )
         result = await runtime.arun(
-            LeftHemisphereResult(
+            ActionPlannerResult(
                 response_text="",
                 lambda_program=TypedLambdaProgram("", "", ""),
                 actions=[action],

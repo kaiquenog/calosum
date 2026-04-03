@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from calosum.adapters.execution.action_runtime import ConcreteActionRuntime
+from calosum.adapters.execution.tool_runtime import ConcreteActionRuntime
 from calosum.bootstrap.wiring.agent_baseline import AgentBaseline, AgentBaselineConfig
 from calosum.shared.models.types import (
-    LeftHemisphereResult,
+    ActionPlannerResult,
     PrimitiveAction,
     TypedLambdaProgram,
     UserTurn,
@@ -22,7 +22,7 @@ class _FakeEmbedder:
 
 class _FakeLeftHemisphere:
     def reason(self, user_turn, bridge_packet, memory_context, runtime_feedback=None, attempt=0, workspace=None):
-        return LeftHemisphereResult(
+        return ActionPlannerResult(
             response_text="ok",
             lambda_program=TypedLambdaProgram("Context -> Response", "lambda _: ok", "respond"),
             actions=[

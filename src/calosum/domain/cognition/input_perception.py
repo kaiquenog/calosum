@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import hashlib
+import math
+import re
 from dataclasses import dataclass, field
 from collections import defaultdict
 from typing import Any
 
-from calosum.shared.models.types import MemoryContext, Modality, RightHemisphereState, UserTurn, CognitiveWorkspace
+from calosum.shared.models.types import MemoryContext, Modality, InputPerceptionState, UserTurn, CognitiveWorkspace
 
 
 @dataclass(slots=True)
-class RightHemisphereJEPAConfig:
-    model_name: str = "v-jepa-placeholder"
-    latent_size: int = 16
+class InputPerceptionJEPAConfig:
+    model_name: str = "v-jepa-heuristic"
+    latent_size: int = 384
     salience_keywords: dict[str, float] = field(
         default_factory=lambda: {
             "urgente": 1.0,
@@ -32,69 +34,69 @@ class RightHemisphereJEPAConfig:
     salience_max_step: float = 0.22
 
 
-class RightHemisphereJEPA:
+class InputPerceptionJEPA:
     """
-    Fachada do hemisferio direito.
+    Fachada do hemisferio direito (Perception).
 
-    Em producao, esta classe encapsularia um backbone V-JEPA/I-JEPA em PyTorch
-    e operaria sobre fluxos multimodais para prever estados latentes ocultos.
-    Neste esqueleto, a saida e sintetica e deterministica para documentar a
-    interface de comunicacao com os demais modulos.
+    Implementa um JEPA heurístico baseado em embeddings lexicais ou modelos locais
+    quando backends pesados não estão disponíveis.
     """
 
     def __init__(
         self,
-        config: RightHemisphereJEPAConfig | None = None,
-        vision_adapter: VisionEmbeddingPort | None = None,
+        config: InputPerceptionJEPAConfig | None = None,
+        vision_adapter: Any | None = None,
+        embedder: Any | None = None,
     ) -> None:
-        self.config = config or RightHemisphereJEPAConfig()
+        self.config = config or InputPerceptionJEPAConfig()
         self.vision_adapter = vision_adapter
+        self.embedder = embedder
         self._salience_history_by_session: dict[str, list[float]] = defaultdict(list)
 
-    def perceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
-        seed = self._build_seed(user_turn)
-        latent_vector = self._latent_from_seed(seed, self.config.latent_size)
+    def perceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> InputPerceptionState:
+        # Get latent vector using the best available embedder
+        latent_vector = self._get_latent_vector(user_turn.user_text)
+        
         emotional_labels = self._extract_emotional_labels(user_turn)
         raw_salience = self._estimate_salience(user_turn, emotional_labels)
         
         # Process visual signals if present
         visual_latents: list[float] = []
-        if self.vision_adapter:
+        if self.vision_adapter and hasattr(self.vision_adapter, "embed_image"):
             for signal in user_turn.signals:
                 if signal.modality == Modality.VIDEO and isinstance(signal.payload, bytes):
                     visual_latents.extend(self.vision_adapter.embed_image(signal.payload))
 
         runtime_feedback_bias = self._runtime_feedback_bias(workspace)
         salience = self._calibrate_salience(user_turn.session_id, min(1.0, raw_salience + runtime_feedback_bias))
+        
+        # Surprise is calculated via Cosine Distance intent
+        surprise_score = self._calculate_surprise(latent_vector, memory_context)
+
         world_hypotheses = {
             "interaction_complexity": min(1.0, len(user_turn.user_text) / 240.0),
             "sensor_diversity": min(1.0, len(user_turn.signals) / 6.0),
             "visual_richness": min(1.0, len(visual_latents) / 1024.0),
             "urgency": salience,
-            "semantic_density": 0.5 + (0.1 if visual_latents else 0.0),
+            "semantic_density": self._semantic_density(latent_vector),
             "operational_risk": runtime_feedback_bias,
         }
 
-        # V2 Vision: Surprise is calculated via KL-Divergence between predicted and actual latents.
-        # In the domain layer, we represent the intent; the adapter implements the math.
-        surprise_score = self._calculate_surprise(latent_vector, memory_context)
-
-        state = RightHemisphereState(
+        state = InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=latent_vector,
             salience=salience,
             emotional_labels=emotional_labels or ["neutral"],
             world_hypotheses=world_hypotheses,
-            confidence=0.72,
+            confidence=0.85 if self.embedder else 0.45,
             surprise_score=surprise_score,
             telemetry={
                 "model_name": self.config.model_name,
-                "right_backend": "heuristic_jepa",
+                "right_backend": "heuristic_jepa_v2",
                 "right_model_name": self.config.model_name,
-                "right_mode": "heuristic",
-                "degraded_reason": None,
+                "right_mode": "lexical_enhanced" if not self.embedder else "embedded",
+                "degraded_reason": None if self.embedder else "no_active_embedder_fallback_to_lexical",
                 "modalities_seen": [signal.modality.value for signal in user_turn.signals],
-                "seed_fingerprint": seed[:12],
                 "raw_salience": raw_salience,
                 "runtime_feedback_bias": runtime_feedback_bias,
             },
@@ -111,54 +113,64 @@ class RightHemisphereJEPA:
             
         return state
 
-    async def aperceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState:
+    async def aperceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> InputPerceptionState:
         return self.perceive(user_turn, memory_context, workspace)
+
+    def _get_latent_vector(self, text: str) -> list[float]:
+        if self.embedder and hasattr(self.embedder, "embed_texts"):
+            try:
+                vectors = self.embedder.embed_texts([text])
+                return vectors[0]
+            except Exception:
+                pass
+        return self._lexical_vector(text)
+
+    def _lexical_vector(self, text: str) -> list[float]:
+        tokens = re.findall(r"\w+", text.lower()) or ["silence"]
+        vector = [0.0] * self.config.latent_size
+        for token in tokens:
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            for index in range(0, len(digest), 4):
+                chunk = digest[index:index + 4]
+                position = int.from_bytes(chunk[:2], "big") % self.config.latent_size
+                sign = 1.0 if chunk[2] % 2 == 0 else -1.0
+                magnitude = 1.0 + (chunk[3] / 255.0)
+                vector[position] += sign * magnitude
+        norm = math.sqrt(sum(v * v for v in vector))
+        if norm == 0: return vector
+        return [round(v / norm, 6) for v in vector]
 
     def _calculate_surprise(self, latent_vector: list[float], memory_context: Any | None) -> float:
         if not memory_context or not memory_context.recent_episodes:
-            return 0.5  # default surprise if no memory
+            return 0.2  # default baseline surprise
         
-        # Calculate cosine distance to average of recent memories
-        try:
-            import math
-            recent_vectors = [ep.right_state.latent_vector for ep in memory_context.recent_episodes if len(ep.right_state.latent_vector) == len(latent_vector)]
-            if not recent_vectors:
-                return 0.5
-                
-            avg_vector = [sum(x)/len(recent_vectors) for x in zip(*recent_vectors)]
+        recent_vectors = [
+            ep.right_state.latent_vector 
+            for ep in memory_context.recent_episodes 
+            if len(ep.right_state.latent_vector) == len(latent_vector)
+        ]
+        if not recent_vectors:
+            return 0.2
             
-            dot_product = sum(a*b for a, b in zip(latent_vector, avg_vector))
-            mag_a = math.sqrt(sum(a*a for a in latent_vector))
-            mag_b = math.sqrt(sum(b*b for b in avg_vector))
-            
-            if mag_a == 0 or mag_b == 0:
-                return 0.5
-                
-            cosine_similarity = dot_product / (mag_a * mag_b)
-            # Distance is 1 - similarity. So max surprise is when similarity is -1 (distance 2)
-            distance = 1.0 - cosine_similarity
-            
-            # Normalize to 0-1 range (distance is 0 to 2)
-            return round(distance / 2.0, 3)
-        except Exception:
+        avg_vector = [sum(x)/len(recent_vectors) for x in zip(*recent_vectors)]
+        
+        dot_product = sum(a*b for a, b in zip(latent_vector, avg_vector))
+        mag_a = math.sqrt(sum(a*a for a in latent_vector))
+        mag_b = math.sqrt(sum(b*b for b in avg_vector))
+        
+        if mag_a == 0 or mag_b == 0:
             return 0.5
+            
+        cosine_similarity = dot_product / (mag_a * mag_b)
+        # We use (1 - sim) / 2 to map to [0, 1]
+        distance = (1.0 - cosine_similarity) / 2.0
+        
+        return round(distance, 3)
 
-    def _build_seed(self, user_turn: UserTurn) -> str:
-        raw_payload = "|".join(
-            f"{signal.modality}:{signal.source}:{str(signal.payload)[:64]}:{signal.metadata}"
-            for signal in user_turn.signals
-        )
-        return hashlib.sha256(
-            f"{user_turn.session_id}|{user_turn.user_text}|{raw_payload}".encode("utf-8")
-        ).hexdigest()
-
-    def _latent_from_seed(self, seed: str, latent_size: int) -> list[float]:
-        digest = bytes.fromhex(seed)
-        vector: list[float] = []
-        for index in range(latent_size):
-            byte = digest[index % len(digest)]
-            vector.append(round((byte / 255.0) * 2.0 - 1.0, 4))
-        return vector
+    def _semantic_density(self, vector: list[float]) -> float:
+        if not vector: return 0.0
+        mean_abs = sum(abs(v) for v in vector) / len(vector)
+        return round(max(0.0, min(1.0, mean_abs * 2.0)), 3)
 
     def _extract_emotional_labels(self, user_turn: UserTurn) -> list[str]:
         labels: list[str] = []

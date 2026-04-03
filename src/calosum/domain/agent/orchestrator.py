@@ -17,7 +17,7 @@ from calosum.domain.execution.agent_execution import AgentExecutionEngine
 from calosum.domain.agent.agent_config import CalosumAgentConfig, BranchingBudget
 from calosum.domain.cognition.bridge import CognitiveTokenizer
 from calosum.domain.infrastructure.event_bus import CognitiveEvent, InternalEventBus
-from calosum.domain.cognition.left_hemisphere import LeftHemisphereLogicalSLM
+from calosum.domain.cognition.action_planner import ActionPlannerLogicalSLM
 from calosum.domain.memory.memory import DualMemorySystem
 from calosum.domain.agent.evolution import (
     EvolutionManager,
@@ -32,19 +32,19 @@ from calosum.domain.metacognition.metacognition import (
     default_cognitive_personas,
 )
 from calosum.shared.models.ports import (
-    ActionRuntimePort,
+    ToolRuntimePort,
     CognitiveTokenizerPort,
-    LeftHemispherePort,
+    ActionPlannerPort,
     MemorySystemPort,
     ReflectionControllerPort,
-    RightHemispherePort,
+    InputPerceptionPort,
     TelemetryBusPort,
     VerifierPort,
     LatentExchangePort,
     VisionEmbeddingPort,
 )
-from calosum.domain.cognition.right_hemisphere import RightHemisphereJEPA
-from calosum.domain.execution.runtime import StrictLambdaRuntime
+from calosum.domain.cognition.input_perception import InputPerceptionJEPA
+from calosum.domain.execution.tool_runtime import ToolRuntime
 from calosum.domain.infrastructure.telemetry import CognitiveTelemetryBus
 from calosum.domain.infrastructure.verifier import HeuristicVerifier
 from calosum.domain.agent.idle_foraging import build_idle_foraging_turn
@@ -69,11 +69,11 @@ class CalosumAgent:
 
     def __init__(
         self,
-        right_hemisphere: RightHemispherePort | None = None,
+        right_hemisphere: InputPerceptionPort | None = None,
         tokenizer: CognitiveTokenizerPort | None = None,
-        left_hemisphere: LeftHemispherePort | None = None,
+        left_hemisphere: ActionPlannerPort | None = None,
         memory_system: MemorySystemPort | None = None,
-        action_runtime: ActionRuntimePort | None = None,
+        action_runtime: ToolRuntimePort | None = None,
         telemetry_bus: TelemetryBusPort | None = None,
         reflection_controller: ReflectionControllerPort | None = None,
         verifier: VerifierPort | None = None,
@@ -83,11 +83,11 @@ class CalosumAgent:
         night_trainer: Any | None = None,
         latent_exchange: LatentExchangePort | None = None,
     ) -> None:
-        self.right_hemisphere = right_hemisphere or RightHemisphereJEPA()
+        self.right_hemisphere = right_hemisphere or InputPerceptionJEPA()
         self.tokenizer = tokenizer or CognitiveTokenizer()
-        self.left_hemisphere = left_hemisphere or LeftHemisphereLogicalSLM()
+        self.left_hemisphere = left_hemisphere or ActionPlannerLogicalSLM()
         self.memory_system = memory_system or DualMemorySystem()
-        self.action_runtime = action_runtime or StrictLambdaRuntime()
+        self.action_runtime = action_runtime or ToolRuntime()
         self.telemetry_bus = telemetry_bus or CognitiveTelemetryBus()
         self.reflection_controller = reflection_controller or GEAReflectionController()
         self.verifier = verifier or HeuristicVerifier()

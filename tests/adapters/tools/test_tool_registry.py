@@ -6,9 +6,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from calosum.adapters.execution.action_runtime import ConcreteActionRuntime
+from calosum.adapters.execution.tool_runtime import ConcreteActionRuntime
 from calosum.shared.utils.tools import ToolRegistry, ToolSchema
-from calosum.shared.models.types import ActionExecutionResult, LeftHemisphereResult, PrimitiveAction, TypedLambdaProgram
+from calosum.shared.models.types import ActionExecutionResult, ActionPlannerResult, PrimitiveAction, TypedLambdaProgram
 
 
 class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
@@ -24,7 +24,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         )
         
         runtime = ConcreteActionRuntime(registry=registry)
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="Doing dummy",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[
@@ -40,7 +40,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tool_not_found(self):
         runtime = ConcreteActionRuntime()
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="Doing unknown",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[
@@ -66,7 +66,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         )
         
         runtime = ConcreteActionRuntime(registry=registry)
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="Doing dangerous",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[
@@ -87,7 +87,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_schema_validation_rejects_invalid_payload(self):
         runtime = ConcreteActionRuntime()
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="Invalid payload",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[
@@ -114,7 +114,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_code_execution_runs_constrained_python(self):
         runtime = ConcreteActionRuntime()
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="Execute code",
             lambda_program=TypedLambdaProgram("Code->Text", "lambda code: code_execution()", "effect"),
             actions=[
@@ -136,7 +136,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_code_execution_blocks_unsafe_imports(self):
         runtime = ConcreteActionRuntime()
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="Execute code",
             lambda_program=TypedLambdaProgram("Code->Text", "lambda code: code_execution()", "effect"),
             actions=[
@@ -167,7 +167,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             text='{"status":"ok"}',
             json=lambda: {"status": "ok"},
         )
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="HTTP request",
             lambda_program=TypedLambdaProgram("Request->Text", "lambda req: http_request()", "effect"),
             actions=[
@@ -207,7 +207,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         runtime = ConcreteActionRuntime(agent_accessor=lambda: (fake_agent, None))
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="Stats",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[PrimitiveAction("query_session_stats", "A->B", {"session_id": "s1"}, [])],
@@ -222,7 +222,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_read_architecture_returns_source_and_dependencies(self):
         runtime = ConcreteActionRuntime()
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="Read architecture",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[PrimitiveAction("read_architecture", "A->B", {"component_name": "CalosumAgent"}, [])],
@@ -247,7 +247,7 @@ class ToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         evo = EvolutionManagerStub()
         fake_agent = SimpleNamespace(evolution_manager=evo)
         runtime = ConcreteActionRuntime(agent_accessor=lambda: (fake_agent, None))
-        left_result = LeftHemisphereResult(
+        left_result = ActionPlannerResult(
             response_text="Propose",
             lambda_program=TypedLambdaProgram("A->B", "lambda x: x", "effect"),
             actions=[

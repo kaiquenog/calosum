@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from calosum.shared.models.types import CognitiveBridgePacket, MemoryContext, UserTurn
+from calosum.shared.models.types import PerceptionSummary, MemoryContext, UserTurn
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ Available Action Types:
 
 def build_left_hemisphere_prompt(
     user_turn: UserTurn,
-    bridge_packet: CognitiveBridgePacket,
+    bridge_packet: PerceptionSummary,
     memory_context: MemoryContext,
     feedback: list[str] | None,
     session_briefing: str | None = None,
@@ -324,7 +324,7 @@ def build_openai_chat_payload(
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "You are a logical neuro-symbolic agent. Output valid JSON only, corresponding to LeftHemisphereResult format."},
+            {"role": "system", "content": "You are a logical neuro-symbolic agent. Output valid JSON only, corresponding to ActionPlannerResult format."},
             {"role": "user", "content": prompt},
         ],
         "max_tokens": max_tokens,

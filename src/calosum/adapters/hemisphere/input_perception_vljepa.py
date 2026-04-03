@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from calosum.adapters.hemisphere.right_hemisphere_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
-from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, RightHemisphereState, UserTurn
+from calosum.adapters.hemisphere.input_perception_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
+from calosum.shared.models.types import CognitiveWorkspace, MemoryContext, InputPerceptionState, UserTurn
 
 
 @dataclass(slots=True)
@@ -27,7 +27,7 @@ class VLJepaRightHemisphereAdapter(VJepa21RightHemisphereAdapter):
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         state = super().perceive(user_turn, memory_context, workspace)
 
         latent = np.asarray(state.latent_vector, dtype=np.float32)
@@ -53,7 +53,7 @@ class VLJepaRightHemisphereAdapter(VJepa21RightHemisphereAdapter):
             }
         )
 
-        enriched = RightHemisphereState(
+        enriched = InputPerceptionState(
             context_id=state.context_id,
             latent_vector=state.latent_vector,
             salience=state.salience,
@@ -78,7 +78,7 @@ class VLJepaRightHemisphereAdapter(VJepa21RightHemisphereAdapter):
         user_turn: UserTurn,
         memory_context: MemoryContext | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> RightHemisphereState:
+    ) -> InputPerceptionState:
         return await asyncio.to_thread(self.perceive, user_turn, memory_context, workspace)
 
     def _merge_modalities(self, text_latent: np.ndarray, visual_latent: np.ndarray) -> np.ndarray:

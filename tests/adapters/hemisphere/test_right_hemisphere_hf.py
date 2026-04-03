@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 import types
-from calosum.adapters.hemisphere.right_hemisphere_hf import HuggingFaceRightHemisphereAdapter, HuggingFaceRightHemisphereConfig
+from calosum.adapters.hemisphere.input_perception_hf import HuggingFaceRightHemisphereAdapter, HuggingFaceRightHemisphereConfig
 from calosum.shared.models.types import UserTurn, Modality, MultimodalSignal
 
 class TestHuggingFaceRightHemisphere(unittest.TestCase):

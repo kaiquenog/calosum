@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from calosum.shared.models.types import MemoryContext, RightHemisphereState
+from calosum.shared.models.types import MemoryContext, InputPerceptionState
 
 class LatentPredicate(Protocol):
     """Protocol for a differentiable predicate grounded in latent space."""
@@ -122,7 +122,7 @@ class CognitiveDissonanceMetric:
     Measures the alignment between the Right Hemisphere's intuition
     and the Left Hemisphere's logical expectations.
     """
-    def calculate(self, right_state: RightHemisphereState, logic_grounding: float) -> float:
+    def calculate(self, right_state: InputPerceptionState, logic_grounding: float) -> float:
         # Dissonance is high when the logic satisfaction degree
         # is low despite high salience, or vice versa.
         return abs(right_state.salience - logic_grounding)

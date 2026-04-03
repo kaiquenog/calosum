@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from calosum.adapters.hemisphere.left_hemisphere_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.hemisphere.action_planner_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
 from calosum.shared.models.types import (
     BridgeControlSignal,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     MemoryContext,
     SoftPromptToken,
     TypedLambdaProgram,
@@ -16,8 +16,8 @@ from calosum.shared.models.types import (
 )
 
 
-def _bridge_packet() -> CognitiveBridgePacket:
-    return CognitiveBridgePacket(
+def _bridge_packet() -> PerceptionSummary:
+    return PerceptionSummary(
         context_id="ctx",
         soft_prompts=[SoftPromptToken(token="<affect:neutral>", weight=0.5, provenance="test")],
         control=BridgeControlSignal(target_temperature=0.2, empathy_priority=False, system_directives=[]),

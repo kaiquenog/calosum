@@ -6,14 +6,14 @@ from calosum.shared.models.jepa import ContextEmbedding, ResponsePrediction, Sur
 from calosum.shared.models.types import (
     ActionExecutionResult,
     AgentTurnResult,
-    CognitiveBridgePacket,
+    PerceptionSummary,
     CognitiveWorkspace,
     ConsolidationReport,
     CritiqueVerdict,
-    LeftHemisphereResult,
+    ActionPlannerResult,
     MemoryContext,
     MemoryEpisode,
-    RightHemisphereState,
+    InputPerceptionState,
     UserTurn,
 )
 
@@ -26,13 +26,13 @@ class ChannelPort(Protocol):
     async def send(self, session_id: str, text: str) -> None: ...
 
 @runtime_checkable
-class RightHemispherePort(Protocol):
-    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState: ...
-    async def aperceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace: CognitiveWorkspace | None = None) -> RightHemisphereState: ...
+class InputPerceptionPort(Protocol):
+    def perceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace: CognitiveWorkspace | None = None) -> InputPerceptionState: ...
+    async def aperceive(self, user_turn: UserTurn, memory_context: MemoryContext | None = None, workspace: CognitiveWorkspace | None = None) -> InputPerceptionState: ...
 
 
 @runtime_checkable
-class JEPARightHemispherePort(Protocol):
+class JEPAInputPerceptionPort(Protocol):
     async def encode_context(self, turns: list[UserTurn]) -> ContextEmbedding: ...
     async def predict_response_embedding(self, ctx: ContextEmbedding) -> ResponsePrediction: ...
     async def compute_surprise(self, ctx: ContextEmbedding, actual_response: str) -> SurpriseScore: ...
@@ -40,55 +40,55 @@ class JEPARightHemispherePort(Protocol):
 
 @runtime_checkable
 class ContextCompressorPort(Protocol):
-    def translate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket: ...
-    async def atranslate(self, right_state: RightHemisphereState, workspace: CognitiveWorkspace | None = None) -> CognitiveBridgePacket: ...
+    def translate(self, right_state: InputPerceptionState, workspace: CognitiveWorkspace | None = None) -> PerceptionSummary: ...
+    async def atranslate(self, right_state: InputPerceptionState, workspace: CognitiveWorkspace | None = None) -> PerceptionSummary: ...
 
 
 @runtime_checkable
-class LeftHemispherePort(Protocol):
+class ActionPlannerPort(Protocol):
     def reason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult: ...
+    ) -> ActionPlannerResult: ...
 
     async def areason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult: ...
+    ) -> ActionPlannerResult: ...
 
     def repair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult: ...
+    ) -> ActionPlannerResult: ...
 
     async def arepair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult: ...
+    ) -> ActionPlannerResult: ...
 
 
 @runtime_checkable
@@ -116,9 +116,9 @@ class MemorySystemPort(Protocol):
 
 
 @runtime_checkable
-class ActionRuntimePort(Protocol):
-    def run(self, left_result: LeftHemisphereResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]: ...
-    async def arun(self, left_result: LeftHemisphereResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]: ...
+class ToolRuntimePort(Protocol):
+    def run(self, left_result: ActionPlannerResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]: ...
+    async def arun(self, left_result: ActionPlannerResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]: ...
     def get_registered_tools(self) -> list["ToolDescriptor"]: ...
 
 @runtime_checkable
@@ -169,7 +169,7 @@ class VerifierPort(Protocol):
     def verify(
         self,
         user_turn: UserTurn,
-        left_result: LeftHemisphereResult,
+        left_result: ActionPlannerResult,
         execution_results: list[ActionExecutionResult],
         workspace: CognitiveWorkspace | None = None,
     ) -> "CritiqueVerdict": ...
@@ -177,7 +177,7 @@ class VerifierPort(Protocol):
     async def averify(
         self,
         user_turn: UserTurn,
-        left_result: LeftHemisphereResult,
+        left_result: ActionPlannerResult,
         execution_results: list[ActionExecutionResult],
         workspace: CognitiveWorkspace | None = None,
     ) -> "CritiqueVerdict": ...

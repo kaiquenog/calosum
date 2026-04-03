@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from calosum.shared.models.ports import ActionRuntimePort, RightHemispherePort
+    from calosum.shared.models.ports import ToolRuntimePort, InputPerceptionPort
     from calosum.domain.agent.agent_config import CalosumAgentConfig
 
 from calosum.shared.models.types import DirectiveType, EvolutionDirective, SessionDiagnostic, utc_now

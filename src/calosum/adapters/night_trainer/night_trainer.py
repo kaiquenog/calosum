@@ -220,7 +220,7 @@ class NightTrainer:
 
     def _derive_optimization_notes(self, dataset: list[dict[str, Any]]) -> list[str]:
         notes = [
-            "Always return valid JSON that matches the LeftHemisphereResult contract.",
+            "Always return valid JSON that matches the ActionPlannerResult contract.",
             "Use specific typed signatures and never fall back to placeholders like Any -> Any.",
         ]
         action_counts = Counter(

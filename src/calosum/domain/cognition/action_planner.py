@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 from calosum.shared.models.types import (
     ActionExecutionResult,
-    CognitiveBridgePacket,
-    LeftHemisphereResult,
+    PerceptionSummary,
+    ActionPlannerResult,
     MemoryContext,
     PrimitiveAction,
     TypedLambdaProgram,
@@ -15,13 +15,13 @@ from calosum.shared.models.types import (
 
 
 @dataclass(slots=True)
-class LeftHemisphereLogicalSLMConfig:
+class ActionPlannerLogicalSLMConfig:
     model_name: str = "mistral-small-mx-placeholder"
     lambda_runtime: str = "lambda_recursive_runtime_v0"
     max_actions: int = 3
 
 
-class LeftHemisphereLogicalSLM:
+class ActionPlannerLogicalSLM:
     """
     Hemisferio esquerdo orientado a linguagem, logica e execucao.
 
@@ -32,18 +32,18 @@ class LeftHemisphereLogicalSLM:
     - devolve plano simbolico e acoes primitivas tipificadas.
     """
 
-    def __init__(self, config: LeftHemisphereLogicalSLMConfig | None = None) -> None:
-        self.config = config or LeftHemisphereLogicalSLMConfig()
+    def __init__(self, config: ActionPlannerLogicalSLMConfig | None = None) -> None:
+        self.config = config or ActionPlannerLogicalSLMConfig()
 
     def reason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         # Ground reasoning in differentiable logic (V2)
         from calosum.domain.cognition.differentiable_logic import LogicTensorNetwork
         ltn = LogicTensorNetwork()
@@ -134,7 +134,7 @@ class LeftHemisphereLogicalSLM:
             f"attempt={attempt}",
         ]
 
-        result = LeftHemisphereResult(
+        result = ActionPlannerResult(
             response_text=response_text,
             lambda_program=lambda_program,
             actions=actions,
@@ -179,12 +179,12 @@ class LeftHemisphereLogicalSLM:
     async def areason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return self.reason(
             user_turn=user_turn,
             bridge_packet=bridge_packet,
@@ -197,14 +197,14 @@ class LeftHemisphereLogicalSLM:
     def repair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         feedback = []
         if critique_feedback:
             feedback.extend(critique_feedback)
@@ -224,14 +224,14 @@ class LeftHemisphereLogicalSLM:
     async def arepair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
         workspace: CognitiveWorkspace | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return self.repair(
             user_turn=user_turn,
             bridge_packet=bridge_packet,

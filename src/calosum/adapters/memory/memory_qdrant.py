@@ -3,7 +3,8 @@ from __future__ import annotations
 import base64
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import logging
 
@@ -26,14 +27,16 @@ from calosum.adapters.memory.memory_qdrant_serializers import (
     rule_from_point,
 )
 from calosum.adapters.memory.text_embeddings import TextEmbeddingAdapter, TextEmbeddingAdapterConfig
-from calosum.domain.memory.memory import InMemorySemanticGraphStore
+from calosum.adapters.memory.sql_memory import SQLiteSemanticGraphStore, SQLiteSessionStore
 from calosum.shared.utils.async_utils import run_sync
 from calosum.shared.models.types import (
+    CognitiveWorkspace,
     ConsolidationReport,
     KnowledgeTriple,
     MemoryContext,
     MemoryEpisode,
     SemanticRule,
+    SessionDiagnostic,
     UserTurn,
 )
 
@@ -52,16 +55,15 @@ class QdrantAdapterConfig:
     rules_collection: str = "semantic_rules"
     vector_size: int = 384
     scalar_quantization: bool = False
+    db_path: str = ".calosum-runtime/calosum.db"
 
 
 class QdrantDualMemoryAdapter:
     """
-    Implementacao concreta do MemorySystemPort via Qdrant.
+    Implementacao concreta do MemorySystemPort via Qdrant e SQLite.
 
-    O adapter faz indexacao semantica para episodios e regras, mas mantem
-    fallback explicito quando o backend de embeddings nao esta disponivel.
-    Suporta opcionalmente scalar quantization no Qdrant (4× compressão de disco)
-    e um VectorCodecPort (TurboQuant) para compressão adicional no payload.
+    O adapter faz indexacao semantica para episodios e regras no Qdrant,
+    e usa SQLite para o Grafo de Conhecimento, Workspaces e Diagnostics.
     """
 
     def __init__(
@@ -70,7 +72,6 @@ class QdrantDualMemoryAdapter:
         *,
         embedder: TextEmbeddingAdapter | None = None,
         exporter: DatasetExporterPort | None = None,
-        graph_store=None,
         codec: VectorCodecPort | None = None,
     ) -> None:
         self.config = config or QdrantAdapterConfig()
@@ -80,7 +81,12 @@ class QdrantDualMemoryAdapter:
             TextEmbeddingAdapterConfig(vector_size=self.config.vector_size)
         )
         self.exporter = exporter
-        self.graph_store = graph_store or InMemorySemanticGraphStore()
+        
+        db_path = Path(self.config.db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.graph_store = SQLiteSemanticGraphStore(db_path)
+        self.session_store = SQLiteSessionStore(db_path)
+        
         self.codec: VectorCodecPort | None = codec
         self._ensure_collections()
 
@@ -90,16 +96,19 @@ class QdrantDualMemoryAdapter:
             quant_cfg = ScalarQuantization(
                 scalar=ScalarQuantizationConfig(type=ScalarType.INT8)
             )
-        for col_name in [self.config.episodes_collection, self.config.rules_collection]:
-            if not self.client.collection_exists(col_name):
-                self.client.create_collection(
-                    collection_name=col_name,
-                    vectors_config=VectorParams(
-                        size=self.config.vector_size,
-                        distance=Distance.COSINE,
-                    ),
-                    quantization_config=quant_cfg,
-                )
+        try:
+            for col_name in [self.config.episodes_collection, self.config.rules_collection]:
+                if not self.client.collection_exists(col_name):
+                    self.client.create_collection(
+                        collection_name=col_name,
+                        vectors_config=VectorParams(
+                            size=self.config.vector_size,
+                            distance=Distance.COSINE,
+                        ),
+                        quantization_config=quant_cfg,
+                    )
+        except Exception as exc:
+            logger.error("Failed to ensure Qdrant collections: %s", exc)
 
     def build_context(self, user_turn: UserTurn, episodic_limit: int = 5) -> MemoryContext:
         return run_sync(self.abuild_context(user_turn, episodic_limit))
@@ -150,8 +159,11 @@ class QdrantDualMemoryAdapter:
         return run_sync(self.aepisode_count())
 
     async def aepisode_count(self) -> int:
-        result = await self.aclient.count(collection_name=self.config.episodes_collection, exact=True)
-        return int(getattr(result, "count", 0))
+        try:
+            result = await self.aclient.count(collection_name=self.config.episodes_collection, exact=True)
+            return int(getattr(result, "count", 0))
+        except Exception:
+            return 0
 
     def store_episode(self, episode: MemoryEpisode) -> None:
         run_sync(self.astore_episode(episode))
@@ -162,14 +174,11 @@ class QdrantDualMemoryAdapter:
         payload = episode_payload(episode)
         vector = await self._embed_text(episode_document(episode))
 
-        # Check if episode has a valid latent_vector from JEPA
+        # Check if episode has a valid latent_vector from perception
         latent_vector = payload.get("latent_vector", [])
         if latent_vector and self.config.vector_size > 0:
-            # Validate latent_vector dimension matches expected vector_size
             if len(latent_vector) == self.config.vector_size:
-                # Use the JEPA latent vector directly as the Qdrant vector
                 vector = [float(x) for x in latent_vector]
-            # If dimension doesn't match, fall back to text embedding (existing behavior)
 
         if self.codec is not None:
             latent = payload.get("latent_vector", [])
@@ -226,6 +235,31 @@ class QdrantDualMemoryAdapter:
 
         return report
 
+    # Workspace & Awareness Persistence
+    def load_workspace(self, session_id: str) -> CognitiveWorkspace | None:
+        return self.session_store.load_workspace(session_id)
+
+    async def aload_workspace(self, session_id: str) -> CognitiveWorkspace | None:
+        return self.load_workspace(session_id)
+
+    def save_workspace(self, session_id: str, workspace: CognitiveWorkspace) -> None:
+        self.session_store.save_workspace(session_id, workspace)
+
+    async def asave_workspace(self, session_id: str, workspace: CognitiveWorkspace) -> None:
+        self.save_workspace(session_id, workspace)
+
+    def load_diagnostic(self, session_id: str) -> SessionDiagnostic | None:
+        return self.session_store.load_diagnostic(session_id)
+
+    async def aload_diagnostic(self, session_id: str) -> SessionDiagnostic | None:
+        return self.load_diagnostic(session_id)
+
+    def save_diagnostic(self, session_id: str, diagnostic: SessionDiagnostic) -> None:
+        self.session_store.save_diagnostic(session_id, diagnostic)
+
+    async def asave_diagnostic(self, session_id: str, diagnostic: SessionDiagnostic) -> None:
+        self.save_diagnostic(session_id, diagnostic)
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
     async def _asearch_points(
         self,
@@ -233,7 +267,7 @@ class QdrantDualMemoryAdapter:
         query_vector: list[float],
         limit: int,
     ) -> list:
-        if hasattr(self.aclient, "search"):
+        try:
             result = await self.aclient.search(
                 collection_name=collection_name,
                 query_vector=query_vector,
@@ -241,27 +275,15 @@ class QdrantDualMemoryAdapter:
                 with_payload=True,
             )
             return list(result)
-
-        if hasattr(self.aclient, "query_points"):
-            result = await self.aclient.query_points(
-                collection_name=collection_name,
-                query=query_vector,
-                limit=limit,
-                with_payload=True,
-            )
-            points = getattr(result, "points", None)
-            if points is not None:
-                return list(points)
-
-        points, _ = await self.aclient.scroll(
-            collection_name=collection_name,
-            limit=limit,
-            with_payload=True,
-        )
-        return list(points)
+        except Exception:
+            return []
 
     async def _embed_text(self, text: str) -> list[float]:
-        return (await self.embedder.aembed_texts([text]))[0]
+        try:
+            res = await self.embedder.aembed_texts([text])
+            return res[0]
+        except Exception:
+            return [0.0] * self.config.vector_size
 
     def _query_text(self, user_turn: UserTurn) -> str:
         signal_terms = " ".join(signal.modality.value for signal in user_turn.signals)

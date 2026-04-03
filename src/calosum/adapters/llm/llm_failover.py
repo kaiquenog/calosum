@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from calosum.shared.utils.async_utils import maybe_await, run_sync
-from calosum.shared.models.ports import LeftHemispherePort
+from calosum.shared.models.ports import ActionPlannerPort
 from calosum.shared.models.types import (
     ActionExecutionResult,
-    CognitiveBridgePacket,
-    LeftHemisphereResult,
+    PerceptionSummary,
+    ActionPlannerResult,
     MemoryContext,
     TypedLambdaProgram,
     UserTurn,
@@ -27,7 +27,7 @@ class ResilientLeftHemisphereConfig:
 class ResilientLeftHemisphereAdapter:
     def __init__(
         self,
-        providers: list[LeftHemispherePort],
+        providers: list[ActionPlannerPort],
         config: ResilientLeftHemisphereConfig | None = None,
     ) -> None:
         if not providers:
@@ -43,11 +43,11 @@ class ResilientLeftHemisphereAdapter:
     def reason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return run_sync(
             self.areason(
                 user_turn=user_turn,
@@ -61,11 +61,11 @@ class ResilientLeftHemisphereAdapter:
     async def areason(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
         runtime_feedback: list[str] | None = None,
         attempt: int = 0,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return await self._invoke_with_failover(
             "areason",
             "reason",
@@ -79,13 +79,13 @@ class ResilientLeftHemisphereAdapter:
     def repair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return run_sync(
             self.arepair(
                 user_turn=user_turn,
@@ -101,13 +101,13 @@ class ResilientLeftHemisphereAdapter:
     async def arepair(
         self,
         user_turn: UserTurn,
-        bridge_packet: CognitiveBridgePacket,
+        bridge_packet: PerceptionSummary,
         memory_context: MemoryContext,
-        previous_result: LeftHemisphereResult,
+        previous_result: ActionPlannerResult,
         rejected_results: list[ActionExecutionResult],
         attempt: int,
         critique_feedback: list[str] | None = None,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         return await self._invoke_with_failover(
             "arepair",
             "repair",
@@ -125,9 +125,9 @@ class ResilientLeftHemisphereAdapter:
         async_method_name: str,
         sync_method_name: str,
         *args: object,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         attempted: list[str] = []
-        last_result: LeftHemisphereResult | None = None
+        last_result: ActionPlannerResult | None = None
         last_error: str | None = None
 
         for provider in self._ordered_providers():
@@ -163,10 +163,10 @@ class ResilientLeftHemisphereAdapter:
 
         return self._fallback_result(last_error or "all providers failed", attempted)
 
-    def _ordered_providers(self) -> list[LeftHemispherePort]:
+    def _ordered_providers(self) -> list[ActionPlannerPort]:
         now = time.time()
-        healthy: list[LeftHemispherePort] = []
-        cooling: list[LeftHemispherePort] = []
+        healthy: list[ActionPlannerPort] = []
+        cooling: list[ActionPlannerPort] = []
         for provider in self.providers:
             provider_name = self._provider_name(provider)
             if self._cooldowns.get(provider_name, 0.0) > now:
@@ -181,7 +181,7 @@ class ResilientLeftHemisphereAdapter:
     def _clear_failure(self, provider_name: str) -> None:
         self._cooldowns.pop(provider_name, None)
 
-    def _failover_reason(self, result: LeftHemisphereResult) -> str | None:
+    def _failover_reason(self, result: ActionPlannerResult) -> str | None:
         error = result.telemetry.get("error")
         if isinstance(error, str) and error:
             return error
@@ -196,20 +196,20 @@ class ResilientLeftHemisphereAdapter:
 
     def _annotate_result(
         self,
-        result: LeftHemisphereResult,
+        result: ActionPlannerResult,
         selected_provider: str,
         attempted: list[str],
         *,
         exhausted: bool,
-    ) -> LeftHemisphereResult:
+    ) -> ActionPlannerResult:
         result.telemetry["provider_name"] = selected_provider
         result.telemetry["failover_attempt_count"] = len(attempted)
         result.telemetry["failover_attempts"] = attempted
         result.telemetry["failover_exhausted"] = exhausted
         return result
 
-    def _fallback_result(self, error: str, attempted: list[str]) -> LeftHemisphereResult:
-        return LeftHemisphereResult(
+    def _fallback_result(self, error: str, attempted: list[str]) -> ActionPlannerResult:
+        return ActionPlannerResult(
             response_text="Desculpe, todos os provedores do hemisferio esquerdo falharam temporariamente.",
             lambda_program=TypedLambdaProgram("Fallback", "()", "None"),
             actions=[],
@@ -223,10 +223,10 @@ class ResilientLeftHemisphereAdapter:
             },
         )
 
-    def _provider_name(self, provider: LeftHemispherePort) -> str:
+    def _provider_name(self, provider: ActionPlannerPort) -> str:
         return self._provider_names[id(provider)]
 
-    def _derive_provider_name(self, provider: LeftHemispherePort, index: int) -> str:
+    def _derive_provider_name(self, provider: ActionPlannerPort, index: int) -> str:
         config = getattr(provider, "config", None)
         model_name = getattr(config, "model_name", None)
         api_url = getattr(config, "api_url", None)

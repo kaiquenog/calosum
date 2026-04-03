@@ -11,13 +11,13 @@ from calosum.adapters.tools.persistent_shell import PersistentShellTool
 from calosum.adapters.tools.subordinate_agent import SubordinateAgentTool
 from calosum.shared.utils.async_utils import run_sync
 from calosum.shared.utils.tools import ToolRegistry, ToolSchema, build_runtime_contract_audit_report
-from calosum.shared.models.types import ActionExecutionResult, LeftHemisphereResult, ToolDescriptor, CognitiveWorkspace
+from calosum.shared.models.types import ActionExecutionResult, ActionPlannerResult, ToolDescriptor, CognitiveWorkspace
 
 logger = logging.getLogger(__name__)
 
 class ConcreteActionRuntime:
     """
-    Adapter real para o ActionRuntimePort.
+    Adapter real para o ToolRuntimePort.
     Ele converte ações simbólicas ('propose_plan', 'respond_text', 'search_web')
     em execuções verdadeiras via ferramentas Python.
     """
@@ -121,7 +121,7 @@ class ConcreteActionRuntime:
         
         return registry
 
-    def run(self, left_result: LeftHemisphereResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]:
+    def run(self, left_result: ActionPlannerResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]:
         return run_sync(self.arun(left_result, workspace))
 
     def get_registered_tools(self) -> list[ToolDescriptor]:
@@ -130,7 +130,7 @@ class ConcreteActionRuntime:
     def audit_runtime_contracts(self, failure_types: dict[str, int] | None = None) -> dict[str, object]:
         return build_runtime_contract_audit_report(self.registry, failure_types)
 
-    async def arun(self, left_result: LeftHemisphereResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]:
+    async def arun(self, left_result: ActionPlannerResult, workspace: CognitiveWorkspace | None = None) -> list[ActionExecutionResult]:
         results = []
         for action in left_result.actions:
             schema = self.registry.get_schema(action.action_type)
