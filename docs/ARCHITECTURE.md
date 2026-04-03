@@ -15,7 +15,7 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
 ## Camadas
 
 1. **`shared/`** (`models/types.py`, `models/ports.py`, `models/schemas.py`, `utils/async_utils.py`, `utils/serialization.py`, `utils/free_energy.py`, `utils/surprise_metrics.py`)
-   Tipos compartilhados, contratos de dados, `ToolRegistry` e utilitários puros de serialização. Inclui os descritores de Sprint 0: `CapabilityDescriptor`, `ModelDescriptor`, `ToolDescriptor`, `ComponentHealth`. Ports centrais: `LeftHemispherePort`, `RightHemispherePort`, `BridgeFusionPort`, `ExperienceStorePort`, `ActionRuntimePort`, `MemorySystemPort`, `ReflectionControllerPort`, `TelemetryBusPort`.
+   Tipos compartilhados, contratos de dados, `ToolRegistry` e utilitários puros de serialização. Inclui os descritores de Sprint 0: `CapabilityDescriptor`, `ModelDescriptor`, `ToolDescriptor`, `ComponentHealth`. `CapabilityDescriptor` agora carrega tambem `operational_constraints`, com budgets por backend e o contrato estavel de turnos (`AgentTurnResult` vs `GroupTurnResult`). Ports centrais: `LeftHemispherePort`, `RightHemispherePort`, `BridgeFusionPort`, `ExperienceStorePort`, `ActionRuntimePort`, `MemorySystemPort`, `ReflectionControllerPort`, `TelemetryBusPort`.
 2. **`domain/`** (subfolders: `agent/`, `cognition/`, `execution/`, `infrastructure/`, `memory/`, `metacognition/`)
    Modelos de negócios do agente neuro-simbólico. Pura lógica sem detalhes I/O diretos.
    - **`agent/`**: `orchestrator.py` (coordenação do loop cognitivo), `orchestrator_briefing.py`, `orchestrator_utils.py`, `evolution.py` (evolução via GEA), `idle_foraging.py` (busca epistêmica passiva), `multiagent.py` (comunicação entre agentes), `agent_config.py`, `directive_guardrails.py`.
@@ -35,10 +35,12 @@ O projeto usa `Ports and Adapters` para fronteiras e `Builder/Abstract Factory` 
    - **`experience/`**: `gea_experience_store.py`, `gea_experience_distributed.py`, `gea_reflection_experience.py`, `variant_preference.py`.
    - **`night_trainer/`**: `night_trainer.py`, `night_trainer_dspy.py`.
    - **`infrastructure/`**: `contract_wrappers.py`.
-4. **`bootstrap/`** (`infrastructure/settings.py`, `wiring/backend_resolvers.py`, `wiring/factory.py`, `wiring/agent_baseline.py`, `entry/context.py`, `entry/cli.py`, `entry/api.py`, `routers/system.py`, `routers/chat.py`, `routers/telemetry.py`, `entry/__main__.py`)
-   Entrada da aplicação. `wiring/factory.py` instancia adapters, constrói `capability_snapshot` real e injeta tudo no domain via `CalosumAgentBuilder`. `wiring/backend_resolvers.py` centraliza a lógica de seleção de backends por feature flags (hemisferio direito, esquerdo e bridge), mantendo `wiring/factory.py` desacoplado das decisões de routing. `wiring/agent_baseline.py` provê o baseline versionado usado pelos gates de benchmark. `entry/context.py` concentra singletons/cache e resolução de settings para API. `routers/*` mantém as rotas FastAPI segmentadas por domínio HTTP. O pacote `bootstrap` segue sendo o único ponto autorizado a acoplar adapters e domain.
+4. **`bootstrap/`** (`infrastructure/settings.py`, `wiring/backend_resolvers.py`, `wiring/factory.py`, `wiring/operational_budget.py`, `wiring/agent_baseline.py`, `entry/context.py`, `entry/cli.py`, `entry/api.py`, `routers/system.py`, `routers/chat.py`, `routers/telemetry.py`, `entry/__main__.py`)
+   Entrada da aplicação. `wiring/factory.py` instancia adapters, constrói `capability_snapshot` real e injeta tudo no domain via `CalosumAgentBuilder`. `wiring/backend_resolvers.py` centraliza a lógica de seleção de backends por feature flags (hemisferio direito, esquerdo e bridge), incluindo fallback por budget quando um backend local excede o envelope operacional permitido. `wiring/operational_budget.py` define os envelopes declarados de CPU/memoria por backend. `wiring/agent_baseline.py` provê o baseline versionado usado pelos gates de benchmark. `entry/context.py` concentra singletons/cache e resolução de settings para API. `routers/*` mantém as rotas FastAPI segmentadas por domínio HTTP. O pacote `bootstrap` segue sendo o único ponto autorizado a acoplar adapters e domain.
 
 No dominio, `interceptors.py` formaliza o contrato de hooks cognitivos observacionais; no runtime, `domain/execution/tool_runtime.py` mantém a execução tipificada isolada das integrações concretas.
+
+O branching multi-candidato continua compatível com chamadas legadas através do contrato `GroupTurnResult.selected_result`, e esse mapeamento é exposto em readiness, capability snapshot e benchmark smoke.
 
 ## Governanca de Harness
 

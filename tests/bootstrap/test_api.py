@@ -93,6 +93,8 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("health", payload)
         self.assertIn("components", payload)
         self.assertIn("right_hemisphere", payload["components"])
+        self.assertIn("operational_budgets", payload)
+        self.assertIn("turn_contract", payload)
 
     def test_system_info_returns_runtime_capabilities_and_routing_resolution(self) -> None:
         response = self.client.get("/v1/system/info")

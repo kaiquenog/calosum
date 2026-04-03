@@ -20,6 +20,7 @@ from calosum.adapters.hemisphere.input_perception_jepars import JepaRsConfig, Je
 from calosum.adapters.hemisphere.input_perception_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
 from calosum.adapters.hemisphere.input_perception_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
 from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureProfile, InfrastructureSettings
+from calosum.bootstrap.wiring.operational_budget import evaluate_backend_budget
 
 def resolve_vision_adapter() -> LocalClipVisionAdapter:
     return LocalClipVisionAdapter()
@@ -117,41 +118,21 @@ def resolve_right_hemisphere(
         if settings.mode == CalosumMode.LOCAL:
             trained = TrainedJEPAAdapter()
             if trained.is_available:
-                return (
-                    _active_inference_right(trained),
-                    "predictive_checkpoint",
-                    trained.config.model_name,
-                )
+                return _right_with_budget_guard(trained, "predictive_checkpoint", trained.config.model_name, settings)
         base = HeuristicJEPAAdapter()
-        return (
-            _active_inference_right(base),
-            "heuristic_literal",
-            "heuristic-jepa-phase1",
-        )
+        return _right_with_budget_guard(base, "heuristic_literal", "heuristic-jepa-phase1", settings)
 
     if backend == "trained_jepa":
         trained = TrainedJEPAAdapter()
         if trained.is_available:
-            return (
-                _active_inference_right(trained),
-                "predictive_checkpoint",
-                trained.config.model_name,
-            )
+            return _right_with_budget_guard(trained, "predictive_checkpoint", trained.config.model_name, settings)
         base = HeuristicJEPAAdapter()
         setattr(base, "degraded_reason", f"trained_jepa_unavailable:{trained.degraded_reason}")
-        return (
-            _active_inference_right(base),
-            "heuristic_literal_fallback",
-            "heuristic-jepa-phase1",
-        )
+        return _right_with_budget_guard(base, "heuristic_literal_fallback", "heuristic-jepa-phase1", settings)
 
     if backend == "heuristic_jepa":
         base = HeuristicJEPAAdapter()
-        return (
-            _active_inference_right(base),
-            "heuristic_literal",
-            "heuristic-jepa-phase1",
-        )
+        return _right_with_budget_guard(base, "heuristic_literal", "heuristic-jepa-phase1", settings)
 
     if backend == "vjepa21":
         base = VJepa21RightHemisphereAdapter(
@@ -163,7 +144,7 @@ def resolve_right_hemisphere(
             vision_adapter=vision_adapter,
             codec=codec,
         )
-        return _active_inference_right(base), "vjepa21_local", "v-jepa-2.1-local"
+        return _right_with_budget_guard(base, "vjepa21_local", "v-jepa-2.1-local", settings)
 
     if backend == "vljepa":
         base = VLJepaRightHemisphereAdapter(
@@ -174,7 +155,7 @@ def resolve_right_hemisphere(
             ),
             vision_adapter=vision_adapter,
         )
-        return _active_inference_right(base), "vljepa_local", "vl-jepa-local"
+        return _right_with_budget_guard(base, "vljepa_local", "vl-jepa-local", settings)
 
     if backend == "jepars":
         base = JepaRsRightHemisphereAdapter(
@@ -183,7 +164,7 @@ def resolve_right_hemisphere(
                 model_path=str(settings.right_model_path) if settings.right_model_path else None,
             )
         )
-        return _active_inference_right(base), "jepars_local", "jepa-rs"
+        return _right_with_budget_guard(base, "jepars_local", "jepa-rs", settings)
 
     if backend == "huggingface":
         from calosum.adapters.hemisphere.input_perception_hf import (
@@ -196,7 +177,7 @@ def resolve_right_hemisphere(
             HuggingFaceRightHemisphereConfig(embedding_model_name=model_name),
             codec=codec,
         )
-        return _active_inference_right(base), "distance_huggingface", model_name
+        return _right_with_budget_guard(base, "distance_huggingface", model_name, settings)
 
     raise ValueError(f"unsupported right hemisphere backend: {backend}")
 
@@ -222,6 +203,27 @@ def _build_qwen(
 
 def _active_inference_right(base_adapter: Any) -> Any:
     return ContractEnforcedRightHemisphereAdapter(base_adapter)
+
+
+def _right_with_budget_guard(
+    base_adapter: Any,
+    backend_name: str,
+    model_name: str,
+    settings: InfrastructureSettings,
+) -> tuple[Any, str, str]:
+    budget = evaluate_backend_budget(
+        "right_hemisphere",
+        backend_name,
+        requested_backend=settings.right_hemisphere_backend or backend_name,
+    )
+    setattr(base_adapter, "operational_budget", budget)
+    if not budget["exceeded"]:
+        return _active_inference_right(base_adapter), backend_name, model_name
+
+    fallback = HeuristicJEPAAdapter()
+    setattr(fallback, "degraded_reason", f"budget_exceeded:{backend_name}")
+    setattr(fallback, "operational_budget", budget)
+    return _active_inference_right(fallback), "heuristic_literal_fallback", "heuristic-jepa-phase1"
 
 
 def _with_fusion_if_enabled(provider: Any, settings: InfrastructureSettings) -> Any:

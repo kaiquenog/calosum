@@ -14,10 +14,13 @@ services:
       CALOSUM_OTLP_JSONL: /data/telemetry/events.jsonl
       CALOSUM_VECTORDB_URL: http://qdrant:6333
       CALOSUM_DUCKDB_PATH: /data/state/semantic.duckdb
+      CALOSUM_BRIDGE_STATE_DIR: /data/state/bridge
+      CALOSUM_EVOLUTION_ARCHIVE_PATH: /data/state/evolution.jsonl
       CALOSUM_OTEL_COLLECTOR_ENDPOINT: http://otel-collector:4318
       CALOSUM_JAEGER_UI_URL: http://jaeger:16686
-      CALOSUM_RIGHT_BACKEND: vjepa21
+      CALOSUM_RIGHT_BACKEND: jepars
       CALOSUM_RIGHT_MODEL_PATH: /app/jepa_model
+      CALOSUM_RIGHT_JEPARS_BINARY: jepa-rs
       CALOSUM_LEFT_BACKEND: rlm
       CALOSUM_BRIDGE_BACKEND: cross_attention
       # Deixa o .env ditar as configs do LLM para evitar hardcode do host.docker.internal quebrando a API da OpenAI
@@ -29,6 +32,11 @@ services:
       - qdrant
       - otel-collector
       - jaeger
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   qdrant:
     image: qdrant/qdrant:latest

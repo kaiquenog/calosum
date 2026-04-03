@@ -8,7 +8,7 @@ from pathlib import Path
 from calosum.adapters.hemisphere.input_perception_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
 from calosum.adapters.hemisphere.input_perception_vjepa21 import VJepa21Config, VJepa21RightHemisphereAdapter
 from calosum.adapters.hemisphere.input_perception_vljepa import VLJepaConfig, VLJepaRightHemisphereAdapter
-from calosum.shared.models.types import PerceptionStatus, UserTurn
+from calosum.shared.models.types import Modality, MultimodalSignal, PerceptionStatus, UserTurn
 
 
 class RightHemisphere2026AdaptersTests(unittest.TestCase):
@@ -49,6 +49,28 @@ class RightHemisphere2026AdaptersTests(unittest.TestCase):
         self.assertIn("hierarchical_features", state.telemetry)
         self.assertIn("dense_semantic_energy", state.world_hypotheses)
 
+    def test_vljepa_adapter_fuses_text_and_visual_signals_before_hierarchy(self) -> None:
+        adapter = VLJepaRightHemisphereAdapter(VLJepaConfig(latent_size=32, hierarchy_levels=2))
+        adapter._embedder = False
+
+        state = adapter.perceive(
+            UserTurn(
+                session_id="s",
+                user_text="Contexto multimodal urgente",
+                signals=[
+                    MultimodalSignal(
+                        modality=Modality.VIDEO,
+                        source="camera",
+                        payload={"embedding": [0.2] * 32},
+                    )
+                ],
+            )
+        )
+
+        self.assertTrue(state.telemetry["multimodal_active"])
+        self.assertTrue(state.telemetry["checkpoint_loaded"] in {True, False})
+        self.assertEqual(state.telemetry["contract_version"], "vljepa-multimodal-v1")
+
     def test_jepars_adapter_invokes_real_subprocess_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             script = Path(temp_dir) / "fake_jepars.py"
@@ -74,8 +96,9 @@ print(json.dumps({
 
             state = adapter.perceive(UserTurn(session_id="s", user_text="teste"))
 
-            self.assertEqual(state.telemetry["right_backend"], "jepa_rs_arrow")
+            self.assertEqual(state.telemetry["right_backend"], "jepars_local")
             self.assertEqual(len(state.latent_vector), 4)
+            self.assertEqual(state.telemetry["contract_version"], "jepa-rs-arrow-v1")
 
 
 if __name__ == "__main__":

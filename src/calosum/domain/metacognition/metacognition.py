@@ -53,6 +53,14 @@ class GroupTurnResult:
     candidates: list[CognitiveCandidate]
     selected_result: AgentTurnResult
     reflection: ReflectionOutcome
+    contract_version: str = "group_turn.v1"
+
+    @property
+    def candidate_count(self) -> int:
+        return len(self.candidates)
+
+    def as_agent_turn_result(self) -> AgentTurnResult:
+        return self.selected_result
 
 
 def default_cognitive_personas(max_width: int = 1) -> list[CognitiveVariantSpec]:

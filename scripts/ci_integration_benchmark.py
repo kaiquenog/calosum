@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from calosum.domain.agent.orchestrator import CalosumAgent
+from calosum.domain.metacognition.metacognition import GroupTurnResult
 from calosum.shared.models.types import (
     ActionExecutionResult,
     ActionPlannerResult,
@@ -109,22 +110,40 @@ def _tool_success_rate(execution_results: list[ActionExecutionResult]) -> float:
     return successful / len(execution_results)
 
 
-def run_benchmark(turns: int) -> dict[str, Any]:
+def run_benchmark(turns: int, *, max_candidates: int = 1) -> dict[str, Any]:
+    previous_max = os.environ.get("CALOSUM_GEA_MAX_CANDIDATES")
+    previous_surprise = os.environ.get("CALOSUM_GEA_BRANCH_SURPRISE_THRESHOLD")
+    previous_complexity = os.environ.get("CALOSUM_GEA_BRANCH_COMPLEXITY_THRESHOLD")
+    os.environ["CALOSUM_GEA_MAX_CANDIDATES"] = str(max_candidates)
+    if max_candidates > 1:
+        os.environ["CALOSUM_GEA_BRANCH_SURPRISE_THRESHOLD"] = "0.0"
+        os.environ["CALOSUM_GEA_BRANCH_COMPLEXITY_THRESHOLD"] = "0.0"
     agent = CalosumAgent(left_hemisphere=BenchmarkLeftHemisphere())
     corpus = _turn_corpus()
     latencies: list[float] = []
     tool_rates: list[float] = []
+    candidate_counts: list[float] = []
     runtime_retry_count = 0
     heuristic_fallback_turns = 0
+    group_turns = 0
 
-    for index in range(turns):
-        prompt = corpus[index % len(corpus)]
-        result = agent.process_turn(UserTurn(session_id="ci-benchmark", user_text=prompt))
-        latencies.append(float(result.latency_ms))
-        tool_rates.append(_tool_success_rate(result.execution_results))
-        runtime_retry_count += int(result.runtime_retry_count)
-        if result.right_state.telemetry.get("degraded_reason"):
-            heuristic_fallback_turns += 1
+    try:
+        for index in range(turns):
+            prompt = corpus[index % len(corpus)]
+            result = agent.process_turn(UserTurn(session_id="ci-benchmark", user_text=prompt))
+            turn_result = result.selected_result if hasattr(result, "selected_result") else result
+            latencies.append(float(turn_result.latency_ms))
+            tool_rates.append(_tool_success_rate(turn_result.execution_results))
+            candidate_counts.append(float(getattr(result, "candidate_count", 1)))
+            runtime_retry_count += int(turn_result.runtime_retry_count)
+            if isinstance(result, GroupTurnResult):
+                group_turns += 1
+            if turn_result.right_state.telemetry.get("degraded_reason"):
+                heuristic_fallback_turns += 1
+    finally:
+        _restore_env("CALOSUM_GEA_MAX_CANDIDATES", previous_max)
+        _restore_env("CALOSUM_GEA_BRANCH_SURPRISE_THRESHOLD", previous_surprise)
+        _restore_env("CALOSUM_GEA_BRANCH_COMPLEXITY_THRESHOLD", previous_complexity)
 
     return {
         "turns_executed": turns,
@@ -133,6 +152,10 @@ def run_benchmark(turns: int) -> dict[str, Any]:
         "tool_success_rate": round(sum(tool_rates) / len(tool_rates), 4) if tool_rates else 1.0,
         "runtime_retry_count": runtime_retry_count,
         "fallback_rate_heuristic_jepa": round(heuristic_fallback_turns / turns, 4) if turns else 0.0,
+        "max_candidates_configured": max_candidates,
+        "group_turn_rate": round(group_turns / turns, 4) if turns else 0.0,
+        "candidate_count_p95": _percentile(candidate_counts, 0.95),
+        "turn_contract": "GroupTurnResult.selected_result -> AgentTurnResult",
     }
 
 
@@ -156,13 +179,25 @@ def _write_outputs(output_json: Path, output_md: Path, metrics: dict[str, Any]) 
         f"- tool_success_rate: {metrics['tool_success_rate']}",
         f"- runtime_retry_count: {metrics['runtime_retry_count']}",
         f"- fallback_rate_heuristic_jepa: {metrics['fallback_rate_heuristic_jepa']}",
+        f"- max_candidates_configured: {metrics['max_candidates_configured']}",
+        f"- group_turn_rate: {metrics['group_turn_rate']}",
+        f"- candidate_count_p95: {metrics['candidate_count_p95']}",
+        f"- turn_contract: {metrics['turn_contract']}",
     ]
     output_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _restore_env(name: str, value: str | None) -> None:
+    if value is None:
+        os.environ.pop(name, None)
+        return
+    os.environ[name] = value
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--turns", type=int, default=20)
+    parser.add_argument("--max-candidates", type=int, default=1)
     parser.add_argument("--latency-p95-threshold-ms", type=int, default=5000)
     parser.add_argument("--output-json", required=True)
     parser.add_argument("--output-md", required=True)
@@ -171,7 +206,7 @@ def main() -> int:
     turns = int(os.environ.get("CALOSUM_CI_BENCHMARK_TURNS", args.turns))
     print(f"Running integration benchmark with {turns} turns...")
 
-    metrics = run_benchmark(turns)
+    metrics = run_benchmark(turns, max_candidates=max(1, args.max_candidates))
     _write_outputs(Path(args.output_json), Path(args.output_md), metrics)
 
     if metrics["latency_p95_ms"] > args.latency_p95_threshold_ms:

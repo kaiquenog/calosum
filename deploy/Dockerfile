@@ -4,7 +4,6 @@ WORKDIR /app
 COPY pyproject.toml README.md AGENTS.md /app/
 COPY docs /app/docs
 COPY src /app/src
-COPY examples /app/examples
 
 RUN pip install --no-cache-dir .
 

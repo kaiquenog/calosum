@@ -20,8 +20,11 @@ class JepaRsConfig:
 class JepaRsRightHemisphereAdapter:
     """Rust backend adapter for local JEPA inference via Apache Arrow IPC."""
 
+    CONTRACT_VERSION = "jepa-rs-arrow-v1"
+
     def __init__(self, config: JepaRsConfig | None = None) -> None:
         self.config = config or JepaRsConfig()
+        self.degraded_reason: str | None = None
 
     def perceive(
         self,
@@ -34,8 +37,11 @@ class JepaRsRightHemisphereAdapter:
             "signals_count": len(user_turn.signals),
             "model_path": self.config.model_path,
             "latent_size": self.config.latent_size,
+            "contract_version": self.CONTRACT_VERSION,
+            "transport": "arrow_stream",
         }
         result = self._invoke_backend(payload)
+        self._validate_schema(result)
 
         latent = result.get("latent_vector")
         if latent is None or (isinstance(latent, list) and not latent):
@@ -62,21 +68,25 @@ class JepaRsRightHemisphereAdapter:
             surprise_score=surprise,
             telemetry={
                 "model_name": "jepa-rs",
-                "right_backend": "jepa_rs_arrow",
+                "right_backend": "jepars_local",
                 "right_model_name": "jepa-rs",
                 "right_mode": "predictive",
-                "degraded_reason": None,
+                "degraded_reason": self.degraded_reason,
                 "binary_path": self.config.binary_path,
                 "ipc_protocol": "arrow",
+                "contract_version": self.CONTRACT_VERSION,
+                "checkpoint_loaded": bool(self.config.model_path),
+                "multimodal_active": bool(user_turn.signals),
             },
         )
 
         if workspace is not None:
             workspace.right_notes.update(
                 {
-                    "backend": "jepa_rs_arrow",
+                    "backend": "jepars_local",
                     "surprise_score": surprise,
                     "confidence": confidence,
+                    "contract_version": self.CONTRACT_VERSION,
                 }
             )
         return state
@@ -145,6 +155,8 @@ class JepaRsRightHemisphereAdapter:
                 raise RuntimeError(f"jepa-rs missing required field: {field}")
             if not isinstance(payload[field], expected_type):
                 raise RuntimeError(f"jepa-rs field '{field}' must be {expected_type.__name__}")
+        if payload["latent_vector"] and not all(isinstance(item, (int, float)) for item in payload["latent_vector"]):
+            raise RuntimeError("jepa-rs field 'latent_vector' must contain numeric values")
         for field, expected_types in optional_typed.items():
             if field in payload and not isinstance(payload[field], expected_types):
                 raise RuntimeError(f"jepa-rs field '{field}' has wrong type: {type(payload[field])}")

@@ -62,6 +62,7 @@ class CapabilityDescriptor:
     tools: list[ToolDescriptor]
     routing_policy: RoutingPolicy | None = None
     health: ComponentHealth = ComponentHealth.HEALTHY
+    operational_constraints: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -392,4 +393,3 @@ class AgentTurnResult:
     runtime_retry_count: int = 0
     critique_revision_count: int = 0
     latency_ms: float = 0.0
-0.0

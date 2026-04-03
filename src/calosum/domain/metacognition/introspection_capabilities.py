@@ -12,6 +12,7 @@ from calosum.shared.models.types import (
     ModelDescriptor,
     RoutingPolicy,
 )
+from calosum.bootstrap.wiring.operational_budget import operational_budget_snapshot
 
 
 class CalosumSystemIntrospector:
@@ -22,6 +23,12 @@ class CalosumSystemIntrospector:
     @staticmethod
     def build_capability_snapshot(factory: CalosumAgentFactory, action_runtime: Any | None = None) -> CapabilityDescriptor:
         right_health = factory._right_hemisphere_health()
+        budgets = operational_budget_snapshot(
+            right_backend=factory._right_hemisphere_backend_name(),
+            left_backend=factory._left_hemisphere_backend_name(),
+            bridge_backend="cross_attention" if (factory.settings.bridge_backend or "").strip().lower() == "cross_attention" else "heuristic_projection",
+            requested_right_backend=factory.settings.right_hemisphere_backend or factory._right_hemisphere_backend_name(),
+        )
         right_model = ModelDescriptor(
             provider="huggingface_local" if "huggingface" in factory._right_hemisphere_backend_name() else "local",
             model_name=factory._right_hemisphere_model_name(),
@@ -63,6 +70,15 @@ class CalosumSystemIntrospector:
             right_hemisphere=right_model, left_hemisphere=left_model,
             embeddings=embedding_model, knowledge_graph=kg_model,
             tools=tools, routing_policy=routing_policy, health=overall_health,
+            operational_constraints={
+                "budgets": budgets,
+                "turn_contract": {
+                    "single_candidate": "AgentTurnResult",
+                    "multi_candidate": "GroupTurnResult",
+                    "selection_accessor": "selected_result",
+                    "compatibility_method": "as_agent_turn_result",
+                },
+            },
         )
 
     @staticmethod
@@ -70,6 +86,7 @@ class CalosumSystemIntrospector:
         action_runtime = getattr(agent, "action_runtime", None) if agent else None
         snapshot = agent.capability_snapshot if agent and hasattr(agent, "capability_snapshot") else CalosumSystemIntrospector.build_capability_snapshot(factory, action_runtime)
         s = factory.settings
+        right_runtime = CalosumSystemIntrospector._right_runtime_state(agent, factory)
         return {
             "pattern": "v3_dual_hemisphere_factory", "profile": s.profile.value,
             "capabilities": asdict(snapshot), "memory_backend": factory._memory_backend_name(),
@@ -88,4 +105,23 @@ class CalosumSystemIntrospector:
             "left_hemisphere_failover": bool(s.left_hemisphere_fallback_endpoint),
             "knowledge_graph_backend": factory._knowledge_graph_backend_name(),
             "routing_resolution": factory._routing_resolution(snapshot),
+            "operational_budgets": snapshot.operational_constraints.get("budgets", {}),
+            "turn_contract": snapshot.operational_constraints.get("turn_contract", {}),
+            "degradations": {"right_hemisphere": right_runtime},
+        }
+
+    @staticmethod
+    def _right_runtime_state(agent: Any | None, factory: CalosumAgentFactory) -> dict[str, Any]:
+        adapter = getattr(agent, "right_hemisphere", None) if agent is not None else None
+        provider = getattr(adapter, "provider", adapter)
+        checkpoint_loaded = getattr(provider, "is_available", None)
+        if checkpoint_loaded is None and hasattr(provider, "_health"):
+            checkpoint_loaded = getattr(provider, "_health", None) == ComponentHealth.HEALTHY
+        return {
+            "health": factory._right_hemisphere_health(),
+            "degraded_reason": getattr(provider, "degraded_reason", None),
+            "checkpoint_loaded": checkpoint_loaded,
+            "multimodal_capable": factory._right_hemisphere_backend_name() == "vljepa_local",
+            "contract_version": getattr(provider, "CONTRACT_VERSION", None),
+            "budget": getattr(provider, "operational_budget", None),
         }

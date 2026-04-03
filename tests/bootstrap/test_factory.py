@@ -174,6 +174,29 @@ class InfrastructureBuilderTests(unittest.TestCase):
         self.assertEqual(description["right_hemisphere_backend"], "heuristic_literal")
         self.assertEqual(description["routing_resolution"]["perception"]["active"], "jepa")
 
+    def test_builder_falls_back_when_right_backend_exceeds_budget(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CALOSUM_RIGHT_BUDGET_CPU_CORES": "0.5",
+                "CALOSUM_RIGHT_BUDGET_MEMORY_MB": "512",
+            },
+        ):
+            settings = InfrastructureSettings(
+                left_hemisphere_endpoint="http://test",
+                right_hemisphere_backend="vjepa21",
+            ).with_profile_defaults()
+            builder = CalosumAgentBuilder(settings)
+
+            agent = builder.build()
+            description = builder.describe(agent)
+
+        self.assertEqual(description["right_hemisphere_backend"], "heuristic_literal_fallback")
+        self.assertEqual(
+            getattr(agent.right_hemisphere.provider, "degraded_reason", None),
+            "budget_exceeded:vjepa21_local",
+        )
+
     def test_factory_turboquant_flag(self) -> None:
         """CALOSUM_VECTOR_QUANTIZATION=turboquant causes _build_codec to return TurboQuantVectorCodec."""
         from calosum.bootstrap.wiring.factory import _build_codec

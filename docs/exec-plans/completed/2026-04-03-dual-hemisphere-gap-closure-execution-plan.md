@@ -45,16 +45,29 @@ Critério de conclusão deste plano:
 
 ## Progress
 
-- [ ] Sprint 1: contratos honestos do hemisferio direito
-- [ ] Sprint 2: hardening operacional e budgets
-- [ ] Sprint 3: promocao controlada do branching e benchmark de reflection
-- [ ] Sprint 4: docker e fechamento de documentacao
+- [x] Sprint 1: contratos honestos do hemisferio direito
+- [x] Sprint 2: hardening operacional e budgets
+- [x] Sprint 3: promocao controlada do branching e benchmark de reflection
+- [x] Sprint 4: docker e fechamento de documentacao
+
+### Resumo Final
+
+- contrato `jepa-rs` formalizado em `docs/components/right-hemisphere-jepa-rs-contract.md` e refletido em telemetria (`contract_version`)
+- `vljepa` promovido para fusao texto+visao antes da hierarquia, com `checkpoint_loaded` e `multimodal_active`
+- budgets por backend expostos em `CapabilityDescriptor.operational_constraints`, `/ready` e introspecao
+- fallback operacional por budget implementado para o hemisferio direito
+- contrato estavel de branching explicitado via `GroupTurnResult.selected_result` e `as_agent_turn_result()`
+- benchmark versionado de reflection salvo em `docs/benchmarks/ci/2026-04-03-reflection-branching-smoke.*`
+- smoke versionado de readiness do perfil docker salvo em `docs/benchmarks/ci/2026-04-03-docker-profile-ready.*`
+- `docker-compose` atualizado com `healthcheck` em `/ready`
 
 ## Decision Log
 
 - 2026-04-03: o plano anterior sai de `active/` porque a parte executavel local principal ja foi aplicada e validada.
 - 2026-04-03: o novo plano foca somente o remanescente real, evitando manter em aberto entregas ja executadas.
 - 2026-04-03: branching multi-candidato continua como mecanismo existente, mas a sua promocao para contrato default exige uma sprint propria para nao quebrar compatibilidade legada.
+- 2026-04-03: o default continua `single-candidate`; a estabilidade contratual foi fechada pela via de compatibilidade (`GroupTurnResult.selected_result`) em vez de forcar ativacao global.
+- 2026-04-03: budget operacional virou contrato de bootstrap/readiness, nao apenas documentacao aspiracional.
 
 ## Sprint 1
 

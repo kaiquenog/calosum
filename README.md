@@ -61,6 +61,8 @@ UserTurn
 
 Componentes de metacognição, reflexão e evolução ainda existem no repositório; o fluxo padrão do turno prioriza previsibilidade, observabilidade e degradação graciosa.
 
+Quando o branching multi-candidato está ativo, o contrato estável é `GroupTurnResult.selected_result -> AgentTurnResult`. O caminho de compatibilidade fica explícito em `/ready` e nos benchmarks de reflection.
+
 ### Camadas
 
 | Camada | Papel |
@@ -180,6 +182,8 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
+`GET /ready` agora também devolve `operational_budgets` por componente e o `turn_contract` vigente entre `AgentTurnResult` e `GroupTurnResult`.
+
 ---
 
 ## UI de telemetria (opcional)
@@ -207,6 +211,13 @@ Três variáveis guiam o comportamento global:
 | `CALOSUM_INFRA_PROFILE` | `ephemeral`, `persistent`, `docker` | Onde e como persistem memória, telemetria e dependências |
 | `CALOSUM_MODE` | `api`, `local` | Privilegia endpoints externos vs. stack local |
 | `CALOSUM_DEPENDENCY_MODE` | `auto`, `api`, `local` | Alinhamento de instalação com o modo de execução |
+
+Budgets operacionais opcionais por componente:
+
+- `CALOSUM_RIGHT_BUDGET_CPU_CORES`, `CALOSUM_RIGHT_BUDGET_MEMORY_MB`
+- `CALOSUM_LEFT_BUDGET_CPU_CORES`, `CALOSUM_LEFT_BUDGET_MEMORY_MB`
+- `CALOSUM_BRIDGE_BUDGET_CPU_CORES`, `CALOSUM_BRIDGE_BUDGET_MEMORY_MB`
+- `CALOSUM_BUDGET_CPU_CORES`, `CALOSUM_BUDGET_MEMORY_MB` como limite global de fallback
 
 Exemplo mínimo para desenvolvimento com API externa e persistência local:
 
@@ -277,6 +288,8 @@ Mais detalhes operacionais para agentes e desenvolvedores: [`AGENTS.md`](AGENTS.
 
 ## Documentação
 
+- Contrato `jepa-rs`: [`docs/components/right-hemisphere-jepa-rs-contract.md`](docs/components/right-hemisphere-jepa-rs-contract.md)
+
 | Documento | Conteúdo |
 |-----------|----------|
 | [`docs/index.md`](docs/index.md) | Índice geral da documentação |
@@ -290,3 +303,4 @@ Mais detalhes operacionais para agentes e desenvolvedores: [`AGENTS.md`](AGENTS.
 ---
 
 *Calosum — framework de agente neuro-simbólico com hemisférios acoplados por contratos estáveis e governança mecânica.*
+O compose agora inclui `healthcheck` chamando `/ready`. Os smokes versionados gerados neste plano estão em `docs/benchmarks/ci/2026-04-03-docker-profile-ready.*` e `docs/benchmarks/ci/2026-04-03-reflection-branching-smoke.*`.

@@ -142,21 +142,31 @@ async def readiness_check() -> JSONResponse:
         builder = get_builder()
         agent = get_agent()
         info = builder.describe(agent)
-        return JSONResponse(
-            {
-                "status": "ready",
-                "health": info["capabilities"]["health"],
-                "components": {
-                    "right_hemisphere": info["capabilities"]["right_hemisphere"],
-                    "left_hemisphere": info["capabilities"]["left_hemisphere"],
-                    "knowledge_graph": info["capabilities"]["knowledge_graph"],
-                    "embeddings": info["capabilities"].get("embeddings"),
-                },
-            }
-        )
+        return JSONResponse(_build_readiness_payload(info))
     except Exception as e:
         logger.error("Readiness check failed", exc_info=True)
         return JSONResponse({"status": "unready", "error": str(e)}, status_code=503)
+
+
+def _build_readiness_payload(info: dict[str, object]) -> dict[str, object]:
+    capabilities = info["capabilities"]
+    assert isinstance(capabilities, dict)
+    degradations = info.get("degradations", {})
+    assert isinstance(degradations, dict)
+    right_degradation = degradations.get("right_hemisphere", {})
+    assert isinstance(right_degradation, dict)
+    return {
+        "status": "ready",
+        "health": capabilities["health"],
+        "components": {
+            "right_hemisphere": {**capabilities["right_hemisphere"], **right_degradation},
+            "left_hemisphere": capabilities["left_hemisphere"],
+            "knowledge_graph": capabilities["knowledge_graph"],
+            "embeddings": capabilities.get("embeddings"),
+        },
+        "operational_budgets": info.get("operational_budgets", {}),
+        "turn_contract": info.get("turn_contract", {}),
+    }
 
 if __name__ == "__main__":
     import uvicorn

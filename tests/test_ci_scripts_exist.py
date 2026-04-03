@@ -13,6 +13,7 @@ class TestCiScriptsExist(unittest.TestCase):
         self.assertTrue(Path("scripts/ci_integration_benchmark.py").exists())
         self.assertTrue(Path("scripts/ci_benchmark_gate.py").exists())
         self.assertTrue(Path("scripts/coverage_gate_new_modules.py").exists())
+        self.assertTrue(Path("scripts/docker_profile_ready.py").exists())
 
     def test_ci_integration_benchmark_generates_real_metrics_payload(self):
         repo_root = Path(__file__).resolve().parents[1]

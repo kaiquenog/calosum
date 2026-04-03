@@ -30,6 +30,10 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - `CALOSUM_RIGHT_ACTION_CONDITIONED`: Opcional. Liga/desliga condicionamento por acao no preditor direito.
 - `CALOSUM_RIGHT_HORIZON`: Opcional. Horizonte de predicao do hemisferio direito.
 - `CALOSUM_RIGHT_JEPARS_BINARY`: Opcional. Binario do backend Rust `jepa-rs`.
+- `CALOSUM_RIGHT_BUDGET_CPU_CORES`, `CALOSUM_RIGHT_BUDGET_MEMORY_MB`: Opcional. Limites de budget para o hemisferio direito; quando um backend excede o envelope, o bootstrap degrada para fallback explicito.
+- `CALOSUM_LEFT_BUDGET_CPU_CORES`, `CALOSUM_LEFT_BUDGET_MEMORY_MB`: Opcional. Limites de budget para o hemisferio esquerdo.
+- `CALOSUM_BRIDGE_BUDGET_CPU_CORES`, `CALOSUM_BRIDGE_BUDGET_MEMORY_MB`: Opcional. Limites de budget para o bridge.
+- `CALOSUM_BUDGET_CPU_CORES`, `CALOSUM_BUDGET_MEMORY_MB`: Opcional. Limite global usado quando o componente nao define override proprio.
 - `CALOSUM_BRIDGE_BACKEND`: Opcional. Seleciona a fusao do corpus caloso (`heuristic` ou `cross_attention`).
 - `CALOSUM_LEFT_PROMPT_PATH`: Opcional. Caminho para template externo de prompt base do hemisferio esquerdo (prompt-as-data).
 - `CALOSUM_FUSION_ENABLED`: Opcional. Liga/desliga fusao semantica JEPA+LLM no hemisferio esquerdo.
@@ -71,6 +75,7 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 `CALOSUM_INFRA_PROFILE=docker`
 - Utiliza a stack definida em `deploy/docker-compose.yml`.
 - Sobe Qdrant, Jaeger (OpenTelemetry) e a API do Orquestrador.
+- O container do orchestrator agora expõe `healthcheck` baseado em `GET /ready`.
 - **Machine Learning**: Os modelos da biblioteca `sentence-transformers` e `torch` baixam os pesos durante a criação da imagem e rodam na V-NET do container.
 - **Frontend UI:** Para rodar a interface de telemetria em React, inicie-a localmente usando `npm run dev` dentro do diretório `ui/`.
 
@@ -122,6 +127,23 @@ open http://localhost:16686
 - **Exporters:** `debug` (log básico) + `otlp/jaeger` (para Jaeger via gRPC:4317)
 
 Adicionalmente, os dados de telemetria da sessão estão disponíveis em tempo real através da API REST (`/v1/telemetry/dashboard/{session_id}`) e consumidos pelo painel UI React.
+
+## Readiness
+
+`GET /ready` agora devolve:
+
+- `components`: health detalhado por componente, incluindo `degraded_reason`, `checkpoint_loaded` e `contract_version` do hemisferio direito quando aplicavel
+- `operational_budgets`: CPU/memoria requeridos vs. limites configurados
+- `turn_contract`: compatibilidade entre `AgentTurnResult` e `GroupTurnResult`
+
+Artefatos versionados deste plano:
+
+- `docs/benchmarks/ci/2026-04-03-reflection-branching-smoke.*`
+- `docs/benchmarks/ci/2026-04-03-docker-profile-ready.*`
+
+Contrato formal do backend Rust:
+
+- `docs/components/right-hemisphere-jepa-rs-contract.md`
 
 
 ## Fluxo Local Recomendado
