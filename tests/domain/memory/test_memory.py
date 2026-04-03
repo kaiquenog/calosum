@@ -119,6 +119,14 @@ class DualMemoryTests(unittest.TestCase):
         self.assertGreaterEqual(report.episodes_considered, 1)
         self.assertEqual(trainer.invocations, 1)
 
+    def test_persistent_dual_memory_from_duckdb_falls_back_when_duckdb_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            memory = PersistentDualMemorySystem.from_duckdb(base / "state" / "semantic.duckdb")
+            self.assertIsNotNone(memory.episodic_store)
+            self.assertIsNotNone(memory.semantic_store)
+            self.assertIsNotNone(memory.graph_store)
+
 
 if __name__ == "__main__":
     unittest.main()

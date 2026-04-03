@@ -85,6 +85,7 @@ class GEAReflectionController:
         if not candidates:
             raise ValueError("Reflection requires at least one candidate")
         scoreboard = []
+        metrics_by_variant: dict[str, dict[str, float]] = {}
         latent_dim = len(candidates[0].turn_result.right_state.latent_vector)
         preferred_mu = np.zeros(latent_dim)
         preferred_logvar = np.ones(latent_dim) * -5.0
@@ -96,15 +97,21 @@ class GEAReflectionController:
             ambiguity = 1.0 - right.confidence
             risk = kl_divergence_gaussian(mu, logvar, preferred_mu, preferred_logvar)
             efe = calculate_efe(mu, logvar, preferred_mu, preferred_logvar, ambiguity)
+            complexity_penalty = max(0.0, risk)
+            ambiguity_cost = max(0.0, ambiguity)
             score = 1.0 / (1.0 + efe)
+            metrics_by_variant[candidate.variant.variant_id] = {
+                "complexity_penalty": float(complexity_penalty),
+                "ambiguity_cost": float(ambiguity_cost),
+            }
             scoreboard.append(
                 ReflectionScore(
                     variant_id=candidate.variant.variant_id,
                     score=float(score),
                     reasons=[
                         f"EFE={efe:.4f}",
-                        f"risk={risk:.4f}",
-                        f"ambiguity={ambiguity:.4f}",
+                        f"complexity_penalty={complexity_penalty:.4f}",
+                        f"ambiguity_cost={ambiguity_cost:.4f}",
                         f"confidence={right.confidence:.2f}",
                     ],
                 )
@@ -112,10 +119,20 @@ class GEAReflectionController:
 
         scoreboard.sort(key=lambda x: x.score, reverse=True)
         winner_id = scoreboard[0].variant_id
+        winner_metrics = metrics_by_variant.get(winner_id, {})
         return ReflectionOutcome(
             selected_variant_id=winner_id,
             scoreboard=scoreboard,
             selected_by="efe_minimization_loop",
+            selected_metrics={
+                "complexity_penalty": round(float(winner_metrics.get("complexity_penalty", 0.0)), 6),
+                "ambiguity_cost": round(float(winner_metrics.get("ambiguity_cost", 0.0)), 6),
+                "selection_objective": "min_efe",
+            },
+            cost_metrics={
+                "objective": "expected_free_energy",
+                "candidate_count": len(candidates),
+            },
             notes=[f"evaluated={len(candidates)}"],
         )
 

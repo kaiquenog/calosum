@@ -129,8 +129,11 @@ class ResilientLeftHemisphereAdapter:
         attempted: list[str] = []
         last_result: ActionPlannerResult | None = None
         last_error: str | None = None
+        routing_reason = "default_primary"
+        bridge_packet = args[1] if len(args) > 1 and isinstance(args[1], PerceptionSummary) else None
 
-        for provider in self._ordered_providers():
+        ordered, routing_reason = self._ordered_providers(bridge_packet)
+        for provider in ordered:
             provider_name = self._provider_name(provider)
             attempted.append(provider_name)
             try:
@@ -147,7 +150,13 @@ class ResilientLeftHemisphereAdapter:
             reason = self._failover_reason(result)
             if reason is None:
                 self._clear_failure(provider_name)
-                return self._annotate_result(result, provider_name, attempted, exhausted=False)
+                return self._annotate_result(
+                    result,
+                    provider_name,
+                    attempted,
+                    exhausted=False,
+                    routing_reason=routing_reason,
+                )
 
             last_error = reason
             last_result = result
@@ -163,7 +172,24 @@ class ResilientLeftHemisphereAdapter:
 
         return self._fallback_result(last_error or "all providers failed", attempted)
 
-    def _ordered_providers(self) -> list[ActionPlannerPort]:
+    def _ordered_providers(self, bridge_packet: PerceptionSummary | None) -> tuple[list[ActionPlannerPort], str]:
+        if len(self.providers) >= 2 and bridge_packet is not None:
+            directives = [str(item).lower() for item in bridge_packet.control.system_directives]
+            annotations = bridge_packet.control.annotations or {}
+            try:
+                uncertainty = float(annotations.get("jepa_uncertainty", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                uncertainty = 0.0
+            perception_status = str(annotations.get("perception_status", "observed")).lower()
+            if (
+                perception_status in {"blind", "degraded"}
+                or uncertainty >= 0.65
+                or any("high uncertainty" in item for item in directives)
+                or any("perception unavailable" in item for item in directives)
+            ):
+                return [self.providers[-1], self.providers[0]], "context_route_emergency"
+            return [self.providers[0], self.providers[-1]], "context_route_primary"
+
         now = time.time()
         healthy: list[ActionPlannerPort] = []
         cooling: list[ActionPlannerPort] = []
@@ -173,7 +199,7 @@ class ResilientLeftHemisphereAdapter:
                 cooling.append(provider)
             else:
                 healthy.append(provider)
-        return healthy or cooling or list(self.providers)
+        return healthy or cooling or list(self.providers), "cooldown_route"
 
     def _mark_failure(self, provider_name: str) -> None:
         self._cooldowns[provider_name] = time.time() + self.config.cooldown_seconds
@@ -201,11 +227,14 @@ class ResilientLeftHemisphereAdapter:
         attempted: list[str],
         *,
         exhausted: bool,
+        routing_reason: str,
     ) -> ActionPlannerResult:
         result.telemetry["provider_name"] = selected_provider
         result.telemetry["failover_attempt_count"] = len(attempted)
         result.telemetry["failover_attempts"] = attempted
         result.telemetry["failover_exhausted"] = exhausted
+        result.telemetry["routing_policy"] = "context_table"
+        result.telemetry["routing_reason"] = routing_reason
         return result
 
     def _fallback_result(self, error: str, attempted: list[str]) -> ActionPlannerResult:
@@ -220,6 +249,7 @@ class ResilientLeftHemisphereAdapter:
                 "failover_attempt_count": len(attempted),
                 "failover_attempts": attempted,
                 "failover_exhausted": True,
+                "routing_policy": "context_table",
             },
         )
 

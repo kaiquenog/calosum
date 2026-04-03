@@ -29,6 +29,7 @@ class CrossAttentionBridgeAdapter:
         self._W_v = None
         self._W_out = None
         self._label_embeddings = None
+        self._optimizer = None
         self._label_to_idx: dict[str, int] = {}
         self._next_idx = 0
         self._init_learned_projections()
@@ -46,6 +47,7 @@ class CrossAttentionBridgeAdapter:
             self._W_out = nn.Linear(d, d, bias=False)
             self._label_embeddings = nn.Embedding(64, d)
             self._torch_available = True
+            self._optimizer = torch.optim.SGD(self.get_parameters(), lr=1e-3)
         except ImportError:
             self._torch_available = False
 
@@ -207,12 +209,10 @@ class CrossAttentionBridgeAdapter:
             self._W_out.train()
             self._label_embeddings.train()
             
-            # Zero gradients
-            self._W_q.zero_grad()
-            self._W_k.zero_grad()
-            self._W_v.zero_grad()
-            self._W_out.zero_grad()
-            self._label_embeddings.zero_grad()
+            if self._optimizer is None:
+                self._optimizer = torch.optim.SGD(self.get_parameters(), lr=learning_rate)
+            self._optimizer.param_groups[0]["lr"] = learning_rate
+            self._optimizer.zero_grad()
             
             # Process input (similar to fuse_latent but we need to compute salience)
             x = self._fit(np.asarray(latent_vector, dtype=np.float32), self.config.target_dim)
@@ -234,31 +234,37 @@ class CrossAttentionBridgeAdapter:
             attn = torch.softmax(scores, dim=-1)
             context = torch.matmul(attn, V)
             
-            # Compute salience as attention magnitude (simplified)
-            produced_salience = torch.max(attn).item()
-            
+            # Compute differentiable salience proxy from attention distribution
+            produced_salience = torch.max(attn)
+
             # Compute loss (MSE between produced and target salience)
             loss_fn = nn.MSELoss()
-            target_tensor = torch.tensor([target_salience], dtype=torch.float32)
-            produced_tensor = torch.tensor([produced_salience], dtype=torch.float32)
+            target_tensor = torch.tensor([target_salience], dtype=torch.float32, device=produced_salience.device)
+            produced_tensor = produced_salience.reshape(1)
             loss = loss_fn(produced_tensor, target_tensor)
             
             # Backward pass
             loss.backward()
             
-            # Manual SGD update with learning rate
-            with torch.no_grad():
-                self._W_q.data -= learning_rate * self._W_q.grad.data
-                self._W_k.data -= learning_rate * self._W_k.grad.data
-                self._W_v.data -= learning_rate * self._W_v.grad.data
-                self._W_out.data -= learning_rate * self._W_out.grad.data
-                self._label_embeddings.data -= learning_rate * self._label_embeddings.grad.data
-            
-            return loss.item()
+            self._optimizer.step()
+
+            return float(loss.detach().item())
             
         except Exception:
             # In case of any error, return zero loss to avoid breaking the loop
             return 0.0
+
+    def export_trainable_state(self) -> dict[str, Any]:
+        if not self._torch_available:
+            return {"torch_available": False}
+        return {
+            "torch_available": True,
+            "W_q": self._W_q.state_dict() if self._W_q is not None else {},
+            "W_k": self._W_k.state_dict() if self._W_k is not None else {},
+            "W_v": self._W_v.state_dict() if self._W_v is not None else {},
+            "W_out": self._W_out.state_dict() if self._W_out is not None else {},
+            "label_embeddings": self._label_embeddings.state_dict() if self._label_embeddings is not None else {},
+        }
 
     def _fit(self, vec: np.ndarray, size: int) -> np.ndarray:
         if vec.size == size:

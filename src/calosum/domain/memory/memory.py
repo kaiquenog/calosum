@@ -132,6 +132,8 @@ class SleepModeConsolidator:
         # Vamos acumular os episódios categorizados.
         dspy_dataset: list[dict] = []
         sharegpt_dataset: list[dict] = []
+        predictive_dataset: list[dict] = []
+        last_latent_by_session: dict[str, list[float]] = {}
 
         for episode in episodes:
             for label in episode.right_state.emotional_labels:
@@ -170,6 +172,28 @@ class SleepModeConsolidator:
                             {"from": "gpt", "value": episode.left_result.response_text}
                         ]
                     })
+
+            latent_vector = list(getattr(episode.right_state, "latent_vector", []) or [])
+            if latent_vector:
+                session_id = episode.user_turn.session_id
+                previous_latent = last_latent_by_session.get(session_id)
+                prediction_error = float(
+                    episode.right_state.world_hypotheses.get(
+                        "prediction_error",
+                        episode.right_state.telemetry.get("prediction_error", 0.0),
+                    )
+                )
+                predictive_dataset.append(
+                    {
+                        "session_id": session_id,
+                        "episode_id": episode.episode_id,
+                        "latent_t": previous_latent or latent_vector,
+                        "latent_t1": latent_vector,
+                        "prediction_error": prediction_error,
+                        "surprise_score": float(getattr(episode.right_state, "surprise_score", 0.0)),
+                    }
+                )
+                last_latent_by_session[session_id] = latent_vector
 
         for label, count in emotion_counter.items():
             if count >= self.minimum_frequency:
@@ -213,6 +237,9 @@ class SleepModeConsolidator:
         if sharegpt_dataset and self.exporter:
             sharegpt_path = self.exporter.export(sharegpt_dataset, "lora_sharegpt.jsonl")
             lora_backlog.append(f"sharegpt_exported::{sharegpt_path}")
+        if predictive_dataset and self.exporter:
+            right_dataset_path = self.exporter.export(predictive_dataset, "right_hemisphere_dataset.jsonl")
+            lora_backlog.append(f"right_dataset_exported::{right_dataset_path}")
 
         return ConsolidationReport(
             started_at=started_at,

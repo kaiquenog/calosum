@@ -58,6 +58,40 @@ def calculate_efe(
     return risk + ambiguity
 
 
+def calculate_efe_components(
+    *,
+    prior_latent: np.ndarray,
+    posterior_latent: np.ndarray,
+    posterior_logvar: np.ndarray | None = None,
+    observation: np.ndarray | None = None,
+    policy_cost: float = 0.0,
+) -> tuple[float, float]:
+    """
+    Decompoe EFE em risco e ambiguidade para politicas latentes.
+
+    - Risco: distancia quadratica entre posterior e prior + custo da politica.
+    - Ambiguidade: entropia media do posterior (ou erro residual da observacao).
+    """
+    prior = np.asarray(prior_latent, dtype=np.float32)
+    posterior = np.asarray(posterior_latent, dtype=np.float32)
+    if prior.shape != posterior.shape:
+        size = min(prior.size, posterior.size)
+        prior = prior.reshape(-1)[:size]
+        posterior = posterior.reshape(-1)[:size]
+    risk = float(np.mean((posterior - prior) ** 2)) + max(0.0, float(policy_cost))
+
+    if posterior_logvar is not None:
+        logvar = np.asarray(posterior_logvar, dtype=np.float32).reshape(-1)[: posterior.size]
+        entropy = 0.5 * np.mean(np.log(2.0 * np.pi * np.e * (np.exp(logvar) + 1e-6)))
+        ambiguity = max(0.0, float(entropy))
+    elif observation is not None:
+        obs = np.asarray(observation, dtype=np.float32).reshape(-1)[: posterior.size]
+        ambiguity = float(np.mean((obs - posterior) ** 2))
+    else:
+        ambiguity = 0.0
+    return risk, ambiguity
+
+
 def calculate_surprise(
     observation_latent: np.ndarray,
     predicted_mu: np.ndarray,

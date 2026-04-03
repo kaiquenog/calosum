@@ -89,7 +89,13 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.cognition.action_planner": {"shared.models.types", "domain.cognition.differentiable_logic"},
     "domain.execution.tool_runtime": {"shared.models.types"},
     "domain.memory.memory": {"shared.models.types", "shared.models.ports"},
-    "adapters.memory.persistent_sql_memory": {"domain.memory.memory", "shared.utils.serialization", "shared.models.types", "adapters.memory.sql_memory"},
+    "adapters.memory.persistent_sql_memory": {
+        "domain.memory.memory",
+        "shared.utils.serialization",
+        "shared.models.types",
+        "adapters.memory.sql_memory",
+        "adapters.memory.sql_memory_duckdb",
+    },
     "domain.infrastructure.telemetry": {"shared.models.types", "shared.utils.serialization"},
 
     "domain.execution.workspace": {"domain.agent.orchestrator", "shared.models.types"},
@@ -264,6 +270,7 @@ MODULE_RULES: dict[str, set[str]] = {
     "adapters.llm.llm_payloads": {"shared.models.types"},
     "adapters.llm.llm_qwen": {"adapters.llm.llm_payloads", "adapters.llm.llm_payload_parser", "shared.utils.async_utils", "shared.models.types"},
     "adapters.memory.sql_memory": {"shared.models.types", "shared.utils.serialization"},
+    "adapters.memory.sql_memory_duckdb": {"shared.models.types", "shared.utils.serialization"},
     "adapters.memory.memory_qdrant": {
         "adapters.memory.text_embeddings",
         "adapters.memory.memory_qdrant_serializers",

@@ -159,6 +159,77 @@ class NightTrainerTests(unittest.TestCase):
         self.assertEqual(artifact["optimizer"], "DSPyGEPA")
         self.assertIn("typed JSON outputs", artifact["selected_prompt"])
 
+    def test_training_cycle_runs_bridge_and_right_hemisphere_adaptation_when_components_are_attached(self) -> None:
+        class FakeFusion:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def train_step(self, latent_vector, target_salience, learning_rate=0.001):
+                self.calls += 1
+                return 0.123
+
+            def export_trainable_state(self):
+                return {"fake": True}
+
+        class FakeRightProvider:
+            def __init__(self) -> None:
+                self.records = 0
+
+            def train_predictor_from_records(self, records, learning_rate=0.0015, epochs=2):
+                self.records += len(records)
+                return {"status": "success", "records_used": len(records), "avg_loss": 0.01}
+
+        class FakeTokenizer:
+            def __init__(self) -> None:
+                self.fusion = FakeFusion()
+
+        class WrappedRight:
+            def __init__(self) -> None:
+                self.base_adapter = type("Inner", (), {"provider": FakeRightProvider()})()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            dataset_path = base / "nightly.jsonl"
+            output_dir = base / "artifacts"
+            dataset_path.write_text(
+                json.dumps(
+                    {
+                        "category": "good",
+                        "input_text": "Organize em passos",
+                        "response_text": "Passos claros",
+                        "actions": ["respond_text", "propose_plan"],
+                        "latent_vector": [0.1, 0.2, 0.3],
+                        "target_salience": 0.7,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            right_dataset_path = base / "right_hemisphere_dataset.jsonl"
+            right_dataset_path.write_text(
+                json.dumps(
+                    {
+                        "latent_t": [0.1, 0.2, 0.3],
+                        "latent_t1": [0.2, 0.3, 0.4],
+                        "prediction_error": 0.9,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            trainer = NightTrainer("test-model", dataset_path, output_dir, backend="opro_lite")
+            trainer.attach_components(tokenizer=FakeTokenizer(), right_hemisphere=WrappedRight())
+            result = trainer.run_training_cycle()
+
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(result["bridge_plasticity"]["status"], "success")
+            self.assertEqual(result["bridge_plasticity"]["updates"], 1)
+            self.assertEqual(result["right_hemisphere_training"]["status"], "success")
+            self.assertGreaterEqual(result["right_hemisphere_training"]["records_used"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,7 +8,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from calosum.adapters.llm.llm_payloads import (
     augment_prompt_with_compiled_artifact,
@@ -92,13 +91,7 @@ class QwenLeftHemisphereAdapter:
             )
         )
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
-        reraise=True
-    )
-    async def _post_with_retry(self, url: str, json_payload: dict[str, Any]) -> httpx.Response:
+    async def _post_once(self, url: str, json_payload: dict[str, Any]) -> httpx.Response:
         response = await self.client.post(url, json=json_payload)
         response.raise_for_status()
         return response
@@ -139,7 +132,7 @@ class QwenLeftHemisphereAdapter:
         request = self._build_request(prompt, temperature=temperature)
 
         try:
-            response = await self._post_with_retry(request["url"], request["payload"])
+            response = await self._post_once(request["url"], request["payload"])
             data = response.json()
             content = self._extract_content(data, request["api_mode"])
 
@@ -185,6 +178,25 @@ class QwenLeftHemisphereAdapter:
             )
             if workspace:
                 workspace.left_notes.update({"error": "json_decode_error", "details": str(exc)})
+            return result
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            result = fallback_result(
+                f"backtracking:http_transport_failure:{exc.__class__.__name__}",
+                request["api_mode"],
+                request["resolved_model"],
+                bridge_packet.control.system_directives,
+            )
+            result.telemetry["backtracking_node"] = "http_transport_failure"
+            result.telemetry["http_retries"] = 0
+            result.reasoning_summary.append("Backtracking node: transporte HTTP indisponivel; replanejar politica")
+            if workspace:
+                workspace.left_notes.update(
+                    {
+                        "error": "http_transport_failure",
+                        "details": repr(exc),
+                        "backtracking_node": "http_transport_failure",
+                    }
+                )
             return result
         except Exception as exc:
             result = fallback_result(
@@ -240,6 +252,7 @@ class QwenLeftHemisphereAdapter:
                 f"Ação {item.action_type} rejeitada: {', '.join(item.violations)}"
                 for item in rejected_results
             ])
+        feedback.insert(0, "Backtracking: revise a politica para evitar acoes invalidas e convergir em um plano executavel.")
         return await self.areason(user_turn, bridge_packet, memory_context, feedback, attempt, workspace)
 
     def _build_request(self, prompt: str, *, temperature: float | None = None) -> dict[str, Any]:

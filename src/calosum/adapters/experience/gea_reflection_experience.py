@@ -74,11 +74,13 @@ class LearnedPreferenceGEAReflectionController(GEAReflectionController):
         emotional_intensity = self._emotional_intensity(candidates)
         short_response_expected = self._expects_short_response(candidates)
         if selected_by != "learned_model":
+            perception_status = str(getattr(candidates[0].turn_result.right_state, "perception_status", "observed")).lower()
             rule_selected = self._rule_based_choice(
                 features,
                 available_by_canonical,
                 emotional_intensity=emotional_intensity,
                 short_response_expected=short_response_expected,
+                perception_status=perception_status,
             )
             if rule_selected is not None:
                 selected_variant_id = rule_selected
@@ -194,7 +196,10 @@ class LearnedPreferenceGEAReflectionController(GEAReflectionController):
         *,
         emotional_intensity: float,
         short_response_expected: bool,
+        perception_status: str,
     ) -> str | None:
+        if perception_status in {"blind", "degraded"}:
+            return available_variants.get("pragmatico")
         if emotional_intensity >= 0.7 or (
             features.intent_type == "emotional" and emotional_intensity >= 0.45
         ):

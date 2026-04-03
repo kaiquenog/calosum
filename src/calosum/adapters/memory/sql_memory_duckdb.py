@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
 import json
-import sqlite3
 from pathlib import Path
 
 from calosum.shared.models.types import (
@@ -15,26 +15,30 @@ from calosum.shared.models.types import (
 from calosum.shared.utils.serialization import from_primitive, to_primitive
 
 
-class SQLStoreBase:
+def duckdb_available() -> bool:
+    return importlib.util.find_spec("duckdb") is not None
+
+
+class DuckDBStoreBase:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _get_connection(self):
+        import duckdb
+
+        return duckdb.connect(str(self.db_path))
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS knowledge_graph (
-                    subject TEXT,
-                    predicate TEXT,
-                    object TEXT,
-                    weight REAL,
-                    source_rule_id TEXT,
+                    subject VARCHAR,
+                    predicate VARCHAR,
+                    object VARCHAR,
+                    weight DOUBLE,
+                    source_rule_id VARCHAR,
                     PRIMARY KEY (subject, predicate, object)
                 )
                 """
@@ -42,50 +46,47 @@ class SQLStoreBase:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS workspaces (
-                    session_id TEXT PRIMARY KEY,
-                    data TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    session_id VARCHAR PRIMARY KEY,
+                    data VARCHAR,
+                    updated_at TIMESTAMP DEFAULT NOW()
                 )
                 """
             )
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS diagnostics (
-                    session_id TEXT PRIMARY KEY,
-                    data TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    session_id VARCHAR PRIMARY KEY,
+                    data VARCHAR,
+                    updated_at TIMESTAMP DEFAULT NOW()
                 )
                 """
             )
-            conn.commit()
 
 
-class SQLiteSemanticGraphStore(SQLStoreBase):
+class DuckDBSemanticGraphStore(DuckDBStoreBase):
     def upsert(self, triple: KnowledgeTriple) -> None:
         with self._get_connection() as conn:
             conn.execute(
-                """
-                INSERT INTO knowledge_graph (subject, predicate, object, weight, source_rule_id)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(subject, predicate, object) DO UPDATE SET
-                    weight = excluded.weight,
-                    source_rule_id = excluded.source_rule_id
-                WHERE excluded.weight >= weight
-                """,
-                (triple.subject, triple.predicate, triple.object, triple.weight, triple.source_rule_id),
+                "DELETE FROM knowledge_graph WHERE subject = ? AND predicate = ? AND object = ?",
+                [triple.subject, triple.predicate, triple.object],
             )
-            conn.commit()
+            conn.execute(
+                "INSERT INTO knowledge_graph(subject, predicate, object, weight, source_rule_id) VALUES (?, ?, ?, ?, ?)",
+                [triple.subject, triple.predicate, triple.object, triple.weight, triple.source_rule_id],
+            )
 
     def all(self) -> list[KnowledgeTriple]:
         with self._get_connection() as conn:
-            rows = conn.execute("SELECT * FROM knowledge_graph ORDER BY weight DESC").fetchall()
+            rows = conn.execute(
+                "SELECT subject, predicate, object, weight, source_rule_id FROM knowledge_graph ORDER BY weight DESC"
+            ).fetchall()
         return [
             KnowledgeTriple(
-                subject=row["subject"],
-                predicate=row["predicate"],
-                object=row["object"],
-                weight=row["weight"],
-                source_rule_id=row["source_rule_id"],
+                subject=row[0],
+                predicate=row[1],
+                object=row[2],
+                weight=float(row[3]),
+                source_rule_id=row[4],
             )
             for row in rows
         ]
@@ -103,48 +104,49 @@ class SQLiteSemanticGraphStore(SQLStoreBase):
         return ranked[:limit]
 
 
-class SQLiteEpisodicStore(SQLStoreBase):
+class DuckDBEpisodicStore(DuckDBStoreBase):
     def _init_db(self) -> None:
         super()._init_db()
         with self._get_connection() as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS episodic_memory (
-                    episode_id TEXT PRIMARY KEY,
-                    data TEXT,
-                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    session_id TEXT,
-                    user_text TEXT
+                    episode_id VARCHAR PRIMARY KEY,
+                    data VARCHAR,
+                    recorded_at VARCHAR,
+                    session_id VARCHAR,
+                    user_text VARCHAR
                 )
                 """
             )
-            conn.commit()
 
     def add(self, episode: MemoryEpisode) -> None:
         data = json.dumps(to_primitive(episode))
         with self._get_connection() as conn:
+            conn.execute("DELETE FROM episodic_memory WHERE episode_id = ?", [episode.episode_id])
             conn.execute(
-                "INSERT INTO episodic_memory (episode_id, data, recorded_at, session_id, user_text) VALUES (?, ?, ?, ?, ?)",
-                (
+                "INSERT INTO episodic_memory(episode_id, data, recorded_at, session_id, user_text) VALUES (?, ?, ?, ?, ?)",
+                [
                     episode.episode_id,
                     data,
                     episode.recorded_at.isoformat(),
                     episode.user_turn.session_id,
                     episode.user_turn.user_text,
-                ),
+                ],
             )
-            conn.commit()
 
     def query(self, user_turn: UserTurn, limit: int = 5) -> list[MemoryEpisode]:
         query_terms = set(user_turn.user_text.lower().split())
         with self._get_connection() as conn:
             rows = conn.execute(
                 "SELECT data FROM episodic_memory WHERE session_id = ? ORDER BY recorded_at DESC",
-                (user_turn.session_id,),
+                [user_turn.session_id],
             ).fetchall()
             if not rows:
-                rows = conn.execute("SELECT data FROM episodic_memory ORDER BY recorded_at DESC LIMIT 100").fetchall()
-        episodes = [from_primitive(MemoryEpisode, json.loads(row["data"])) for row in rows]
+                rows = conn.execute(
+                    "SELECT data FROM episodic_memory ORDER BY recorded_at DESC LIMIT 100"
+                ).fetchall()
+        episodes = [from_primitive(MemoryEpisode, json.loads(row[0])) for row in rows]
         ranked = sorted(
             episodes,
             key=lambda ep: (
@@ -158,68 +160,67 @@ class SQLiteEpisodicStore(SQLStoreBase):
     def all(self) -> list[MemoryEpisode]:
         with self._get_connection() as conn:
             rows = conn.execute("SELECT data FROM episodic_memory ORDER BY recorded_at DESC").fetchall()
-        return [from_primitive(MemoryEpisode, json.loads(row["data"])) for row in rows]
+        return [from_primitive(MemoryEpisode, json.loads(row[0])) for row in rows]
 
 
-class SQLiteSemanticStore(SQLStoreBase):
+class DuckDBSemanticStore(DuckDBStoreBase):
     def _init_db(self) -> None:
         super()._init_db()
         with self._get_connection() as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS semantic_rules (
-                    rule_id TEXT PRIMARY KEY,
-                    data TEXT,
-                    strength REAL
+                    rule_id VARCHAR PRIMARY KEY,
+                    data VARCHAR,
+                    strength DOUBLE
                 )
                 """
             )
-            conn.commit()
 
     def upsert(self, rule: SemanticRule) -> None:
         data = json.dumps(to_primitive(rule))
         with self._get_connection() as conn:
+            conn.execute("DELETE FROM semantic_rules WHERE rule_id = ?", [rule.rule_id])
             conn.execute(
-                "INSERT INTO semantic_rules (rule_id, data, strength) VALUES (?, ?, ?) ON CONFLICT(rule_id) DO UPDATE SET data = excluded.data, strength = excluded.strength",
-                (rule.rule_id, data, rule.strength),
+                "INSERT INTO semantic_rules(rule_id, data, strength) VALUES (?, ?, ?)",
+                [rule.rule_id, data, float(rule.strength)],
             )
-            conn.commit()
 
     def all(self) -> list[SemanticRule]:
         with self._get_connection() as conn:
             rows = conn.execute("SELECT data FROM semantic_rules ORDER BY strength DESC").fetchall()
-        return [from_primitive(SemanticRule, json.loads(row["data"])) for row in rows]
+        return [from_primitive(SemanticRule, json.loads(row[0])) for row in rows]
 
 
-class SQLiteSessionStore(SQLStoreBase):
+class DuckDBSessionStore(DuckDBStoreBase):
     def save_workspace(self, session_id: str, workspace: CognitiveWorkspace) -> None:
         data = json.dumps(to_primitive(workspace))
         with self._get_connection() as conn:
+            conn.execute("DELETE FROM workspaces WHERE session_id = ?", [session_id])
             conn.execute(
-                "INSERT INTO workspaces (session_id, data) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP",
-                (session_id, data),
+                "INSERT INTO workspaces(session_id, data, updated_at) VALUES (?, ?, NOW())",
+                [session_id, data],
             )
-            conn.commit()
 
     def load_workspace(self, session_id: str) -> CognitiveWorkspace | None:
         with self._get_connection() as conn:
-            row = conn.execute("SELECT data FROM workspaces WHERE session_id = ?", (session_id,)).fetchone()
+            row = conn.execute("SELECT data FROM workspaces WHERE session_id = ?", [session_id]).fetchone()
         if row:
-            return from_primitive(CognitiveWorkspace, json.loads(row["data"]))
+            return from_primitive(CognitiveWorkspace, json.loads(row[0]))
         return None
 
     def save_diagnostic(self, session_id: str, diagnostic: SessionDiagnostic) -> None:
         data = json.dumps(to_primitive(diagnostic))
         with self._get_connection() as conn:
+            conn.execute("DELETE FROM diagnostics WHERE session_id = ?", [session_id])
             conn.execute(
-                "INSERT INTO diagnostics (session_id, data) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP",
-                (session_id, data),
+                "INSERT INTO diagnostics(session_id, data, updated_at) VALUES (?, ?, NOW())",
+                [session_id, data],
             )
-            conn.commit()
 
     def load_diagnostic(self, session_id: str) -> SessionDiagnostic | None:
         with self._get_connection() as conn:
-            row = conn.execute("SELECT data FROM diagnostics WHERE session_id = ?", (session_id,)).fetchone()
+            row = conn.execute("SELECT data FROM diagnostics WHERE session_id = ?", [session_id]).fetchone()
         if row:
-            return from_primitive(SessionDiagnostic, json.loads(row["data"]))
+            return from_primitive(SessionDiagnostic, json.loads(row[0]))
         return None

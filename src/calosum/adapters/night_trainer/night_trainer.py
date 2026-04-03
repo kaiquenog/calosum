@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-
 class LocalDatasetExporter:
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
@@ -21,8 +19,6 @@ class LocalDatasetExporter:
             for item in dataset:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")
         return str(export_path)
-
-
 class NightTrainer:
     """
     Compilador offline do ciclo noturno.
@@ -57,7 +53,18 @@ class NightTrainer:
         self.provider = provider
         self.reasoning_effort = reasoning_effort
         self.backend = backend.lower()
+        self.right_dataset_path = self.dataset_path.parent / "right_hemisphere_dataset.jsonl"
+        self._tokenizer: Any | None = None
+        self._right_hemisphere: Any | None = None
 
+    def attach_components(
+        self,
+        *,
+        tokenizer: Any | None = None,
+        right_hemisphere: Any | None = None,
+    ) -> None:
+        self._tokenizer = tokenizer
+        self._right_hemisphere = right_hemisphere
     def run_training_cycle(self) -> dict[str, Any]:
         if self.backend in {"lora", "qlora"}:
             return {"status": "skipped", "reason": "LoRA training disabled for safety"}
@@ -97,12 +104,16 @@ class NightTrainer:
                 json.dump(compiled_artifact, f, indent=2, ensure_ascii=False)
 
             logger.info("Night training artifact saved to %s", artifact_path)
+            bridge_report = self._run_bridge_plasticity_cycle(dataset)
+            right_report = self._run_right_hemisphere_cycle()
             self._cleanup_dataset()
             return {
                 "status": "success",
                 "examples_learned": len(ranked_examples),
                 "artifact_path": str(artifact_path),
                 "selected_strategy": compiled_artifact["selected_strategy"],
+                "bridge_plasticity": bridge_report,
+                "right_hemisphere_training": right_report,
             }
         except Exception as e:
             logger.error("Night training failed: %s", e)
@@ -293,6 +304,83 @@ class NightTrainer:
             item["score"] = round(score, 3)
 
         return prompts
+
+    def _run_bridge_plasticity_cycle(self, dataset: list[dict[str, Any]]) -> dict[str, Any]:
+        fusion = self._extract_bridge_fusion(self._tokenizer)
+        if fusion is None or not hasattr(fusion, "train_step"):
+            return {"status": "skipped", "reason": "bridge_fusion_unavailable"}
+
+        updates = 0
+        losses: list[float] = []
+        for item in dataset:
+            latent = item.get("latent_vector")
+            if not isinstance(latent, list) or not latent:
+                continue
+            target_salience = float(item.get("target_salience", 0.5))
+            loss = float(fusion.train_step(latent, target_salience, learning_rate=0.002))
+            updates += 1
+            losses.append(loss)
+
+        state_path = self.output_dir / "bridge_state.pt"
+        if updates > 0 and hasattr(fusion, "export_trainable_state"):
+            try:
+                import torch
+
+                self.output_dir.mkdir(parents=True, exist_ok=True)
+                torch.save(fusion.export_trainable_state(), state_path)
+            except Exception:
+                state_path = Path("")
+
+        if updates == 0:
+            return {"status": "skipped", "reason": "no_bridge_latents"}
+        avg_loss = sum(losses) / max(1, len(losses))
+        return {
+            "status": "success",
+            "updates": updates,
+            "avg_loss": round(float(avg_loss), 6),
+            "state_path": str(state_path) if str(state_path) else None,
+        }
+
+    def _run_right_hemisphere_cycle(self) -> dict[str, Any]:
+        if not self.right_dataset_path.exists():
+            return {"status": "skipped", "reason": "right_dataset_missing"}
+
+        provider = self._extract_right_provider(self._right_hemisphere)
+        if provider is None or not hasattr(provider, "train_predictor_from_records"):
+            return {"status": "skipped", "reason": "right_predictor_unavailable"}
+
+        records: list[dict[str, Any]] = []
+        with self.right_dataset_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                item = json.loads(line)
+                if float(item.get("prediction_error", 0.0)) >= 0.45:
+                    records.append(item)
+        if not records:
+            return {"status": "skipped", "reason": "no_high_error_records"}
+        return provider.train_predictor_from_records(records[:256], learning_rate=0.0015, epochs=2)
+
+    def _extract_bridge_fusion(self, tokenizer: Any | None) -> Any | None:
+        if tokenizer is None:
+            return None
+        return getattr(tokenizer, "fusion", None)
+
+    def _extract_right_provider(self, right_hemisphere: Any | None) -> Any | None:
+        node = right_hemisphere
+        for _ in range(4):
+            if node is None:
+                return None
+            if hasattr(node, "train_predictor_from_records"):
+                return node
+            if hasattr(node, "base_adapter"):
+                node = getattr(node, "base_adapter")
+                continue
+            if hasattr(node, "provider"):
+                node = getattr(node, "provider")
+                continue
+            return None
+        return None
 
 
 if __name__ == "__main__":

@@ -4,6 +4,10 @@ Runtime experimental para agentes cognitivos neuro-simbólicos com arquitetura d
 
 O fluxo operacional padrão do turno é **linear e observável**, com fallbacks explícitos entre adapters e uma camada de **bootstrap** que compõe toda a infraestrutura.
 
+# Proximos passos
+
+A Ideia geral depois do projeto criar auto conciencia da sua estrtutura nao AGI mais sim estrutura arquitetural para que possa analisar sua telemetria e melhorar sua performance e sugerir melhorias de modulos se auto indexando, vamos usar RLM (Recursive Language Model) para isso, para testar cenarios provaveis de implementacao vou pedir a um especcialista de que ajude a implementar o GEA(Group-Evolving Agents: Open-Ended Self-Improvement via Experience Sharing)
+
 ---
 
 ## Índice

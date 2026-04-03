@@ -10,6 +10,13 @@ from calosum.adapters.memory.sql_memory import (
     SQLiteSemanticGraphStore,
     SQLiteSessionStore,
 )
+from calosum.adapters.memory.sql_memory_duckdb import (
+    DuckDBEpisodicStore,
+    DuckDBSemanticGraphStore,
+    DuckDBSemanticStore,
+    DuckDBSessionStore,
+    duckdb_available,
+)
 from calosum.shared.models.types import (
     CognitiveWorkspace,
     MemoryEpisode,
@@ -32,6 +39,24 @@ class PersistentDualMemorySystem(DualMemorySystem):
             "episodic_store": SQLiteEpisodicStore(db_path),
             "semantic_store": SQLiteSemanticStore(db_path),
             "graph_store": SQLiteSemanticGraphStore(db_path),
+            "session_store": session_store,
+        }
+        if consolidator is not None:
+            kwargs["consolidator"] = consolidator
+        return cls(**kwargs)
+
+    @classmethod
+    def from_duckdb(cls, db_path: str | Path, consolidator=None) -> "PersistentDualMemorySystem":
+        duckdb_file = Path(db_path)
+        duckdb_file.parent.mkdir(parents=True, exist_ok=True)
+        if not duckdb_available():
+            return cls.from_directory(duckdb_file.parent, consolidator=consolidator)
+
+        session_store = DuckDBSessionStore(duckdb_file)
+        kwargs = {
+            "episodic_store": DuckDBEpisodicStore(duckdb_file),
+            "semantic_store": DuckDBSemanticStore(duckdb_file),
+            "graph_store": DuckDBSemanticGraphStore(duckdb_file),
             "session_store": session_store,
         }
         if consolidator is not None:

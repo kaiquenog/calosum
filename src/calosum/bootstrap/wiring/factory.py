@@ -30,16 +30,12 @@ from calosum.adapters.communication.latent_exchange import InternalLatentExchang
 from calosum.shared.models.types import CapabilityDescriptor, ComponentHealth
 
 logger = logging.getLogger(__name__)
-
-
 def _build_codec(settings: InfrastructureSettings):
     """Instantiate a VectorCodecPort if vector_quantization flag is set."""
     if settings.vector_quantization == "turboquant":
         from calosum.adapters.perception.quantized_embeddings import TurboQuantVectorCodec
         return TurboQuantVectorCodec(bits=settings.turboquant_bits)
     return None
-
-
 def _validate_mode_consistency(settings: InfrastructureSettings) -> None:
     backend = (settings.left_hemisphere_backend or "").strip().lower()
     if settings.mode == CalosumMode.API and backend == "rlm":
@@ -98,6 +94,11 @@ class CalosumAgentBuilder:
             latent_exchange=latent_exchange,
             reflection_controller=reflection_controller,
         )
+        if night_trainer is not None and hasattr(night_trainer, "attach_components"):
+            night_trainer.attach_components(
+                tokenizer=tokenizer,
+                right_hemisphere=right_hemisphere,
+            )
         interceptor_manager.attach_event_bus(agent.event_bus)
         setattr(agent, "interceptor_manager", interceptor_manager)
         return agent
@@ -170,11 +171,16 @@ class CalosumAgentBuilder:
             InfrastructureProfile.PERSISTENT,
             InfrastructureProfile.DOCKER,
         }:
+            if self.settings.duckdb_path is not None:
+                return PersistentDualMemorySystem.from_duckdb(
+                    self.settings.duckdb_path,
+                    consolidator=SleepModeConsolidator(exporter=exporter),
+                )
             if self.settings.memory_dir is None:
                 raise ValueError("persistent profiles require a resolved memory_dir")
             return PersistentDualMemorySystem.from_directory(
                 self.settings.memory_dir,
-                consolidator=SleepModeConsolidator(exporter=exporter)
+                consolidator=SleepModeConsolidator(exporter=exporter),
             )
             
         return DualMemorySystem(
@@ -281,7 +287,9 @@ class CalosumAgentBuilder:
             InfrastructureProfile.PERSISTENT,
             InfrastructureProfile.DOCKER,
         }:
-            return "persistent_jsonl"
+            if self.settings.duckdb_path is not None:
+                return "duckdb_vss_memory"
+            return "persistent_sqlite"
         return "in_memory"
 
     def _telemetry_backend_name(self) -> str:

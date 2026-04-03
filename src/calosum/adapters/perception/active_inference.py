@@ -133,6 +133,7 @@ class ActiveInferenceSurpriseAdapter:
             world_hypotheses=merged_world,
             confidence=base_confidence,
             surprise_score=calibrated_surprise,
+            perception_status=base_state.perception_status,
             latent_mu=mu.tolist(),
             latent_logvar=logvar.tolist(),
             telemetry=merged_telemetry,

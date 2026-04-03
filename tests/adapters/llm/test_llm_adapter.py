@@ -222,6 +222,36 @@ class LlmAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.telemetry["compiled_few_shot_count"], 1)
         self.assertTrue(result.telemetry["compiled_prompt_selected"])
 
+    async def test_http_transport_failure_does_not_retry_and_emits_backtracking_node(self) -> None:
+        counter = {"calls": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            counter["calls"] += 1
+            raise httpx.ConnectError("network down", request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.aclose)
+
+        adapter = QwenLeftHemisphereAdapter(
+            QwenAdapterConfig(
+                api_url="http://localhost:11434/v1/chat/completions",
+                api_key="ollama",
+                model_name="qwen3.5:0.8b",
+            ),
+            client=client,
+        )
+
+        result = await adapter.areason(
+            UserTurn(session_id="transport-error", user_text="OI"),
+            _bridge_packet(),
+            _memory_context(),
+        )
+
+        self.assertEqual(counter["calls"], 1)
+        self.assertEqual(result.telemetry["backtracking_node"], "http_transport_failure")
+        self.assertEqual(result.telemetry["http_retries"], 0)
+        self.assertTrue(any("Backtracking node" in item for item in result.reasoning_summary))
+
 
 if __name__ == "__main__":
     unittest.main()

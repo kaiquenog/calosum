@@ -5,31 +5,27 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
-
-
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
 class Modality(StrEnum):
     TEXT = "text"
     AUDIO = "audio"
     VIDEO = "video"
     TYPING = "typing"
     SENSOR = "sensor"
-
-
 class FailureType(StrEnum):
     SCHEMA_VIOLATION = "schema"
     UNSAFE_CONTENT = "safety"
     RUNTIME_REJECTION = "runtime"
     INCOMPLETE_RESULT = "incomplete"
-
-
 class ComponentHealth(StrEnum):
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNAVAILABLE = "unavailable"
+class PerceptionStatus(StrEnum):
+    OBSERVED = "observed"
+    DEGRADED = "degraded"
+    BLIND = "blind"
 
 
 @dataclass(slots=True)
@@ -199,6 +195,7 @@ class InputPerceptionState:
     world_hypotheses: dict[str, float]
     confidence: float
     surprise_score: float = 0.0
+    perception_status: PerceptionStatus = PerceptionStatus.OBSERVED
     latent_mu: list[float] | None = None
     latent_logvar: list[float] | None = None
     telemetry: dict[str, Any] = field(default_factory=dict)

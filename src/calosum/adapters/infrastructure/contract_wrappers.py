@@ -11,11 +11,10 @@ from calosum.shared.models.types import (
     MemoryContext,
     PrimitiveAction,
     InputPerceptionState,
+    PerceptionStatus,
     TypedLambdaProgram,
     UserTurn,
 )
-
-
 class ContractEnforcedLeftHemisphereAdapter:
     """Enforce minimal ActionPlannerResult contract regardless of provider backend."""
 
@@ -228,8 +227,6 @@ class ContractEnforcedLeftHemisphereAdapter:
                 "contract_error": error,
             },
         )
-
-
 class ContractEnforcedRightHemisphereAdapter:
     """Normalize InputPerceptionState output from multiple perception adapters."""
 
@@ -279,6 +276,7 @@ class ContractEnforcedRightHemisphereAdapter:
 
         latent_mu = _normalize_latent(result.latent_mu) if result.latent_mu is not None else None
         latent_logvar = _normalize_latent(result.latent_logvar) if result.latent_logvar is not None else None
+        perception_status = _normalize_perception_status(getattr(result, "perception_status", PerceptionStatus.OBSERVED))
 
         salience = _clamp01(result.salience)
         confidence = _clamp01(result.confidence)
@@ -313,12 +311,11 @@ class ContractEnforcedRightHemisphereAdapter:
                 world_hypotheses=world,
                 confidence=confidence,
                 surprise_score=surprise,
+                perception_status=perception_status,
                 telemetry=telemetry,
             )
         except Exception as exc:
             return _fallback_right_state(context_id, self.provider.__class__.__name__, repr(exc))
-
-
 def _respond_action(text: str) -> PrimitiveAction:
     return PrimitiveAction(
         action_type="respond_text",
@@ -326,8 +323,6 @@ def _respond_action(text: str) -> PrimitiveAction:
         payload={"text": text},
         safety_invariants=["safe output only"],
     )
-
-
 def _response_from_actions(actions: list[PrimitiveAction]) -> str:
     for action in actions:
         if action.action_type != "respond_text":
@@ -336,8 +331,6 @@ def _response_from_actions(actions: list[PrimitiveAction]) -> str:
         if isinstance(candidate, str) and candidate.strip():
             return candidate.strip()
     return ""
-
-
 def _normalize_latent(raw: list[Any]) -> list[float]:
     out: list[float] = []
     for value in raw:
@@ -349,8 +342,6 @@ def _normalize_latent(raw: list[Any]) -> list[float]:
             continue
         out.append(number)
     return out
-
-
 def _normalize_world_hypotheses(raw: dict[str, Any]) -> dict[str, float]:
     out: dict[str, float] = {}
     for key, value in dict(raw or {}).items():
@@ -362,8 +353,6 @@ def _normalize_world_hypotheses(raw: dict[str, Any]) -> dict[str, float]:
             continue
         out[str(key)] = _clamp01(number)
     return out
-
-
 def _clamp01(value: Any) -> float:
     try:
         number = float(value)
@@ -372,8 +361,6 @@ def _clamp01(value: Any) -> float:
     if not math.isfinite(number):
         return 0.0
     return max(0.0, min(1.0, number))
-
-
 def _fallback_right_state(context_id: str, provider_name: str, error: str) -> InputPerceptionState:
     return InputPerceptionState(
         context_id=context_id,
@@ -385,6 +372,7 @@ def _fallback_right_state(context_id: str, provider_name: str, error: str) -> In
         world_hypotheses={"interaction_complexity": 0.0},
         confidence=0.5,
         surprise_score=0.5,
+        perception_status=PerceptionStatus.BLIND,
         telemetry={
             "contract_wrapper": "right_v1",
             "contract_provider": provider_name,
@@ -392,3 +380,12 @@ def _fallback_right_state(context_id: str, provider_name: str, error: str) -> In
             "degraded_reason": "contract_wrapper_fallback",
         },
     )
+def _normalize_perception_status(raw: Any) -> PerceptionStatus:
+    if isinstance(raw, PerceptionStatus):
+        return raw
+    text = str(raw or "").strip().lower()
+    if text == PerceptionStatus.BLIND.value:
+        return PerceptionStatus.BLIND
+    if text == PerceptionStatus.DEGRADED.value:
+        return PerceptionStatus.DEGRADED
+    return PerceptionStatus.OBSERVED

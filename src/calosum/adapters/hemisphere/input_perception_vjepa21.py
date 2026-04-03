@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
+import hashlib
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +15,10 @@ from calosum.shared.models.types import (
     MemoryContext,
     MultimodalSignal,
     InputPerceptionState,
+    PerceptionStatus,
     UserTurn,
 )
-from dataclasses import dataclass
+
 
 @dataclass(slots=True)
 class VJepa21Config:
@@ -28,13 +30,9 @@ class VJepa21Config:
     action_conditioned: bool = True
     text_embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-class VJepa21RightHemisphereAdapter(InputPerceptionPort):
-    """V-JEPA 2.1 action-conditioned world model adapter.
 
-    Carrega pesos reais do V-JEPA 2 (facebook/vjepa2-*) via HuggingFace
-    ou ONNX exportado. Suporta latent prediction com multi-horizon error
-    e action-conditioned planning (V-JEPA 2-AC).
-    """
+class VJepa21RightHemisphereAdapter(InputPerceptionPort):
+    """V-JEPA 2.1 adapter com degradação explícita e incerteza por MC-dropout."""
 
     def __init__(
         self,
@@ -53,7 +51,11 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
         self._health = ComponentHealth.UNAVAILABLE
         self._predictor: Any = None
         self._encoder: Any = None
+        self._text_embedder: Any | None = None
+        self._latent_size = 768
+        self._mc_samples = 12
         self._load_model()
+        self._init_text_embedder()
 
     def _load_model(self) -> None:
         if self._onnx_path and Path(self._onnx_path).exists():
@@ -64,7 +66,6 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
             self._health = ComponentHealth.DEGRADED
 
     def _load_onnx(self) -> None:
-        """Fallback empty to satisfy condition"""
         self._health = ComponentHealth.DEGRADED
 
     def _load_torch(self) -> None:
@@ -83,6 +84,17 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
         except Exception:
             self._health = ComponentHealth.DEGRADED
 
+    def _init_text_embedder(self) -> None:
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            self._text_embedder = SentenceTransformer(
+                self.config.text_embedding_model,
+                local_files_only=True,
+            )
+        except Exception:
+            self._text_embedder = None
+
     def _build_predictor(self) -> Any:
         import torch
         from torch import nn
@@ -96,6 +108,7 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
                 self.predictor = nn.Sequential(
                     nn.Linear(input_dim, latent_dim * 2),
                     nn.GELU(),
+                    nn.Dropout(p=0.15),
                     nn.Linear(latent_dim * 2, latent_dim * horizon),
                 )
 
@@ -119,55 +132,87 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
     ) -> InputPerceptionState:
         from calosum.shared.utils.math_cognitive import calculate_surprise
 
+        degraded_reason: str | None = None
+        perception_status = PerceptionStatus.OBSERVED
         visual_signals = [s for s in user_turn.signals if s.modality.value in ("image", "video")]
 
-        if visual_signals and self._health == ComponentHealth.HEALTHY:
-            latent_vector = self._encode_visual(visual_signals[0])
-            prediction_error = self._predict_and_compute_error(latent_vector)
+        if visual_signals:
+            latent_vector, visual_error = self._encode_visual(visual_signals[0])
+            if visual_error:
+                degraded_reason = visual_error
+                perception_status = PerceptionStatus.DEGRADED
+                latent_vector = self._text_to_latent(user_turn.user_text)
         else:
             latent_vector = self._text_to_latent(user_turn.user_text)
+            if self._health != ComponentHealth.HEALTHY:
+                degraded_reason = "vjepa_weights_unavailable_text_mode"
+                perception_status = PerceptionStatus.DEGRADED
+
+        if latent_vector is None:
+            degraded_reason = degraded_reason or "no_latent_signal"
+            perception_status = PerceptionStatus.BLIND
+            latent_vector = np.zeros(self._latent_size, dtype=np.float32)
+
+        latent_mu, latent_logvar, predictor_uncertainty, prediction_error = self._estimate_distribution(latent_vector)
+        if latent_mu is None or latent_logvar is None:
+            degraded_reason = degraded_reason or "predictive_distribution_unavailable"
+            perception_status = PerceptionStatus.BLIND
+            latent_mu = latent_vector
+            latent_logvar = np.ones_like(latent_vector, dtype=np.float32) * np.log(2.0)
             prediction_error = self._heuristic_prediction_error(latent_vector, memory_context)
 
-        # For V-JEPA, we treat the latent as the mean and assume a small fixed logvar if not modeled
-        latent_mu = latent_vector.tolist()
-        latent_logvar = (np.ones_like(latent_vector) * -3.0).tolist() # log(0.05) approx
-
-        # Use the math_cognitive utility for surprise
         surprise = calculate_surprise(
             latent_vector,
-            np.array(latent_mu), # Placeholder for actually predicted mu
-            np.array(latent_logvar) # Placeholder for actually predicted logvar
+            latent_mu,
+            latent_logvar,
         )
-        
-        emotional_labels = self._decode_emotions(latent_vector)
+
+        surprise_clamped = max(0.0, min(1.0, float(surprise)))
+        uncertainty = max(
+            0.0,
+            min(
+                1.0,
+                float(
+                    predictor_uncertainty
+                    if predictor_uncertainty is not None
+                    else min(1.0, float(np.exp(np.mean(latent_logvar))))
+                ),
+            ),
+        )
+        confidence = max(0.0, min(1.0, 1.0 - max(surprise_clamped, uncertainty)))
+        emotional_labels = self._decode_emotions(latent_vector, user_turn.user_text)
 
         telemetry = {
             "model_name": "v-jepa-2.1" if self._health == ComponentHealth.HEALTHY else "v-jepa-2.1-fallback",
             "right_backend": "vjepa21_local",
             "right_mode": "predictive",
-            "degraded_reason": "No weights" if self._health == ComponentHealth.DEGRADED else None,
+            "degraded_reason": degraded_reason,
+            "perception_status": perception_status.value,
             "surprise_backend": "math_cognitive",
+            "jepa_uncertainty": round(uncertainty, 4),
         }
+        if perception_status in (PerceptionStatus.BLIND, PerceptionStatus.DEGRADED):
+            telemetry["preferred_variant"] = "pragmatico"
+            telemetry["left_hemisphere_priority"] = "required"
 
         world_hypotheses = {
             "prediction_error": float(prediction_error),
             "semantic_density": float(np.std(latent_vector) * 4.0),
-            "surprise": surprise,
+            "surprise": surprise_clamped,
+            "interaction_complexity": min(1.0, len(user_turn.user_text) / 240.0),
         }
-
-        surprise_clamped = max(0.0, min(1.0, float(surprise)))
-        confidence = max(0.0, min(1.0, 1.0 - surprise_clamped))
 
         state = InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=latent_vector.tolist(),
-            latent_mu=latent_mu,
-            latent_logvar=latent_logvar,
+            latent_mu=latent_mu.tolist(),
+            latent_logvar=latent_logvar.tolist(),
             salience=self._calibrate_salience(surprise_clamped, emotional_labels),
             emotional_labels=emotional_labels,
             world_hypotheses=world_hypotheses,
             confidence=confidence,
             surprise_score=surprise_clamped,
+            perception_status=perception_status,
             telemetry=telemetry,
         )
 
@@ -177,85 +222,120 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
                     "backend": telemetry["right_backend"],
                     "surprise_score": surprise_clamped,
                     "prediction_error": prediction_error,
+                    "perception_status": perception_status.value,
                 }
             )
 
         return state
 
-    def _encode_visual(self, signal: MultimodalSignal) -> np.ndarray:
+    def _encode_visual(self, signal: MultimodalSignal) -> tuple[np.ndarray | None, str | None]:
         payload = signal.payload
         if isinstance(payload, dict) and "embedding" in payload:
             raw = np.array(payload["embedding"], dtype=np.float32)
         else:
             if self._vision_adapter:
-                raw = np.asarray(self._vision_adapter.embed_image(payload), dtype=np.float32)
+                try:
+                    raw = np.asarray(self._vision_adapter.embed_image(payload), dtype=np.float32)
+                except Exception as exc:
+                    return None, f"vision_adapter_failure:{exc.__class__.__name__}"
             else:
-                raw = np.random.randn(768).astype(np.float32)
+                return None, "vision_adapter_missing"
 
         if self._vector_codec:
             encoded = self._vector_codec.encode(raw.tolist())
             raw = np.asarray(self._vector_codec.decode(encoded), dtype=np.float32)
 
+        raw = self._project_to_latent(raw)
         norm = np.linalg.norm(raw)
         if norm > 0:
             raw = raw / norm
-        return raw
+        return raw, None
 
-    def _predict_and_compute_error(self, latent: np.ndarray) -> float:
-        import torch
-
+    def _estimate_distribution(
+        self, latent: np.ndarray
+    ) -> tuple[np.ndarray | None, np.ndarray | None, float | None, float]:
         if self._predictor is None:
-            return 0.5
+            return latent, np.ones_like(latent, dtype=np.float32) * np.log(2.0), 1.0, 0.5
+        try:
+            import torch
 
-        z_t = torch.from_numpy(latent).unsqueeze(0)
-        with torch.no_grad():
-            predictions = self._predictor(z_t)
-
-        current = predictions[:, 0, :]
-        error = torch.mean((current - z_t) ** 2).item()
-        return error
+            z_t = torch.from_numpy(latent).unsqueeze(0)
+            was_training = bool(self._predictor.training)
+            self._predictor.train()
+            with torch.no_grad():
+                draws = [self._predictor(z_t)[:, 0, :].squeeze(0) for _ in range(self._mc_samples)]
+            if not was_training:
+                self._predictor.eval()
+            stacked = torch.stack(draws, dim=0)
+            mu = stacked.mean(dim=0).cpu().numpy().astype(np.float32)
+            var = stacked.var(dim=0, unbiased=False).clamp(min=1e-6).cpu().numpy().astype(np.float32)
+            logvar = np.log(var)
+            error = float(np.mean((mu - latent) ** 2))
+            uncertainty = float(min(1.0, max(0.0, var.mean() * 8.0)))
+            return mu, logvar, uncertainty, error
+        except Exception:
+            return None, None, None, 0.5
 
     def _text_to_latent(self, text: str) -> np.ndarray:
-        if "unittest" in __import__("sys").modules:
-            return np.random.randn(768).astype(np.float32)
-        try:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer("all-MiniLM-L6-v2")
-            embedding = model.encode(text)
-            projected = np.zeros(768, dtype=np.float32)
-            length = min(len(embedding), 768)
-            projected[:length] = embedding[:length]
+        if self._text_embedder is not None:
+            try:
+                embedding = np.asarray(self._text_embedder.encode(text), dtype=np.float32)
+                return self._project_to_latent(embedding)
+            except Exception:
+                pass
+        return self._lexical_embedding(text)
+
+    def _lexical_embedding(self, text: str) -> np.ndarray:
+        latent = np.zeros(self._latent_size, dtype=np.float32)
+        tokens = [token for token in text.lower().split() if token.strip()]
+        if not tokens:
+            return latent
+        for token in tokens:
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            idx = int.from_bytes(digest[:2], "big") % self._latent_size
+            signal = (digest[2] / 255.0) - 0.5
+            latent[idx] += signal
+        return self._project_to_latent(latent)
+
+    def _project_to_latent(self, vector: np.ndarray) -> np.ndarray:
+        projected = np.zeros(self._latent_size, dtype=np.float32)
+        if vector.size == 0:
             return projected
-        except ImportError:
-            return np.random.randn(768).astype(np.float32)
+        length = min(vector.size, self._latent_size)
+        projected[:length] = vector[:length]
+        norm = np.linalg.norm(projected)
+        if norm > 0:
+            projected = projected / norm
+        return projected
 
     def _heuristic_prediction_error(self, latent: np.ndarray, memory_context: MemoryContext | None) -> float:
         if memory_context and memory_context.recent_episodes:
             recent = memory_context.recent_episodes[-1]
             if hasattr(recent, "right_state") and recent.right_state.latent_vector:
                 prev = np.array(recent.right_state.latent_vector, dtype=np.float32)
-                if prev.size < 768:
-                    expanded = np.zeros(768, dtype=np.float32)
+                if prev.size < self._latent_size:
+                    expanded = np.zeros(self._latent_size, dtype=np.float32)
                     expanded[:prev.size] = prev
                     prev = expanded
-                elif prev.size > 768:
-                    prev = prev[:768]
+                elif prev.size > self._latent_size:
+                    prev = prev[: self._latent_size]
                 cosine_sim = float(np.dot(latent, prev) / (np.linalg.norm(latent) * np.linalg.norm(prev) + 1e-8))
                 return max(0.0, 1.0 - cosine_sim)
         return 0.3
 
-    def _decode_emotions(self, latent: np.ndarray) -> list[str]:
-        emotion_prototypes = {
-            "calm": np.random.randn(768).astype(np.float32),
-            "curious": np.random.randn(768).astype(np.float32),
-            "frustrated": np.random.randn(768).astype(np.float32),
-            "confident": np.random.randn(768).astype(np.float32),
-        }
-        similarities = {
-            label: float(np.dot(latent, proto) / (np.linalg.norm(latent) * np.linalg.norm(proto) + 1e-8))
-            for label, proto in emotion_prototypes.items()
-        }
-        return sorted(similarities, key=similarities.get, reverse=True)[:3]
+    def _decode_emotions(self, latent: np.ndarray, text: str) -> list[str]:
+        lowered = text.lower()
+        labels: list[str] = []
+        if any(marker in lowered for marker in ("urgente", "erro", "falha", "bloqueado", "ansioso")):
+            labels.append("frustrated")
+        if any(marker in lowered for marker in ("como", "explique", "entender", "por que")):
+            labels.append("curious")
+        if any(marker in lowered for marker in ("ok", "resolvido", "claro", "feito")):
+            labels.append("confident")
+        if not labels:
+            energy = float(np.std(latent))
+            labels.append("curious" if energy > 0.06 else "calm")
+        return labels[:3]
 
     def _calibrate_salience(self, surprise: float, emotions: list[str]) -> float:
         base = 0.5 + 0.3 * surprise
@@ -264,6 +344,48 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
         if "curious" in emotions:
             base += 0.1
         return min(1.0, base)
+
+    def train_predictor_from_records(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        learning_rate: float = 1e-3,
+        epochs: int = 1,
+    ) -> dict[str, Any]:
+        if self._predictor is None:
+            return {"status": "skipped", "reason": "predictor_unavailable"}
+        if not records:
+            return {"status": "skipped", "reason": "empty_dataset"}
+        try:
+            import torch
+            import torch.nn.functional as F
+
+            optimizer = torch.optim.SGD(self._predictor.parameters(), lr=learning_rate)
+            self._predictor.train()
+            losses: list[float] = []
+            for _ in range(max(1, int(epochs))):
+                for item in records:
+                    latent_t = np.asarray(item.get("latent_t", []), dtype=np.float32)
+                    latent_t1 = np.asarray(item.get("latent_t1", []), dtype=np.float32)
+                    if latent_t.size == 0 or latent_t1.size == 0:
+                        continue
+                    z_t = torch.from_numpy(self._project_to_latent(latent_t)).unsqueeze(0)
+                    target = torch.from_numpy(self._project_to_latent(latent_t1)).unsqueeze(0)
+                    pred = self._predictor(z_t)[:, 0, :]
+                    loss = F.mse_loss(pred, target)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    losses.append(float(loss.detach().item()))
+            if not losses:
+                return {"status": "skipped", "reason": "no_valid_records"}
+            return {
+                "status": "success",
+                "records_used": len(losses),
+                "avg_loss": round(float(sum(losses) / len(losses)), 6),
+            }
+        except Exception as exc:
+            return {"status": "error", "reason": repr(exc)}
 
     async def aperceive(self, *args: Any, **kwargs: Any) -> InputPerceptionState:
         return self.perceive(*args, **kwargs)

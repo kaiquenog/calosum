@@ -9,6 +9,7 @@ from calosum.shared.models.types import (
     CognitiveWorkspace,
     InputPerceptionState,
     PerceptionSummary,
+    PerceptionStatus,
     SoftPromptToken,
 )
 
@@ -198,6 +199,9 @@ class ContextCompressor:
                 0,
                 "high uncertainty: prioritize epistemic foraging with tools before final response",
             )
+        if right_state.perception_status in (PerceptionStatus.BLIND, PerceptionStatus.DEGRADED):
+            directives.insert(0, "perception unavailable: use pragmatic deterministic planning")
+            directives.insert(1, "ask one concise clarification before committing to irreversible actions")
 
         fusion_backend = right_state.telemetry.get("fusion_backend")
         neural_active = fusion_backend == "learned_cross_attention"
@@ -219,6 +223,7 @@ class ContextCompressor:
                 "temperature_bias": self.config.temperature_bias,
                 "jepa_uncertainty": uncertainty,
                 "context_novelty": novelty,
+                "perception_status": right_state.perception_status.value,
                 "fusion_backend": fusion_backend,
                 "neural_active": neural_active,
             },
