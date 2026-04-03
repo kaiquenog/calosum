@@ -585,17 +585,25 @@ PYTHONPATH=src python3 -m calosum.harness_checks
 | `fastapi >= 0.100` + `uvicorn` | Servidor HTTP / SSE |
 | `httpx >= 0.25` | Cliente HTTP assíncrono |
 | `qdrant-client >= 1.7` | Banco de vetores |
-| `sentence-transformers >= 3.0` | Embeddings semânticos |
-| `transformers >= 4.40` | Modelos HuggingFace |
-| `torch >= 2.1` | Bridge neural + LoRA |
 | `tenacity >= 8.3` | Retry com backoff |
 | `dspy` | Otimização de prompts |
-| `peft >= 0.18` | Fine-tuning LoRA/QLoRA |
-| `nano-graphrag` | Knowledge graph (opcional) |
+| `nano-graphrag` | Knowledge graph (opcional, fallback NetworkX) |
 | `inferactively-pymdp` | Inferência ativa (opcional) |
+| `gensim >= 4.0` | Modelos de tópicos e similaridade |
+| `lightgbm >= 4.6` | Modelo de preferência por variante |
 | `python-telegram-bot >= 21` | Canal Telegram (opcional) |
 | `sse-starlette >= 1.8` | Server-Sent Events |
 | `duckduckgo-search >= 5.0` | Ferramenta de busca web |
+| `typing_extensions >= 4.7` | Compatibilidade de tipos |
+
+**Dependências opcionais** (`pip install -e ".[local]"`):
+
+| Pacote | Uso |
+|--------|-----|
+| `torch >= 2.0` | Bridge neural + LoRA + JEPA |
+| `peft >= 0.4` | Fine-tuning LoRA/QLoRA |
+| `transformers >= 4.40` | Modelos HuggingFace |
+| `sentence-transformers >= 3.0` | Embeddings semânticos locais |
 
 ---
 
@@ -726,18 +734,20 @@ LLM:              endpoint principal → endpoint fallback (com cooldown automá
 
 | Variável | Descrição |
 |----------|-----------|
-| `CALOSUM_RIGHT_BACKEND` | `auto` / `vjepa21` / `vljepa` / `jepars` / `huggingface` |
+| `CALOSUM_RIGHT_BACKEND` | `heuristic_jepa` / `trained_jepa` / `vjepa21` / `huggingface` |
 | `CALOSUM_RIGHT_MODEL_PATH` | Diretório local com artefatos do hemisfério direito |
-| `CALOSUM_RIGHT_ACTION_CONDITIONED` | `true`/`false` para predição condicionada por ação |
 | `CALOSUM_RIGHT_HORIZON` | Horizonte preditivo do world model |
-| `CALOSUM_RIGHT_JEPARS_BINARY` | Binário local do backend Rust `jepa-rs` |
-| `CALOSUM_LEFT_BACKEND` | `rlm` / `qwen` (default legado) |
+| `CALOSUM_RIGHT_ACTION_CONDITIONED` | `true`/`false` para predição condicionada por ação |
+| `CALOSUM_LEFT_BACKEND` | `rlm` / `qwen` / `openai` |
 | `CALOSUM_LEFT_RLM_RUNTIME_COMMAND` | Comando do runtime RLM local |
 | `CALOSUM_LEFT_RLM_PATH` | Caminho local do modelo/artefato RLM |
 | `CALOSUM_LEFT_RLM_MAX_DEPTH` | Profundidade máxima de recursão do RLM |
 | `CALOSUM_BRIDGE_BACKEND` | `heuristic` / `cross_attention` |
 | `CALOSUM_GEA_SHARING_ENABLED` | Habilita experience sharing persistente no GEA |
 | `CALOSUM_GEA_EXPERIENCE_STORE_PATH` | Caminho do SQLite de experiência do GEA |
+| `CALOSUM_VARIANT_PREFERENCE_MODEL_PATH` | Caminho do modelo LightGBM de preferência por variante |
+| `CALOSUM_VARIANT_PREFERENCE_MODEL_PATH` | Caminho do modelo LightGBM de preferência por variante |
+| `CALOSUM_VARIANT_PREFERENCE_MODEL_PATH` | Caminho do modelo LightGBM de preferência por variante |
 
 ### Infraestrutura
 
