@@ -155,16 +155,19 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
             "surprise": surprise,
         }
 
+        surprise_clamped = max(0.0, min(1.0, float(surprise)))
+        confidence = max(0.0, min(1.0, 1.0 - surprise_clamped))
+
         state = InputPerceptionState(
             context_id=user_turn.turn_id,
             latent_vector=latent_vector.tolist(),
             latent_mu=latent_mu,
             latent_logvar=latent_logvar,
-            salience=self._calibrate_salience(surprise, emotional_labels),
+            salience=self._calibrate_salience(surprise_clamped, emotional_labels),
             emotional_labels=emotional_labels,
             world_hypotheses=world_hypotheses,
-            confidence=max(0.0, 1.0 - surprise),
-            surprise_score=surprise,
+            confidence=confidence,
+            surprise_score=surprise_clamped,
             telemetry=telemetry,
         )
 
@@ -172,7 +175,7 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
             workspace.right_notes.update(
                 {
                     "backend": telemetry["right_backend"],
-                    "surprise_score": surprise,
+                    "surprise_score": surprise_clamped,
                     "prediction_error": prediction_error,
                 }
             )

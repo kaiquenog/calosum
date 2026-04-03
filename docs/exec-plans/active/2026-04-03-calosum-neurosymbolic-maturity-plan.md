@@ -6,6 +6,26 @@
 
 O projeto avançará em 3 Sprints estruturados. O lema desta fase é **"Matemática Real, Não Heurística de Python"**.
 
+## Purpose
+
+Substituir heurísticas fracas e gargalos de acoplamento no *world model* e no planificador por fundamentação matemática (EFE / Active Inference), consolidar infraestrutura local e fechar o loop de plasticidade em tempo real.
+
+## Scope
+
+Três sprints sequenciais cobrindo adapters V-JEPA e roteamento LLM, EFE e memória causal (GEA, persistência), e plasticidade estrutural (corpus callosum, Night Trainer, hemisfério direito). Não inclui mudanças fora de `src/calosum/` salvo documentação e benchmarks acoplados.
+
+## Validation
+
+`harness_checks` e testes de unidade/integração verdes em cada entrega; critérios de DoD por tarefa (telemetria, ausência de fallbacks randômicos, benchmarks). Sprint 3 permanece bloqueada até concluir a base matemática das Sprints 1 e 2.
+
+## Progress
+
+Plano ativo — execução por sprint conforme DAG descrito no final do documento.
+
+## Decision Log
+
+- **2026-04-03:** Plano criado com base no relatório `2026-04-03-calosum-architecture-review-dual-hemisphere.md`.
+
 ---
 
 ## 🏃‍♂️ Sprint 1: Fundação EFE e Purificação do JEPA (Crítico)

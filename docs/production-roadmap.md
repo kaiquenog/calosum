@@ -1,6 +1,6 @@
 # Production Roadmap
 
-Roadmap de estabilizacao e evolucao do Calosum. Atualizado em: 2026-04-02.
+Roadmap de estabilizacao e evolucao do Calosum. Atualizado em: 2026-04-03.
 
 ## 2026-Q1 (Concluido)
 
@@ -42,7 +42,7 @@ Roadmap de estabilizacao e evolucao do Calosum. Atualizado em: 2026-04-02.
 - [x] **Docker local com JEPA:** compose com `CALOSUM_MODE=local`, `CALOSUM_JEPA_MODEL_PATH` e volume read-only do modelo.
 - [ ] **Extracao de modulos criticos:** reduzir modulos perto/acima do limite de 400 linhas (`orchestrator.py`, `llm_qwen.py`, `agent_execution.py`, `metacognition.py`).
 - [ ] **OTLP para collector externo:** hardening do exportador e teste em stack Docker completa com carga sustentada.
-- [ ] **Validação de docstrings no harness:** exigir docstrings minimas nos `__init__.py` de pacotes semanticos.
+- [x] **Validação de docstrings no harness:** docstrings de módulo obrigatórias nos `__init__.py` de pacotes semânticos (`missing_package_docstring` em `harness_checks.py`).
 
 ## 2026-Q3 (Horizonte)
 

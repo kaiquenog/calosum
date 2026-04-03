@@ -64,7 +64,7 @@ As configurações principais podem ser passadas via `.env` ou exportadas no ter
 - Salva dados na pasta local `.calosum-runtime/`.
 - Os eventos de telemetria vão para `.calosum-runtime/telemetry/events.jsonl`.
 - Se o Qdrant não for configurado, a memória vetorial salva localmente em formato `.jsonl` serializado.
-- Sem configuracao explicita, a API e o comando `python3 -m calosum.bootstrap.cli chat` passam a adotar este modo localmente para permitir que a UI consulte a mesma telemetria entre processos.
+- Sem configuracao explicita, a API e o comando `python3 -m calosum chat` (ou `calosum chat` após `pip install -e .`) passam a adotar este modo localmente para permitir que a UI consulte a mesma telemetria entre processos.
 - Quando o Qdrant estiver ativo, o adapter de memoria usa embeddings configuraveis. Sem endpoint externo ou stack local de Sentence Transformers, ele cai para um embedding lexical deterministico para manter a busca vetorial funcional.
 
 ### 3. Docker
@@ -106,7 +106,7 @@ docker compose -f deploy/docker-compose.yml ps
 # 3. Rodar um turno pelo CLI (local conectando ao collector em Docker)
 CALOSUM_OTEL_COLLECTOR_ENDPOINT=http://localhost:4318 \
 CALOSUM_INFRA_PROFILE=persistent \
-PYTHONPATH=src .venv/bin/python3 -m calosum.bootstrap.cli chat
+PYTHONPATH=src .venv/bin/python3 -m calosum chat
 # (envie uma mensagem e saia com Ctrl+C)
 
 # 4. Abrir o Jaeger UI e verificar a trace
@@ -129,7 +129,7 @@ Adicionalmente, os dados de telemetria da sessão estão disponíveis em tempo r
 Para observar um chat local na UI:
 
 1. Suba a API do Calosum.
-2. Inicie o chat com `python3 -m calosum.bootstrap.cli chat`.
+2. Inicie o chat com `python3 -m calosum chat`.
 3. Abra a UI apontando para a API.
 4. Observe a sessao `terminal-session`, que e o identificador padrao do REPL e do painel.
 

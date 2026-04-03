@@ -1,3 +1,30 @@
+Metadata-Version: 2.4
+Name: calosum
+Version: 0.1.0
+Summary: High-level skeleton for a dual-hemisphere neuro-symbolic AGI agent.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: typing_extensions>=4.7.0
+Requires-Dist: pydantic>=2.5.0
+Requires-Dist: qdrant-client>=1.7.0
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: fastapi>=0.100.0
+Requires-Dist: uvicorn>=0.23.0
+Requires-Dist: duckduckgo-search>=5.0.0
+Requires-Dist: sse-starlette>=1.8.0
+Requires-Dist: tenacity>=8.3.0
+Requires-Dist: nano-graphrag
+Requires-Dist: gensim>=4.0.0
+Requires-Dist: dspy
+Requires-Dist: lightgbm>=4.6.0
+Requires-Dist: python-telegram-bot>=21.0
+Provides-Extra: local
+Requires-Dist: torch>=2.0.0; extra == "local"
+Requires-Dist: peft>=0.4.0; extra == "local"
+Requires-Dist: transformers>=4.40.0; extra == "local"
+Requires-Dist: sentence-transformers>=3.0.0; extra == "local"
+Provides-Extra: api
+
 # Calosum
 
 Runtime experimental para agentes cognitivos neuro-simbólicos com arquitetura de **duplo hemisfério** (percepção latente + raciocínio LLM), telemetria cognitiva, memória persistente opcional e **governança arquitetural mecânica** (`harness_checks`).

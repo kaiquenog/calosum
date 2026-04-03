@@ -88,8 +88,11 @@ class ActiveInferenceSurpriseAdapter:
         prior_mu, prior_logvar = self._get_prior(memory_context, mu.shape)
         raw_surprise = calculate_surprise(mu, prior_mu, prior_logvar)
         self._surprise_history.append(raw_surprise)
-        calibrated_surprise = self._calibrate_surprise(raw_surprise)
-        ambiguity = max(0.0, min(1.0, 1.0 - base_state.confidence))
+        calibrated_surprise = max(
+            0.0, min(1.0, float(self._calibrate_surprise(raw_surprise)))
+        )
+        base_confidence = max(0.0, min(1.0, float(base_state.confidence)))
+        ambiguity = max(0.0, min(1.0, 1.0 - base_confidence))
         risk = max(0.0, kl_divergence_gaussian(mu, logvar, prior_mu, prior_logvar))
         efe = calculate_efe(mu, logvar, prior_mu, prior_logvar, ambiguity=ambiguity)
         context_novelty = self._context_novelty(mu, logvar, memory_context)
@@ -128,7 +131,7 @@ class ActiveInferenceSurpriseAdapter:
             salience=calibrated_salience,
             emotional_labels=base_state.emotional_labels,
             world_hypotheses=merged_world,
-            confidence=base_state.confidence,
+            confidence=base_confidence,
             surprise_score=calibrated_surprise,
             latent_mu=mu.tolist(),
             latent_logvar=logvar.tolist(),
@@ -148,14 +151,16 @@ class ActiveInferenceSurpriseAdapter:
 
     def _calibrate_surprise(self, raw_surprise: float) -> float:
         if len(self._surprise_history) < self.config.min_history_for_zscore:
-            return float(np.tanh(raw_surprise))
+            # tanh ∈ (-1, 1); map to [0, 1] for InputPerceptionState.surprise_score
+            t = float(np.tanh(raw_surprise))
+            return float(max(0.0, min(1.0, (t + 1.0) / 2.0)))
 
         history = np.array(self._surprise_history)
         mean = np.mean(history[:-1]) if len(history) > 1 else np.mean(history)
         std = np.std(history[:-1]) + 1e-6 if len(history) > 1 else np.std(history) + 1e-6
         z_score = (raw_surprise - mean) / std
         normalized = 1.0 / (1.0 + np.exp(-(z_score - self.config.zscore_threshold / 2.0)))
-        return float(round(normalized, 4))
+        return float(round(max(0.0, min(1.0, normalized)), 4))
 
     def _context_novelty(
         self,

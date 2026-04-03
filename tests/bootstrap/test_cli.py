@@ -61,7 +61,7 @@ class CliIntegrationTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "calosum.bootstrap.entry.cli",
+                    "calosum",
                     "run-scenario",
                     str(scenario_path),
                     "--memory-dir",

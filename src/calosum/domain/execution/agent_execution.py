@@ -350,7 +350,6 @@ class AgentExecutionEngine:
         executed_results: list[ActionExecutionResult],
         critique_verdict: CritiqueVerdict | None = None,
     ) -> list[str]:
-        print(f"DEBUG: _format_runtime_feedback: executed_results={executed_results}")
         feedback = [
             f"{result.action_type}:{'; '.join(result.violations)}" for result in rejected_results
         ]

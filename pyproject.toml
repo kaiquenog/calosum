@@ -36,7 +36,7 @@ local = [
 api = []
 
 [project.scripts]
-calosum = "calosum.bootstrap.cli:main"
+calosum = "calosum.bootstrap.entry.cli:main"
 calosum-harness = "calosum.harness_checks:main"
 
 [tool.setuptools]

@@ -158,7 +158,10 @@ class CalosumAgent:
 
         if self.latent_exchange:
             await self.latent_exchange.broadcast_latent(user_turn.session_id, result.right_state.latent_vector)
-        
+
+        if workspace.runtime_feedback:
+            workspace.task_frame["previous_runtime_feedback"] = list(workspace.runtime_feedback)
+
         await maybe_await(self.memory_system.asave_workspace(user_turn.session_id, workspace))
         return result
 

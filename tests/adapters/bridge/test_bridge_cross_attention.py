@@ -33,7 +33,11 @@ class CrossAttentionBridgeTests(unittest.TestCase):
         packet = tokenizer.translate(state)
 
         self.assertEqual(len(packet.latent_vector), 384)
-        self.assertFalse(packet.control.annotations["neural_active"])
+        fb = packet.control.annotations.get("fusion_backend")
+        self.assertEqual(
+            packet.control.annotations["neural_active"],
+            fb == "learned_cross_attention",
+        )
 
 
 if __name__ == "__main__":

@@ -199,6 +199,9 @@ class ContextCompressor:
                 "high uncertainty: prioritize epistemic foraging with tools before final response",
             )
 
+        fusion_backend = right_state.telemetry.get("fusion_backend")
+        neural_active = fusion_backend == "learned_cross_attention"
+
         control = BridgeControlSignal(
             target_temperature=control_temperature,
             empathy_priority=empathy_priority,
@@ -216,6 +219,8 @@ class ContextCompressor:
                 "temperature_bias": self.config.temperature_bias,
                 "jepa_uncertainty": uncertainty,
                 "context_novelty": novelty,
+                "fusion_backend": fusion_backend,
+                "neural_active": neural_active,
             },
         )
 

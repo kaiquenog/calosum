@@ -18,8 +18,8 @@ Este arquivo e um mapa curto do repositorio. Nao e a documentacao completa.
 PYTHONPATH=src ./.venv/bin/python3 -m unittest discover -s tests -t . # All tests
 PYTHONPATH=src ./.venv/bin/python3 -m unittest tests/bootstrap/test_factory.py # Single file
 PYTHONPATH=src ./.venv/bin/python3 -m calosum.harness_checks # Governance (or `calosum-harness`)
-PYTHONPATH=src ./.venv/bin/python3 -m calosum.bootstrap.cli chat # CLI (or `calosum`)
-PYTHONPATH=src ./.venv/bin/python3 -m calosum.bootstrap.api # API Server
+PYTHONPATH=src ./.venv/bin/python3 -m calosum chat # CLI (same as `calosum` after pip install -e .)
+PYTHONPATH=src ./.venv/bin/python3 -m calosum.bootstrap.entry.api # API server
 ```
 
 ### TypeScript UI
@@ -79,7 +79,7 @@ docker compose -f deploy/docker-compose.yml ps # Health
 
 ### Key Constraints
 
-- New external integrations must go behind a `Protocol` in `shared/ports.py`.
+- New external integrations must go behind a `Protocol` in `shared/models/ports.py`.
 - Register new modules in `MODULE_RULES` inside `harness_checks.py` with allowed internal imports.
 - Missing module rules break the build with `missing_module_rule`.
 - Cross-cutting changes require a versioned plan in `docs/exec-plans/active/`.

@@ -107,6 +107,10 @@ class JepaRsRightHemisphereAdapter:
         if not completed.stdout:
             raise RuntimeError("jepa-rs (arrow) returned empty output")
 
+        text_out = completed.stdout.decode("utf-8", errors="replace").lstrip()
+        if text_out.startswith("{"):
+            return json.loads(text_out)
+
         try:
             # Assume a single RecordBatch in the stream
             with pa.ipc.open_stream(completed.stdout) as reader:

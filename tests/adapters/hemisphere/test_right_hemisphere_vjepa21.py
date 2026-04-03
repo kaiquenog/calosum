@@ -59,7 +59,7 @@ print(json.dumps({
 
             state = adapter.perceive(UserTurn(session_id="s", user_text="teste"))
 
-            self.assertEqual(state.telemetry["right_backend"], "jepa_rs")
+            self.assertEqual(state.telemetry["right_backend"], "jepa_rs_arrow")
             self.assertEqual(len(state.latent_vector), 4)
 
 

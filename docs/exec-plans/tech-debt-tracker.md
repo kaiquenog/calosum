@@ -1,7 +1,7 @@
 # Tech Debt Tracker
 
 Catalogo ativo de debitos tecnicos que surgem durante execucao de planos.
-Atualizado em: 2026-03-31
+Atualizado em: 2026-04-03
 
 ## Itens Abertos
 
@@ -37,7 +37,7 @@ Atualizado em: 2026-03-31
 
 ## Resolvidos
 
-- **2026-03-31** — CI remota (`.github/workflows/ci.yml`): jobs `harness` + `tests` em paralelo em cada push/PR para `main`. Validação remota pendente de push inicial ao GitHub.
+- **2026-03-31** — CI remota (`.github/workflows/ci.yml`): pipeline em estágios (`lint_types` → `unit_tests` → `integration` → `benchmark_gate`) em push/PR para `main`.
 - **2026-03-31** — OTLP hardening: documentação ponta-a-ponta adicionada ao `INFRASTRUCTURE.md`; fallback gracioso confirmado via teste.
 - **2026-03-31** — Docstrings no harness: check `missing_package_docstring` adicionado; `bootstrap/routers/__init__.py` corrigido.
 - **2026-03-31** — Benchmark hemisfério direito: `scripts/benchmark_right_hemisphere.py` criado; documentado em `harness-engineering.md`.

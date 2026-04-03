@@ -46,7 +46,7 @@ No dominio, `interceptors.py` formaliza o contrato de hooks cognitivos observaci
 
 Fora das quatro camadas principais, o repositório mantém `harness_checks.py` na raiz do pacote `calosum` como utilitário de governança. Ele não faz parte do runtime do agente; sua função é validar artefatos obrigatórios, planos, limites de módulo (<400 linhas) e fronteiras de importação via AST.
 
-Todo novo módulo Python deve ser registrado em `MODULE_RULES` dentro de `harness_checks.py`. O sistema de testes também segue esta estrutura modular em `tests/`, dividido em `tests/domain/`, `tests/adapters/`, `tests/bootstrap/`, `tests/shared/` e `tests/integration/`. Consulte `docs/references/harness-engineering.md` para a lista completa de checks e seus códigos de erro.
+Todo novo módulo Python deve ser registrado em `MODULE_RULES` dentro de `harness_checks.py`. O sistema de testes também segue esta estrutura modular em `tests/`, dividido em `tests/domain/`, `tests/adapters/`, `tests/bootstrap/`, `tests/shared/` e `tests/integration/`. Além de fronteiras e tamanho de módulo, o harness valida docstrings de pacote semântico, ausência de imports indevidos de `domain` em `shared/` (fora de `TYPE_CHECKING`), isolamento de adapters contra `os`/`subprocess` diretos e padrões proibidos de ML/treino em `domain/`. Consulte `docs/references/harness-engineering.md` para a lista completa de códigos de erro e a ordem de execução.
 
 ## Interface de Usuário (UI)
 
@@ -54,11 +54,11 @@ O projeto também possui um componente frontend na pasta `ui/` construído com R
 
 ## CI/CD e Gates de Qualidade
 
-O workflow em `.github/workflows/ci.yml` foi segmentado em quatro estagios:
+O workflow em `.github/workflows/ci.yml` executa quatro jobs em cadeia (`needs`):
 
 1. `lint_types`: `harness_checks`, `ruff` e `mypy --strict` focados em arquivos Python alterados.
 2. `unit_tests`: suite unitária + cobertura com gate de 80% para modulos Python novos/alterados em `src/calosum/`.
-3. `integration`: pipeline de integracao com LLM mockado e gate de latencia `p95 <= 5000 ms` em perfil `ephemeral`.
+3. `integration`: benchmark de integracao com gate de latencia `p95 <= 5000 ms` em perfil `ephemeral`.
 4. `benchmark_gate`: comparacao automatica contra baseline versionado, falhando se houver regressao > 5% em `tool_success_rate`.
 
 Os artefatos gerados em cada run ficam em `docs/benchmarks/ci/` e sao publicados como artifact do CI.
