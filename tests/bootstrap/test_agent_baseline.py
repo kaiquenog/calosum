@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from calosum.adapters.execution.tool_runtime import ConcreteActionRuntime
 from calosum.bootstrap.wiring.agent_baseline import AgentBaseline, AgentBaselineConfig
+from calosum.bootstrap.infrastructure.settings import CalosumMode, InfrastructureSettings
 from calosum.shared.models.types import (
     ActionPlannerResult,
     PrimitiveAction,
@@ -58,6 +61,19 @@ class AgentBaselineTests(unittest.TestCase):
             self.assertEqual(len(lines), 1)
             saved = json.loads(lines[0])
             self.assertEqual(saved["response_text"], "ok")
+
+    def test_from_settings_rejects_self_referential_default_in_api_mode(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "requires CALOSUM_LEFT_ENDPOINT in API mode"):
+            AgentBaseline.from_settings(InfrastructureSettings(mode=CalosumMode.API))
+
+    def test_from_settings_honors_require_left_endpoint_env_var(self) -> None:
+        settings = InfrastructureSettings(
+            mode=CalosumMode.LOCAL,
+            left_hemisphere_provider="openai",
+        )
+        with patch.dict(os.environ, {"CALOSUM_REQUIRE_LEFT_ENDPOINT": "1"}):
+            with self.assertRaisesRegex(RuntimeError, "CALOSUM_REQUIRE_LEFT_ENDPOINT=1"):
+                AgentBaseline.from_settings(settings)
 
 
 if __name__ == "__main__":

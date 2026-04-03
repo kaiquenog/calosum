@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +17,6 @@ from calosum.shared.models.types import (
     PerceptionStatus,
     UserTurn,
 )
-
 
 @dataclass(slots=True)
 class VJepa21Config:
@@ -141,9 +139,15 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
             if visual_error:
                 degraded_reason = visual_error
                 perception_status = PerceptionStatus.DEGRADED
-                latent_vector = self._text_to_latent(user_turn.user_text)
+                try:
+                    latent_vector = self._text_to_latent(user_turn.user_text)
+                except self.NullLatentError:
+                    latent_vector = None
         else:
-            latent_vector = self._text_to_latent(user_turn.user_text)
+            try:
+                latent_vector = self._text_to_latent(user_turn.user_text)
+            except self.NullLatentError:
+                latent_vector = None
             if self._health != ComponentHealth.HEALTHY:
                 degraded_reason = "vjepa_weights_unavailable_text_mode"
                 perception_status = PerceptionStatus.DEGRADED
@@ -276,26 +280,31 @@ class VJepa21RightHemisphereAdapter(InputPerceptionPort):
         except Exception:
             return None, None, None, 0.5
 
+    class NullLatentError(Exception):
+        pass
+
     def _text_to_latent(self, text: str) -> np.ndarray:
         if self._text_embedder is not None:
             try:
                 embedding = np.asarray(self._text_embedder.encode(text), dtype=np.float32)
                 return self._project_to_latent(embedding)
-            except Exception:
-                pass
-        return self._lexical_embedding(text)
-
-    def _lexical_embedding(self, text: str) -> np.ndarray:
-        latent = np.zeros(self._latent_size, dtype=np.float32)
-        tokens = [token for token in text.lower().split() if token.strip()]
-        if not tokens:
-            return latent
-        for token in tokens:
-            digest = hashlib.sha256(token.encode("utf-8")).digest()
-            idx = int.from_bytes(digest[:2], "big") % self._latent_size
-            signal = (digest[2] / 255.0) - 0.5
-            latent[idx] += signal
-        return self._project_to_latent(latent)
+            except Exception as e:
+                raise self.NullLatentError(f"Embedder failed: {e}")
+        vector = np.zeros(self._latent_size, dtype=np.float32)
+        lowered = text.lower()
+        for index, char in enumerate(lowered):
+            codepoint = ord(char)
+            if codepoint < 32:
+                continue
+            slot = (index * 131 + codepoint * 17) % self._latent_size
+            signal = 1.0 + ((codepoint % 13) / 13.0)
+            if (index + codepoint) % 2:
+                signal *= -1.0
+            vector[slot] += signal
+        norm = float(np.linalg.norm(vector))
+        if norm > 0.0:
+            vector = vector / norm
+        return vector
 
     def _project_to_latent(self, vector: np.ndarray) -> np.ndarray:
         projected = np.zeros(self._latent_size, dtype=np.float32)

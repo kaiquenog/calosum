@@ -1,5 +1,4 @@
 from __future__ import annotations
-import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -262,6 +261,8 @@ class TrainedJEPAAdapter:
             if episode.user_turn:
                 turns.append(episode.user_turn)
         return turns
+    class NullLatentError(Exception):
+        pass
     def _encode_text(self, text: str) -> list[float]:
         try:
             if self._embedder is None:
@@ -272,25 +273,29 @@ class TrainedJEPAAdapter:
                 )
             vec = self._embedder.encode([text], normalize_embeddings=True)[0].tolist()
             return self._normalize_size(vec)
-        except Exception:
-            return self._lexical_vector(text)
+        except Exception as exc:
+            if self.degraded_reason is None:
+                self.degraded_reason = f"embedder_fallback:{exc.__class__.__name__}"
+            return self._fallback_text_embedding(text)
+
+    def _fallback_text_embedding(self, text: str) -> list[float]:
+        vector = [0.0] * self.config.embedding_dim
+        lowered = text.lower()
+        for index, char in enumerate(lowered):
+            codepoint = ord(char)
+            if codepoint < 32:
+                continue
+            slot = (index * 131 + codepoint * 17) % self.config.embedding_dim
+            signal = 1.0 + ((codepoint % 13) / 13.0)
+            if (index + codepoint) % 2:
+                signal *= -1.0
+            vector[slot] += signal
+        return self._l2_normalize(vector)
     def _normalize_size(self, vector: list[float]) -> list[float]:
         if len(vector) > self.config.embedding_dim:
             vector = vector[: self.config.embedding_dim]
         elif len(vector) < self.config.embedding_dim:
             vector = vector + ([0.0] * (self.config.embedding_dim - len(vector)))
-        return self._l2_normalize(vector)
-    def _lexical_vector(self, text: str) -> list[float]:
-        tokens = self._tokenize(text) or ["silence"]
-        vector = [0.0] * self.config.embedding_dim
-        for token in tokens:
-            digest = hashlib.sha256(token.encode("utf-8")).digest()
-            for index in range(0, len(digest), 4):
-                chunk = digest[index : index + 4]
-                pos = int.from_bytes(chunk[:2], "big") % self.config.embedding_dim
-                sign = 1.0 if chunk[2] % 2 == 0 else -1.0
-                magnitude = 1.0 + (chunk[3] / 255.0)
-                vector[pos] += sign * magnitude
         return self._l2_normalize(vector)
     def _tokenize(self, text: str) -> list[str]:
         return [token.strip(".,;:!?()[]{}\"'").lower() for token in text.split() if token.strip(".,;:!?()[]{}\"'")]

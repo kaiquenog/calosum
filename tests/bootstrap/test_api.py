@@ -85,6 +85,15 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
 
+    def test_ready_check_returns_component_health_details(self) -> None:
+        response = self.client.get("/ready")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ready")
+        self.assertIn("health", payload)
+        self.assertIn("components", payload)
+        self.assertIn("right_hemisphere", payload["components"])
+
     def test_system_info_returns_runtime_capabilities_and_routing_resolution(self) -> None:
         response = self.client.get("/v1/system/info")
         self.assertEqual(response.status_code, 200)

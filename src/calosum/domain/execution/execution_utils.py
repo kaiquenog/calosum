@@ -1,7 +1,8 @@
 from typing import Any
+
+from calosum.shared.models.signals import StructuredMismatchSignal
 from calosum.shared.models.types import (
     ActionExecutionResult,
-    AgentTurnResult,
     PerceptionSummary,
     CognitiveTelemetrySnapshot,
     CritiqueVerdict,
@@ -30,6 +31,7 @@ def build_execution_telemetry(
         "empathy_priority": bridge_packet.control.empathy_priority,
         "system_directives_count": len(bridge_packet.control.system_directives),
     }
+    mismatch_signal = left_result.telemetry.get("structured_mismatch_signal")
     
     return CognitiveTelemetrySnapshot(
         felt={
@@ -53,10 +55,8 @@ def build_execution_telemetry(
                 "suggested_fixes": critique_verdict.suggested_fixes,
                 "confidence": critique_verdict.confidence,
             } if critique_verdict else None,
-            "cognitive_override_detected": any(
-                "mismatch" in text.lower() or "override" in text.lower() or "false alarm" in text.lower()
-                for text in left_result.reasoning_summary
-            ),
+            "cognitive_override_detected": bool(mismatch_signal),
+            "structured_mismatch_signal": mismatch_signal,
         },
         decision={
             "response_text": left_result.response_text,
@@ -70,6 +70,44 @@ def build_execution_telemetry(
         capabilities=capabilities or {},
         bridge_config=bridge_config,
         active_variant=variant_label,
+    )
+
+
+def build_structured_mismatch_signal(
+    execution_results: list[ActionExecutionResult],
+    critique_verdict: CritiqueVerdict | None,
+) -> StructuredMismatchSignal | None:
+    rejected = [result for result in execution_results if result.status == "rejected"]
+    verifier_invalid = critique_verdict is not None and not critique_verdict.is_valid
+    if not rejected and not verifier_invalid:
+        return None
+
+    reasons = [violation for result in rejected for violation in result.violations]
+    if critique_verdict is not None:
+        reasons.extend(critique_verdict.identified_issues)
+    reasons = list(dict.fromkeys(reason for reason in reasons if reason))
+
+    failure_types = []
+    if critique_verdict is not None:
+        failure_types = [item.value for item in critique_verdict.failure_types]
+    source = "verifier" if verifier_invalid else "runtime"
+    severity = min(
+        1.0,
+        (0.2 * len(rejected))
+        + (0.15 * len(failure_types))
+        + (0.1 if verifier_invalid else 0.0),
+    )
+    directives = [
+        "prioritize contract-safe actions before expressive responses",
+        "if uncertain, clarify or inspect before acting",
+    ]
+    return StructuredMismatchSignal(
+        source=source,
+        severity=severity,
+        reasons=reasons[:6],
+        rejected_action_types=[result.action_type for result in rejected],
+        failure_types=failure_types,
+        recommended_bridge_directives=directives,
     )
 
 def ensure_response_text(

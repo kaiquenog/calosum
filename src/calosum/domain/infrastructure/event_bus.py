@@ -54,9 +54,12 @@ class InternalEventBus:
             self.subscribers[event_type] = []
         self.subscribers[event_type].append(handler)
 
-    async def publish(self, event: CognitiveEvent):
+    def publish(self, event: CognitiveEvent):
         # Fire and forget into the queue
-        await self.queue.put(event)
+        try:
+            self.queue.put_nowait(event)
+        except asyncio.QueueFull:
+            logger.error(f"Event bus queue full, dropping event {event.event_type}")
         
         # Ensure worker is started
         if self._worker_task is None:

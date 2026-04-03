@@ -69,9 +69,12 @@ MODULE_RULES: dict[str, set[str]] = {
     "shared.models.types": set(),
     "shared.models.jepa": set(),
     "shared.models.ports": {"shared.models.jepa", "shared.models.types", "domain.metacognition.metacognition"},
+    "shared.models.signals": set(),
     "shared.models.schemas": set(),
     "shared.utils.async_utils": set(),
     "shared.utils.math_cognitive": set(),
+    "shared.utils.free_energy": set(),
+    "shared.utils.surprise_metrics": set(),
     "shared.utils.serialization": set(),
     "shared.utils.tools": {"shared.models.types"},
 
@@ -84,7 +87,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.hemisphere.soft_prompt_projector",
     },
     "domain.infrastructure.event_bus": set(),
-    "domain.cognition.differentiable_logic": {"shared.models.types"},
+    "domain.cognition.differentiable_logic": {"shared.models.types", "shared.utils.free_energy", "shared.utils.surprise_metrics"},
     "domain.cognition.input_perception": {"shared.models.types"},
     "domain.cognition.action_planner": {"shared.models.types", "domain.cognition.differentiable_logic"},
     "domain.execution.tool_runtime": {"shared.models.types"},
@@ -101,7 +104,8 @@ MODULE_RULES: dict[str, set[str]] = {
     "domain.execution.workspace": {"domain.agent.orchestrator", "shared.models.types"},
     "domain.metacognition.introspection": {"shared.models.types"},
     "domain.metacognition.introspection_capabilities": {"domain.agent.orchestrator", "bootstrap.wiring.factory", "shared.models.types"},
-    "domain.execution.execution_utils": {"shared.models.types"},
+    "domain.metacognition.branching_policy": {"shared.models.types"},
+    "domain.execution.execution_utils": {"shared.models.types", "shared.models.signals"},
     "domain.agent.evolution": {"shared.models.types", "domain.agent.agent_config", "shared.models.ports", "domain.agent.directive_guardrails"},
     "domain.agent.directive_guardrails": set(),
     "domain.agent.idle_foraging": {"shared.models.types"},
@@ -142,6 +146,8 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.infrastructure.verifier",
         "domain.execution.workspace",
         "shared.models.types",
+        "domain.cognition.differentiable_logic",
+        "domain.metacognition.branching_policy",
     },
 
     # BOOTSTRAP
@@ -159,7 +165,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.experience.gea_experience_graph",
         "adapters.experience.gea_experience_store",
         "adapters.experience.gea_reflection_experience",
-        "adapters.hemisphere.action_planner_rlm",
+        "adapters.hemisphere.left_hemisphere_rlm_ast",
         "adapters.llm.llm_failover",
         "adapters.llm.llm_fusion",
         "adapters.llm.llm_qwen",
@@ -255,7 +261,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "domain.metacognition.metacognition",
     },
     "adapters.experience.variant_preference": set(),
-    "adapters.hemisphere.action_planner_rlm": {"shared.models.types", "shared.models.ports"},
+    "adapters.hemisphere.left_hemisphere_rlm_ast": {"shared.models.types", "shared.models.ports"},
     "adapters.hemisphere.input_perception_heuristic_jepa": {"shared.models.jepa", "shared.models.types", "adapters.memory.text_embeddings"},
     "adapters.hemisphere.input_perception_trained_jepa": {"shared.models.jepa", "shared.models.types"},
     "adapters.hemisphere.input_perception_hf": {"shared.models.types", "domain.cognition.input_perception", "shared.models.ports"},
@@ -305,7 +311,7 @@ MODULE_RULES: dict[str, set[str]] = {
         "adapters.knowledge.knowledge_graph_nanorag",
         "adapters.perception.simple_distance",
         "adapters.bridge.bridge_cross_attention",
-        "adapters.hemisphere.action_planner_rlm",
+        "adapters.hemisphere.left_hemisphere_rlm_ast",
         "adapters.perception.multimodal_perception",
         "adapters.hemisphere.input_perception_heuristic_jepa",
         "adapters.hemisphere.input_perception_trained_jepa",
@@ -366,7 +372,27 @@ def run_harness_checks(repo_root: Path | None = None) -> HarnessReport:
     issues.extend(_check_shared_domain_runtime_imports(root))
     issues.extend(_check_adapter_isolation(root))
     issues.extend(_check_forbidden_domain_patterns(root))
+    issues.extend(_check_noisy_fallbacks(root))
     return HarnessReport(passed=not issues, issues=issues)
+
+
+def _check_noisy_fallbacks(root: Path) -> list[HarnessIssue]:
+    """Valida a ausência de simulações destrutivas como heurísticas fixas (0.3) ou hashlib em inferências."""
+    issues = []
+    forbidden_patterns = ["hashlib", "_lexical_embedding"]
+    for p in sorted((root / "src" / "calosum" / "adapters" / "hemisphere").rglob("*.py")):
+        try:
+            source = p.read_text(encoding="utf-8")
+            for pattern in forbidden_patterns:
+                if pattern in source:
+                    issues.append(HarnessIssue(
+                        "forbidden_noisy_fallback",
+                        f"Adapter contains forbidden noisy fallback pattern: {pattern}",
+                        str(p.relative_to(root))
+                    ))
+        except Exception:
+            continue
+    return issues
 
 
 def _check_forbidden_domain_patterns(root: Path) -> list[HarnessIssue]:
@@ -395,7 +421,7 @@ def _check_adapter_isolation(root: Path) -> list[HarnessIssue]:
     # Somente o docker_sandbox e a base de runtime podem tocar nisso por necessidade de infra
     EXEMPT = {
         "docker_sandbox.py", "tool_runtime.py", "telemetry_otlp.py",
-        "action_planner_rlm.py", "input_perception_jepars.py", "input_perception_vjepa21.py",
+        "left_hemisphere_rlm_ast.py", "input_perception_jepars.py", "input_perception_vjepa21.py",
         "llm_payloads.py", "night_trainer.py", "night_trainer_dspy.py", "night_trainer_lora.py"
     }
     

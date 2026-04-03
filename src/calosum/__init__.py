@@ -2,7 +2,7 @@
 
 from calosum.adapters.perception.simple_distance import SimpleDistanceSurpriseAdapter
 from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter, CrossAttentionBridgeConfig
-from calosum.adapters.hemisphere.action_planner_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.hemisphere.left_hemisphere_rlm_ast import RlmAstAdapterConfig, RlmAstLeftHemisphereAdapter
 from calosum.adapters.perception.multimodal_perception import LocalClipVisionAdapter, LocalClipVisionConfig
 from calosum.adapters.hemisphere.input_perception_jepars import JepaRsConfig, JepaRsRightHemisphereAdapter
 from calosum.adapters.hemisphere.input_perception_heuristic_jepa import (
@@ -156,8 +156,8 @@ __all__ = [
     "InputPerceptionPort",
     "InputPerceptionJEPAConfig",
     "InputPerceptionState",
-    "RlmAdapterConfig",
-    "RlmLeftHemisphereAdapter",
+    "RlmAstAdapterConfig",
+    "RlmAstLeftHemisphereAdapter",
     "ReflectionOutcome",
     "ReflectionScore",
     "SemanticRule",

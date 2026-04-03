@@ -53,9 +53,16 @@ class InputPerceptionJEPA:
         self.embedder = embedder
         self._salience_history_by_session: dict[str, list[float]] = defaultdict(list)
 
+    class NullLatentError(Exception):
+        pass
+
     def perceive(self, user_turn: UserTurn, memory_context: Any | None = None, workspace: CognitiveWorkspace | None = None) -> InputPerceptionState:
         # Get latent vector using the best available embedder
-        latent_vector = self._get_latent_vector(user_turn.user_text)
+        try:
+            latent_vector = self._get_latent_vector(user_turn.user_text)
+        except self.NullLatentError:
+            latent_vector = []
+
         
         emotional_labels = self._extract_emotional_labels(user_turn)
         raw_salience = self._estimate_salience(user_turn, emotional_labels)
@@ -121,24 +128,9 @@ class InputPerceptionJEPA:
             try:
                 vectors = self.embedder.embed_texts([text])
                 return vectors[0]
-            except Exception:
-                pass
-        return self._lexical_vector(text)
-
-    def _lexical_vector(self, text: str) -> list[float]:
-        tokens = re.findall(r"\w+", text.lower()) or ["silence"]
-        vector = [0.0] * self.config.latent_size
-        for token in tokens:
-            digest = hashlib.sha256(token.encode("utf-8")).digest()
-            for index in range(0, len(digest), 4):
-                chunk = digest[index:index + 4]
-                position = int.from_bytes(chunk[:2], "big") % self.config.latent_size
-                sign = 1.0 if chunk[2] % 2 == 0 else -1.0
-                magnitude = 1.0 + (chunk[3] / 255.0)
-                vector[position] += sign * magnitude
-        norm = math.sqrt(sum(v * v for v in vector))
-        if norm == 0: return vector
-        return [round(v / norm, 6) for v in vector]
+            except Exception as e:
+                raise self.NullLatentError(f"Embedder failed: {e}")
+        raise self.NullLatentError("No valid embedder available.")
 
     def _calculate_surprise(self, latent_vector: list[float], memory_context: Any | None) -> float:
         if not memory_context or not memory_context.recent_episodes:

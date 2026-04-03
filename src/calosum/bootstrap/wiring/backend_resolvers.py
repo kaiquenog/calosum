@@ -3,14 +3,13 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from calosum.adapters.perception.active_inference import ActiveInferenceSurpriseAdapter
 from calosum.adapters.bridge.bridge_cross_attention import CrossAttentionBridgeAdapter
 from calosum.adapters.infrastructure.contract_wrappers import (
     ContractEnforcedLeftHemisphereAdapter,
     ContractEnforcedRightHemisphereAdapter,
 )
 from calosum.domain.metacognition.metacognition import GEAReflectionController
-from calosum.adapters.hemisphere.action_planner_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.hemisphere.left_hemisphere_rlm_ast import RlmAstAdapterConfig, RlmAstLeftHemisphereAdapter
 from calosum.adapters.hemisphere.input_perception_heuristic_jepa import HeuristicJEPAAdapter
 from calosum.adapters.hemisphere.input_perception_trained_jepa import TrainedJEPAAdapter
 from calosum.adapters.llm.llm_failover import ResilientLeftHemisphereAdapter
@@ -36,6 +35,12 @@ def resolve_bridge_fusion(settings: InfrastructureSettings):
 
 
 def resolve_reflection_controller(settings: InfrastructureSettings):
+    if _env_bool("CALOSUM_GEA_ENABLE_LEARNED_SELECTOR", False):
+        from calosum.adapters.experience.gea_reflection_experience import (
+            LearnedPreferenceGEAReflectionController,
+        )
+
+        return LearnedPreferenceGEAReflectionController()
     return GEAReflectionController()
 
 
@@ -44,13 +49,22 @@ def resolve_left_hemisphere(
     reason_model_name: str,
 ) -> tuple[Any, str]:
     backend = (settings.left_hemisphere_backend or "").strip().lower()
+    if settings.mode == CalosumMode.API and not settings.left_hemisphere_endpoint:
+        raise RuntimeError(
+            "CALOSUM_MODE=api requires CALOSUM_LEFT_ENDPOINT; refusing self-referential default."
+        )
+    if _env_bool("CALOSUM_REQUIRE_LEFT_ENDPOINT", False) and backend != "rlm" and not settings.left_hemisphere_endpoint:
+        raise RuntimeError(
+            "CALOSUM_REQUIRE_LEFT_ENDPOINT=1 requires CALOSUM_LEFT_ENDPOINT for API-backed left hemisphere backends."
+        )
+
     use_rlm_default = settings.mode == CalosumMode.LOCAL or settings.profile in {
         InfrastructureProfile.PERSISTENT,
         InfrastructureProfile.DOCKER,
     }
     if backend == "rlm" or (backend in {"", "auto"} and use_rlm_default):
-        adapter = RlmLeftHemisphereAdapter(
-            RlmAdapterConfig(
+        adapter = RlmAstLeftHemisphereAdapter(
+            RlmAstAdapterConfig(
                 runtime_command=settings.left_rlm_runtime_command,
                 model_path=str(settings.left_rlm_path) if settings.left_rlm_path else None,
                 max_depth=settings.left_rlm_max_depth,
@@ -95,7 +109,7 @@ def resolve_right_hemisphere(
     settings: InfrastructureSettings,
     vision_adapter: Any | None = None,
     codec: Any | None = None,
-) -> tuple[ActiveInferenceSurpriseAdapter, str, str]:
+) -> tuple[Any, str, str]:
     backend = (settings.right_hemisphere_backend or "").strip().lower()
     requested_model = (settings.perception_model or "").strip()
 
@@ -105,13 +119,13 @@ def resolve_right_hemisphere(
             if trained.is_available:
                 return (
                     _active_inference_right(trained),
-                    "distance_trained_jepa_phase2",
+                    "predictive_checkpoint",
                     trained.config.model_name,
                 )
         base = HeuristicJEPAAdapter()
         return (
             _active_inference_right(base),
-            "distance_heuristic_jepa_phase1",
+            "heuristic_literal",
             "heuristic-jepa-phase1",
         )
 
@@ -120,14 +134,14 @@ def resolve_right_hemisphere(
         if trained.is_available:
             return (
                 _active_inference_right(trained),
-                "distance_trained_jepa_phase2",
+                "predictive_checkpoint",
                 trained.config.model_name,
             )
         base = HeuristicJEPAAdapter()
         setattr(base, "degraded_reason", f"trained_jepa_unavailable:{trained.degraded_reason}")
         return (
             _active_inference_right(base),
-            "distance_heuristic_jepa_phase1_fallback",
+            "heuristic_literal_fallback",
             "heuristic-jepa-phase1",
         )
 
@@ -135,7 +149,7 @@ def resolve_right_hemisphere(
         base = HeuristicJEPAAdapter()
         return (
             _active_inference_right(base),
-            "distance_heuristic_jepa_phase1",
+            "heuristic_literal",
             "heuristic-jepa-phase1",
         )
 
@@ -149,7 +163,7 @@ def resolve_right_hemisphere(
             vision_adapter=vision_adapter,
             codec=codec,
         )
-        return _active_inference_right(base), "distance_vjepa21", "v-jepa-2.1-local"
+        return _active_inference_right(base), "vjepa21_local", "v-jepa-2.1-local"
 
     if backend == "vljepa":
         base = VLJepaRightHemisphereAdapter(
@@ -160,7 +174,7 @@ def resolve_right_hemisphere(
             ),
             vision_adapter=vision_adapter,
         )
-        return _active_inference_right(base), "distance_vljepa", "vl-jepa-local"
+        return _active_inference_right(base), "vljepa_local", "vl-jepa-local"
 
     if backend == "jepars":
         base = JepaRsRightHemisphereAdapter(
@@ -169,7 +183,7 @@ def resolve_right_hemisphere(
                 model_path=str(settings.right_model_path) if settings.right_model_path else None,
             )
         )
-        return _active_inference_right(base), "distance_jepars", "jepa-rs"
+        return _active_inference_right(base), "jepars_local", "jepa-rs"
 
     if backend == "huggingface":
         from calosum.adapters.hemisphere.input_perception_hf import (
@@ -195,22 +209,19 @@ def _build_qwen(
     provider: str | None,
     reasoning_effort: str | None,
 ) -> QwenLeftHemisphereAdapter:
-    if endpoint:
-        return QwenLeftHemisphereAdapter(
-            QwenAdapterConfig(
-                api_url=endpoint,
-                api_key=api_key or "empty",
-                model_name=model or "Qwen/Qwen-3.5-9B-Instruct",
-                provider=provider or "auto",
-                reasoning_effort=reasoning_effort,
-            )
+    return QwenLeftHemisphereAdapter(
+        QwenAdapterConfig(
+            api_url=endpoint,
+            api_key=api_key or "empty",
+            model_name=model or "Qwen/Qwen-3.5-9B-Instruct",
+            provider=provider or "auto",
+            reasoning_effort=reasoning_effort,
         )
-    return QwenLeftHemisphereAdapter()
+    )
 
 
-def _active_inference_right(base_adapter: Any) -> ActiveInferenceSurpriseAdapter:
-    wrapped = ContractEnforcedRightHemisphereAdapter(base_adapter)
-    return ActiveInferenceSurpriseAdapter(wrapped)
+def _active_inference_right(base_adapter: Any) -> Any:
+    return ContractEnforcedRightHemisphereAdapter(base_adapter)
 
 
 def _with_fusion_if_enabled(provider: Any, settings: InfrastructureSettings) -> Any:

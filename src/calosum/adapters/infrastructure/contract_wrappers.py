@@ -232,6 +232,7 @@ class ContractEnforcedRightHemisphereAdapter:
 
     def __init__(self, provider: Any) -> None:
         self.provider = provider
+        self.base_adapter = self
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.provider, name)

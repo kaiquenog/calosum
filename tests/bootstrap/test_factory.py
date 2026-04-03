@@ -29,7 +29,7 @@ class _FakeRightHemisphere:
 class InfrastructureBuilderTests(unittest.TestCase):
     def test_persistent_profile_builds_persistent_backends(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            settings = InfrastructureSettings(
+            settings = InfrastructureSettings(left_hemisphere_endpoint="http://test", 
                 profile=InfrastructureProfile.PERSISTENT,
                 memory_dir=Path(temp_dir) / "memory",
                 otlp_jsonl=Path(temp_dir) / "telemetry" / "events.jsonl",
@@ -49,7 +49,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
             self.assertEqual(description["profile"], "persistent")
 
     def test_builder_falls_back_when_hf_right_hemisphere_is_unavailable(self) -> None:
-        settings = InfrastructureSettings().with_profile_defaults()
+        settings = InfrastructureSettings(left_hemisphere_endpoint="http://test").with_profile_defaults()
         builder = CalosumAgentBuilder(settings)
 
         with patch(
@@ -61,14 +61,14 @@ class InfrastructureBuilderTests(unittest.TestCase):
         description = builder.describe()
         self.assertIsInstance(agent.right_hemisphere, SimpleDistanceSurpriseAdapter)
         self.assertIsInstance(agent.right_hemisphere.base_adapter, HeuristicJEPAAdapter)
-        self.assertEqual(description["right_hemisphere_backend"], "distance_heuristic_jepa_fallback")
+        self.assertEqual(description["right_hemisphere_backend"], "heuristic_literal_fallback")
         self.assertEqual(
             getattr(agent.right_hemisphere.base_adapter, "degraded_reason", None),
             "resolver_fallback:RuntimeError",
         )
 
     def test_docker_profile_resolves_infra_defaults(self) -> None:
-        settings = InfrastructureSettings(profile=InfrastructureProfile.DOCKER).with_profile_defaults()
+        settings = InfrastructureSettings(left_hemisphere_endpoint="http://test", profile=InfrastructureProfile.DOCKER).with_profile_defaults()
         builder = CalosumAgentBuilder(settings)
         description = builder.describe()
 
@@ -161,7 +161,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
         self.assertEqual(description["routing_resolution"]["reason"]["active"], "gpt-4.1-mini")
 
     def test_builder_honors_jepa_routing_policy_for_perception(self) -> None:
-        settings = InfrastructureSettings(
+        settings = InfrastructureSettings(left_hemisphere_endpoint="http://test", 
             perception_model="jepa",
         ).with_profile_defaults()
         builder = CalosumAgentBuilder(settings)
@@ -171,7 +171,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
 
         self.assertIsInstance(agent.right_hemisphere.base_adapter, ContractEnforcedRightHemisphereAdapter)
         self.assertIsInstance(agent.right_hemisphere.base_adapter.provider, HeuristicJEPAAdapter)
-        self.assertEqual(description["right_hemisphere_backend"], "distance_heuristic_jepa_phase1")
+        self.assertEqual(description["right_hemisphere_backend"], "heuristic_literal")
         self.assertEqual(description["routing_resolution"]["perception"]["active"], "jepa")
 
     def test_factory_turboquant_flag(self) -> None:
@@ -221,7 +221,7 @@ class InfrastructureBuilderTests(unittest.TestCase):
         self.assertEqual(client.allowlisted_servers, {"github"})
 
     def test_builder_attaches_interceptor_manager(self) -> None:
-        builder = CalosumAgentBuilder(InfrastructureSettings().with_profile_defaults())
+        builder = CalosumAgentBuilder(InfrastructureSettings(left_hemisphere_endpoint="http://test").with_profile_defaults())
         agent = builder.build()
         self.assertTrue(hasattr(agent, "interceptor_manager"))
 

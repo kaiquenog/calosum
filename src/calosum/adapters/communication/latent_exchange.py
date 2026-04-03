@@ -32,7 +32,7 @@ class InternalLatentExchangeAdapter(LatentExchangePort):
 
     async def broadcast_latent(self, session_id: str, latent_vector: list[float]) -> None:
         """Transmite o estado latente atual para a rede de peers."""
-        await self.event_bus.publish(
+        self.event_bus.publish(
             CognitiveEvent("PeerLatentBroadcast", latent_vector, f"sync-{session_id}")
         )
 

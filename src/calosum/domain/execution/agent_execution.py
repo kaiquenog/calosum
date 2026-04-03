@@ -23,8 +23,11 @@ from calosum.shared.models.types import (
     UserTurn,
     CognitiveWorkspace,
 )
-from calosum.domain.execution.execution_utils import build_execution_telemetry, ensure_response_text
-
+from calosum.domain.execution.execution_utils import (
+    build_execution_telemetry,
+    build_structured_mismatch_signal,
+    ensure_response_text,
+)
 
 class AgentExecutionEngine:
     def __init__(
@@ -79,25 +82,25 @@ class AgentExecutionEngine:
             left_result=left_result,
             workspace=workspace,
         )
-        
-        # Bidirectional Cognitive Bridge: System 2 overrides System 1
-        # Detect if the logical execution engine flagged a cognitive mismatch in its reasoning
-        mismatch_detected = any(
-            text and ("mismatch" in text.lower() or "override" in text.lower() or "false alarm" in text.lower())
-            for text in left_result.reasoning_summary
-        )
-        if workspace is not None:
-            workspace.left_notes["cognitive_override_detected"] = mismatch_detected
-        if mismatch_detected and hasattr(tokenizer, "record_reflection_event"):
-            event_payload = {
-                "turn_id": getattr(user_turn, "turn_id", "unknown"),
-                "event": "cognitive_mismatch_override",
-                "right_salience": right_state.salience,
-                "right_emotional_labels": right_state.emotional_labels,
-                "left_reasoning": left_result.reasoning_summary,
-                "note": "System 2 logically overrode System 1's heuristic priming."
-            }
-            await maybe_await(self.call_component(tokenizer, "record_reflection_event", "record_reflection_event", event_payload))
+        mismatch_signal = build_structured_mismatch_signal(execution_results, critique_verdict)
+        if mismatch_signal is not None:
+            left_result.telemetry["structured_mismatch_signal"] = mismatch_signal.as_dict()
+            if workspace is not None:
+                workspace.left_notes["cognitive_override_detected"] = True
+                workspace.left_notes["structured_mismatch_signal"] = mismatch_signal.as_dict()
+            if hasattr(tokenizer, "record_reflection_event"):
+                await maybe_await(
+                    self.call_component(
+                        tokenizer,
+                        "record_reflection_event",
+                        "record_reflection_event",
+                        {
+                            "turn_id": getattr(user_turn, "turn_id", "unknown"),
+                            "event": "structured_mismatch_signal",
+                            "signal": mismatch_signal.as_dict(),
+                        },
+                    )
+                )
 
         telemetry = build_execution_telemetry(
             right_state=right_state, bridge_packet=bridge_packet,
@@ -199,7 +202,6 @@ class AgentExecutionEngine:
 
             epistemic_actions = {"search_web", "read_file", "execute_bash", "introspect_self", "code_execution", "http_request"}
             has_observations = any(res.action_type in epistemic_actions for res in executed_results)
-            
             needs_observation_loop = is_valid and has_observations
 
             if (is_valid and not needs_observation_loop) or retry_count >= self.max_runtime_retries or foraging_steps >= 5:
@@ -207,7 +209,6 @@ class AgentExecutionEngine:
                 finalized_summary = list(current_result.reasoning_summary)
                 if not current_result.response_text.strip() and res_text.strip():
                     finalized_summary.append("response_text_fallback=runtime_output")
-                
                 finalized_result = replace(current_result, response_text=res_text, reasoning_summary=finalized_summary)
                 return finalized_result, all_execution_results, retry_count, critique_revision_count, last_critique_verdict
 

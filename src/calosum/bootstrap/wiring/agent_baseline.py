@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -47,12 +48,20 @@ class AgentBaseline:
 
     @classmethod
     def from_settings(cls, settings: InfrastructureSettings) -> "AgentBaseline":
+        if settings.mode.value == "api" and not settings.left_hemisphere_endpoint:
+            raise RuntimeError(
+                "AgentBaseline.from_settings requires CALOSUM_LEFT_ENDPOINT in API mode; refusing self-referential default."
+            )
+        if os.getenv("CALOSUM_REQUIRE_LEFT_ENDPOINT", "").strip().lower() in {"1", "true", "yes", "on"} and not settings.left_hemisphere_endpoint:
+            raise RuntimeError(
+                "CALOSUM_REQUIRE_LEFT_ENDPOINT=1 requires CALOSUM_LEFT_ENDPOINT for AgentBaseline.from_settings."
+            )
         left = QwenLeftHemisphereAdapter(
             QwenAdapterConfig(
-                api_url=settings.left_hemisphere_endpoint or "http://localhost:8000/v1/chat/completions",
+                api_url=settings.left_hemisphere_endpoint,
                 api_key=settings.left_hemisphere_api_key or "empty",
                 model_name=settings.reason_model or settings.left_hemisphere_model or "gpt-4o-mini",
-                provider=settings.left_hemisphere_provider or "auto",
+                provider=settings.left_hemisphere_provider or "openai",
                 reasoning_effort=settings.left_hemisphere_reasoning_effort,
             )
         )

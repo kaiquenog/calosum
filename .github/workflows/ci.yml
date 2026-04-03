@@ -153,6 +153,7 @@ jobs:
       - name: Run integration benchmark gate
         env:
           CALOSUM_INFRA_PROFILE: ephemeral
+          CALOSUM_CI_BENCHMARK_TURNS: "20"
         run: |
           PYTHONPATH=src python3 scripts/ci_integration_benchmark.py \
             --turns 20 \
@@ -194,6 +195,7 @@ jobs:
       - name: Produce candidate benchmark
         env:
           CALOSUM_INFRA_PROFILE: ephemeral
+          CALOSUM_CI_BENCHMARK_TURNS: "20"
         run: |
           PYTHONPATH=src python3 scripts/ci_integration_benchmark.py \
             --turns 20 \

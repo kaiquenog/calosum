@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -22,6 +24,12 @@ from calosum.bootstrap.infrastructure.settings import (
 from calosum.shared.models.types import UserTurn
 
 logger = logging.getLogger(__name__)
+DEFAULT_ALLOWED_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+)
 
 # Inicialização global dos adaptadores de canais
 _active_channels = []
@@ -33,6 +41,16 @@ def resolve_api_settings(environ: dict[str, str] | None = None) -> Infrastructur
     if should_enable_local_persistence_defaults(settings, environ=env):
         return with_local_persistence_defaults(settings)
     return settings
+
+
+def resolve_cors_policy(environ: dict[str, str] | None = None) -> tuple[list[str], bool]:
+    env = environ or os.environ
+    allowed_origins_env = env.get("CALOSUM_ALLOWED_ORIGINS", "")
+    allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+    if not allowed_origins:
+        allowed_origins = list(DEFAULT_ALLOWED_ORIGINS)
+    allow_credentials = "*" not in allowed_origins
+    return allowed_origins, allow_credentials
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -98,10 +116,12 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+allowed_origins, allow_credentials = resolve_cors_policy()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -118,14 +138,22 @@ async def health_check() -> JSONResponse:
 
 @app.get("/ready")
 async def readiness_check() -> JSONResponse:
-    """
-    Readiness check to verify that dependencies (LLM, Qdrant) are reachable.
-    In a real scenario, you'd ping the actual services. Here we just ensure 
-    the builder can instantiate the agent without crashing.
-    """
     try:
-        get_agent()
-        return JSONResponse({"status": "ready"})
+        builder = get_builder()
+        agent = get_agent()
+        info = builder.describe(agent)
+        return JSONResponse(
+            {
+                "status": "ready",
+                "health": info["capabilities"]["health"],
+                "components": {
+                    "right_hemisphere": info["capabilities"]["right_hemisphere"],
+                    "left_hemisphere": info["capabilities"]["left_hemisphere"],
+                    "knowledge_graph": info["capabilities"]["knowledge_graph"],
+                    "embeddings": info["capabilities"].get("embeddings"),
+                },
+            }
+        )
     except Exception as e:
         logger.error("Readiness check failed", exc_info=True)
         return JSONResponse({"status": "unready", "error": str(e)}, status_code=503)

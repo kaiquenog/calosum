@@ -36,7 +36,7 @@ from calosum.shared.models.types import (
 logger = logging.getLogger(__name__)
 @dataclass(slots=True)
 class QwenAdapterConfig:
-    api_url: str = "http://localhost:8000/v1/chat/completions"
+    api_url: str | None = None
     api_key: str = "empty"
     model_name: str = "Qwen/Qwen-3.5-9B-Instruct"
     max_tokens: int = 4096
@@ -59,11 +59,18 @@ class QwenLeftHemisphereAdapter:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.config = config or QwenAdapterConfig()
+        
+        provider = self.config.provider.strip().lower()
+        if not self.config.api_url and provider not in {"openai", "responses", "openai_responses", "openai_chat", "chat", "openrouter"}:
+            raise ValueError(
+                "QwenLeftHemisphereAdapter requires an explicit api_url or a valid cloud provider (e.g., 'openai', 'openrouter')."
+            )
+
         headers: dict[str, str] = {}
         if self.config.api_key and self.config.api_key != "empty":
             headers["Authorization"] = f"Bearer {self.config.api_key}"
         
-        if self.config.provider.strip().lower() == "openrouter":
+        if provider == "openrouter":
             headers["HTTP-Referer"] = "https://github.com/kaiquenog/calosum"
             headers["X-Title"] = "Calosum Agent Framework"
 
@@ -346,7 +353,7 @@ class QwenLeftHemisphereAdapter:
         if provider in {"chat"}:
             return "openai_chat"
 
-        parsed = urlparse(self.config.api_url)
+        parsed = urlparse(self.config.api_url or "")
         hostname = (parsed.hostname or "").lower()
         path = parsed.path.rstrip("/")
 
@@ -359,15 +366,15 @@ class QwenLeftHemisphereAdapter:
         model = self.config.model_name.strip()
         if not model:
             if api_mode == "openai_responses":
-                return "gpt-5.4-mini"
+                return "gpt-4o-mini"
             return "gpt-4o-mini"
         return model
 
     def _responses_url(self) -> str:
-        if self.config.provider.strip().lower() == "openrouter" and self.config.api_url == QwenAdapterConfig.api_url:
+        if self.config.provider.strip().lower() == "openrouter" and not self.config.api_url:
              return "https://openrouter.ai/api/v1/responses"
         
-        base = self.config.api_url.rstrip("/")
+        base = (self.config.api_url or "https://api.openai.com/v1").rstrip("/")
         if base.endswith("/chat/completions"):
             base = base[: -len("/chat/completions")]
         if base.endswith("/responses"):
@@ -377,10 +384,10 @@ class QwenLeftHemisphereAdapter:
         return f"{base}/v1/responses"
 
     def _chat_completions_url(self) -> str:
-        if self.config.provider.strip().lower() == "openrouter" and self.config.api_url == QwenAdapterConfig.api_url:
+        if self.config.provider.strip().lower() == "openrouter" and not self.config.api_url:
             return "https://openrouter.ai/api/v1/chat/completions"
             
-        base = self.config.api_url.rstrip("/")
+        base = (self.config.api_url or "https://api.openai.com/v1").rstrip("/")
         if base.endswith("/chat/completions"):
             return base
         if base.endswith("/v1"):

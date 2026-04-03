@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from calosum.adapters.hemisphere.action_planner_rlm import RlmAdapterConfig, RlmLeftHemisphereAdapter
+from calosum.adapters.hemisphere.left_hemisphere_rlm_ast import RlmAstAdapterConfig, RlmAstLeftHemisphereAdapter
 from calosum.shared.models.types import (
     BridgeControlSignal,
     PerceptionSummary,
@@ -28,7 +28,7 @@ def _bridge_packet() -> PerceptionSummary:
 
 class RlmAdapterTests(unittest.TestCase):
     def test_local_recursive_mode_returns_typed_actions(self) -> None:
-        adapter = RlmLeftHemisphereAdapter(RlmAdapterConfig(max_depth=2))
+        adapter = RlmAstLeftHemisphereAdapter(RlmAstAdapterConfig(max_depth=2))
         result = adapter.reason(
             UserTurn(session_id="s", user_text="Preciso de um plano em passos curtos para reorganizar o projeto."),
             _bridge_packet(),
@@ -66,8 +66,8 @@ print(json.dumps({
             )
             os.chmod(script, 0o755)
 
-            adapter = RlmLeftHemisphereAdapter(
-                RlmAdapterConfig(runtime_command=str(script), max_depth=2)
+            adapter = RlmAstLeftHemisphereAdapter(
+                RlmAstAdapterConfig(runtime_command=str(script), max_depth=2)
             )
             result = adapter.reason(
                 UserTurn(session_id="s", user_text="gerar plano"),

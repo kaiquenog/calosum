@@ -99,15 +99,6 @@ Você deve analisar **todo o projeto Calosum**, incluindo:
 - pyproject.toml / requirements.txt  
 - harness_checks.py  
 - domain/, cognition/, metacognition/, execution/, memory/, infrastructure/  
-- adapters/  
-- orchestrator  
-- StrictLambdaRuntime  
-- Neural bridge  
-- GEAReflectionController  
-- Night training (DSPy / LoRA)  
-- Variantes JEPA  
-- UI (React)  
-- Telemetria (OpenTelemetry)  
 
 ---
 
@@ -334,4 +325,4 @@ Combinando:
 
 # ▶️ INÍCIO
 
-Comece pelo **Resumo Executivo**. gerado em docs/exec-plans
+Comece pelo **Resumo Executivo**. gerado em docs/exec-plans um plano de implementacao detalhado e executavel.

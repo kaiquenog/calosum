@@ -153,7 +153,7 @@ class HeuristicJEPAAdapter:
                 overlap = len(candidate_terms.intersection(context_terms)) / len(candidate_terms)
             
             # Encode via embedder
-            candidate_vector = self.embedder.embed_texts([candidate])[0]
+            candidate_vector = self._first_embedding(candidate)
             cosine = self._cosine_similarity(
                 prediction.predicted_embedding,
                 candidate_vector,
@@ -167,10 +167,9 @@ class HeuristicJEPAAdapter:
         return sorted(scored, key=lambda item: item[1], reverse=True)
 
     def _encode_context(self, turns: list[UserTurn]) -> ContextEmbedding:
-        # Encode via embedder
-        vectors = self.embedder.embed_texts([t.user_text for t in turns])
+        vectors = [self._first_embedding(turn.user_text) for turn in turns]
         if not vectors:
-            vectors = [self.embedder.embed_texts([""])[0]]
+            vectors = [self._first_embedding("")]
             
         weights = self._softmax([float(index + 1) for index in range(len(vectors))])
         merged = [0.0] * self.config.embedding_dim
@@ -201,7 +200,7 @@ class HeuristicJEPAAdapter:
 
     def _compute_surprise(self, ctx: ContextEmbedding, actual_response: str) -> SurpriseScore:
         prediction = self._predict_response_embedding(ctx)
-        actual = self.embedder.embed_texts([actual_response])[0]
+        actual = self._first_embedding(actual_response)
         cosine = self._cosine_similarity(prediction.predicted_embedding, actual)
         base_error = max(0.0, min(1.0, (1.0 - cosine) / 2.0))
         context_terms = set(ctx.context_terms)
@@ -219,6 +218,20 @@ class HeuristicJEPAAdapter:
             source="jepa_prediction_error",
             ignored_due_to_uncertainty=ignore,
         )
+
+    def _first_embedding(self, text: str) -> list[float]:
+        try:
+            vectors = self.embedder.embed_texts([text])
+        except Exception:
+            vectors = None
+        if not vectors or not isinstance(vectors, list) or not vectors[0]:
+            return [0.0] * self.config.embedding_dim
+        vector = [float(value) for value in vectors[0]]
+        if len(vector) < self.config.embedding_dim:
+            vector.extend([0.0] * (self.config.embedding_dim - len(vector)))
+        elif len(vector) > self.config.embedding_dim:
+            vector = vector[: self.config.embedding_dim]
+        return self._l2_normalize(vector)
 
     def _history_turns(self, memory_context: MemoryContext | None) -> list[UserTurn]:
         if memory_context is None:

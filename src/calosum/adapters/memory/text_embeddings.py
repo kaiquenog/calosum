@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 import math
-import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -69,14 +67,14 @@ class TextEmbeddingAdapter:
                 return await self._embed_with_http(normalized)
             if provider == "huggingface":
                 return self._embed_with_sentence_transformers(normalized)
+            return self._embed_lexical(normalized)
         except Exception as exc:
             logger.warning(
-                "Embedding backend %s failed, falling back to lexical embeddings: %s",
+                "Embedding backend %s failed: %s",
                 provider,
                 exc,
             )
-
-        return [self._lexical_vector_for_text(text) for text in normalized]
+            return self._embed_lexical(normalized)
 
     async def embed_texts_compressed(self, texts: list[str]) -> list[bytes]:
         """Embed texts and compress each vector with the injected codec.
@@ -156,6 +154,24 @@ class TextEmbeddingAdapter:
         matrix = self._sentence_transformer.encode(texts)
         return [self._normalize_vector(row.tolist()) for row in matrix]
 
+    def _embed_lexical(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        size = max(1, int(self.config.vector_size))
+        for text in texts:
+            vector = [0.0] * size
+            lowered = text.lower()
+            for index, char in enumerate(lowered):
+                codepoint = ord(char)
+                if codepoint < 32:
+                    continue
+                slot = (index * 131 + codepoint * 17) % size
+                signal = 1.0 + ((codepoint % 13) / 13.0)
+                if (index + codepoint) % 2:
+                    signal *= -1.0
+                vector[slot] += signal
+            vectors.append(self._normalize_vector(vector))
+        return vectors
+
     def _normalize_vector(self, vector: list[float]) -> list[float]:
         if not vector:
             return [0.0] * self.config.vector_size
@@ -168,22 +184,4 @@ class TextEmbeddingAdapter:
         norm = math.sqrt(sum(value * value for value in vector))
         if norm == 0:
             return [0.0] * self.config.vector_size
-        return [round(value / norm, 6) for value in vector]
-
-    def _lexical_vector_for_text(self, text: str) -> list[float]:
-        tokens = re.findall(r"\w+", text.lower()) or ["silence"]
-        vector = [0.0] * self.config.vector_size
-
-        for token in tokens:
-            digest = hashlib.sha256(token.encode("utf-8")).digest()
-            for index in range(0, len(digest), 4):
-                chunk = digest[index:index + 4]
-                position = int.from_bytes(chunk[:2], "big") % self.config.vector_size
-                sign = 1.0 if chunk[2] % 2 == 0 else -1.0
-                magnitude = 1.0 + (chunk[3] / 255.0)
-                vector[position] += sign * magnitude
-
-        norm = math.sqrt(sum(value * value for value in vector))
-        if norm == 0:
-            return vector
         return [round(value / norm, 6) for value in vector]

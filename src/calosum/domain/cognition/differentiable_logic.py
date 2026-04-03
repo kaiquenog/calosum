@@ -126,3 +126,58 @@ class CognitiveDissonanceMetric:
         # Dissonance is high when the logic satisfaction degree
         # is low despite high salience, or vice versa.
         return abs(right_state.salience - logic_grounding)
+
+from collections import deque
+import numpy as np
+from calosum.shared.models.types import MemoryContext
+from calosum.shared.utils.free_energy import kl_divergence_gaussian, expected_free_energy_refined
+from calosum.shared.utils.surprise_metrics import calibrated_surprise_score
+
+_surprise_history = deque(maxlen=50)
+
+def _get_prior(memory_context: MemoryContext | None, shape: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
+    if memory_context and memory_context.recent_episodes:
+        last_ep = memory_context.recent_episodes[-1]
+        if last_ep.right_state.latent_mu:
+            if last_ep.right_state.latent_logvar:
+                return np.array(last_ep.right_state.latent_mu), np.array(last_ep.right_state.latent_logvar)
+            return np.array(last_ep.right_state.latent_mu), np.ones(shape) * -2.0
+        if last_ep.right_state.latent_vector:
+            return np.array(last_ep.right_state.latent_vector), np.ones(shape) * -2.0
+    return np.zeros(shape), np.zeros(shape)
+
+def apply_active_inference(base_state: InputPerceptionState, memory_context: MemoryContext | None) -> InputPerceptionState:
+    mu = np.array(base_state.latent_mu) if base_state.latent_mu else np.array(base_state.latent_vector)
+    logvar = np.array(base_state.latent_logvar) if base_state.latent_logvar else np.ones_like(mu) * -2.0
+    
+    prior_mu, prior_logvar = _get_prior(memory_context, mu.shape)
+    raw_surprise = kl_divergence_gaussian(mu, logvar, prior_mu, prior_logvar)
+    _surprise_history.append(raw_surprise)
+    
+    calibrated_surprise = calibrated_surprise_score(raw_surprise, list(_surprise_history))
+        
+    base_confidence = max(0.0, min(1.0, float(base_state.confidence)))
+    
+    efe, _ = expected_free_energy_refined(mu, logvar, prior_mu, prior_logvar, epistemic_weight=1.5)
+    
+    merged_telemetry = dict(base_state.telemetry)
+    merged_telemetry.update({
+        "surprise_backend": "domain_differentiable_logic",
+        "efe_score": round(efe, 4),
+        "z_score_surprise": calibrated_surprise,
+    })
+    fused_salience = max(float(base_state.salience), calibrated_surprise)
+    
+    return InputPerceptionState(
+        context_id=base_state.context_id,
+        latent_vector=base_state.latent_vector,
+        salience=round(max(0.0, min(1.0, fused_salience)), 4),
+        emotional_labels=base_state.emotional_labels,
+        world_hypotheses=base_state.world_hypotheses,
+        confidence=base_confidence,
+        surprise_score=calibrated_surprise,
+        perception_status=base_state.perception_status,
+        latent_mu=mu.tolist(),
+        latent_logvar=logvar.tolist(),
+        telemetry=merged_telemetry,
+    )

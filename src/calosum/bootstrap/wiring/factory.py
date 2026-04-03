@@ -104,16 +104,9 @@ class CalosumAgentBuilder:
         return agent
 
     def build_left_hemisphere(self):
-        try:
-            adapter, backend = resolve_left_hemisphere(self.settings, self._reason_model_name())
-            self._last_left_hemisphere_backend = backend
-            return adapter
-        except Exception as exc:
-            logger.warning("Falling back to default left hemisphere adapter: %s", exc)
-            from calosum.adapters.llm.llm_qwen import QwenLeftHemisphereAdapter
-
-            self._last_left_hemisphere_backend = "openai_compatible_chat_adapter_default"
-            return QwenLeftHemisphereAdapter()
+        adapter, backend = resolve_left_hemisphere(self.settings, self._reason_model_name())
+        self._last_left_hemisphere_backend = backend
+        return adapter
 
     def build_right_hemisphere(self):
         vision_adapter = resolve_vision_adapter()
@@ -136,7 +129,7 @@ class CalosumAgentBuilder:
 
             base_adapter = HeuristicJEPAAdapter()
             setattr(base_adapter, "degraded_reason", f"resolver_fallback:{exc.__class__.__name__}")
-            self._last_right_hemisphere_backend = "distance_heuristic_jepa_fallback"
+            self._last_right_hemisphere_backend = "heuristic_literal_fallback"
             self._last_right_hemisphere_model_name = "heuristic-jepa-phase1"
             return SimpleDistanceSurpriseAdapter(base_adapter)
 
@@ -298,10 +291,10 @@ class CalosumAgentBuilder:
         return "in_memory"
 
     def _right_hemisphere_health(self) -> ComponentHealth:
-        return ComponentHealth.DEGRADED if self._last_right_hemisphere_backend in {"active_inference_heuristic_jepa_fallback"} else ComponentHealth.HEALTHY
+        return ComponentHealth.DEGRADED if self._last_right_hemisphere_backend in {"heuristic_literal_fallback"} else ComponentHealth.HEALTHY
 
     def _right_hemisphere_backend_name(self) -> str:
-        return self._last_right_hemisphere_backend or "active_inference_heuristic_jepa_phase1"
+        return self._last_right_hemisphere_backend or "heuristic_literal"
 
     def _right_hemisphere_model_name(self) -> str:
         return self._last_right_hemisphere_model_name or self.settings.perception_model or "heuristic-jepa-phase1"
