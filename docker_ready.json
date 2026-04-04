@@ -1,0 +1,94 @@
+{
+  "generated_at": "2026-04-03T17:17:31.569581+00:00",
+  "profile": "docker",
+  "payload": {
+    "status": "ready",
+    "health": "healthy",
+    "components": {
+      "right_hemisphere": {
+        "provider": "local",
+        "model_name": "jepa-rs",
+        "backend": "jepars_local",
+        "health": "healthy",
+        "degraded_reason": null,
+        "checkpoint_loaded": null,
+        "multimodal_capable": false,
+        "contract_version": "jepa-rs-arrow-v1",
+        "budget": {
+          "component": "right_hemisphere",
+          "backend": "jepars_local",
+          "requested_backend": "jepars",
+          "cpu_cores_required": 1.5,
+          "memory_mb_required": 2048.0,
+          "cpu_cores_limit": null,
+          "memory_mb_limit": null,
+          "status": "within_budget",
+          "exceeded": false,
+          "fallback_backend": "heuristic_literal"
+        }
+      },
+      "left_hemisphere": {
+        "provider": "auto",
+        "model_name": "Qwen/Qwen-3.5-9B-Instruct",
+        "backend": "rlm_recursive_adapter",
+        "health": "healthy"
+      },
+      "knowledge_graph": {
+        "provider": "local",
+        "model_name": "nanorag",
+        "backend": "networkx_graph_rag_fallback",
+        "health": "healthy"
+      },
+      "embeddings": {
+        "provider": "auto",
+        "model_name": "auto",
+        "backend": "lexical",
+        "health": "healthy"
+      }
+    },
+    "operational_budgets": {
+      "right_hemisphere": {
+        "component": "right_hemisphere",
+        "backend": "jepars_local",
+        "requested_backend": "jepars",
+        "cpu_cores_required": 1.5,
+        "memory_mb_required": 2048.0,
+        "cpu_cores_limit": null,
+        "memory_mb_limit": null,
+        "status": "within_budget",
+        "exceeded": false,
+        "fallback_backend": "heuristic_literal"
+      },
+      "left_hemisphere": {
+        "component": "left_hemisphere",
+        "backend": "rlm_recursive_adapter",
+        "requested_backend": "rlm_recursive_adapter",
+        "cpu_cores_required": 2.0,
+        "memory_mb_required": 3072.0,
+        "cpu_cores_limit": null,
+        "memory_mb_limit": null,
+        "status": "within_budget",
+        "exceeded": false,
+        "fallback_backend": null
+      },
+      "bridge": {
+        "component": "bridge",
+        "backend": "cross_attention",
+        "requested_backend": "cross_attention",
+        "cpu_cores_required": 1.0,
+        "memory_mb_required": 1024.0,
+        "cpu_cores_limit": null,
+        "memory_mb_limit": null,
+        "status": "within_budget",
+        "exceeded": false,
+        "fallback_backend": "heuristic_projection"
+      }
+    },
+    "turn_contract": {
+      "single_candidate": "AgentTurnResult",
+      "multi_candidate": "GroupTurnResult",
+      "selection_accessor": "selected_result",
+      "compatibility_method": "as_agent_turn_result"
+    }
+  }
+}
